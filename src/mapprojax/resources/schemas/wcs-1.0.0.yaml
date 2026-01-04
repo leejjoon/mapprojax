@@ -1,0 +1,19 @@
+%YAML 1.1
+---
+$schema: "http://stsci.edu/schemas/yaml-schema/draft-01"
+id: http://mapprojax.org/schemas/wcs-1.0.0
+title: WCS object
+
+type: object
+properties:
+  crpix:
+    type: array
+  cd:
+    type: array
+  crval:
+    anyOf:
+      - type: array
+      - type: object # For tuple of arrays (crvals)
+  projection_class:
+    type: string
+required: [crpix, cd, crval, projection_class]

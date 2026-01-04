@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mapprojax"
+version = "0.1.0"
+description = "A Python implementation of cds-mapproj for WCS projections"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.20",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.optional-dependencies]
+serialization = ["asdf"]
+
+[project.entry-points]
+"asdf.extensions" = { mapprojax = "mapprojax.io.asdf.extension:get_extensions" }
+"asdf.resource_mappings" = { mapprojax = "mapprojax.io.asdf.extension:get_resource_mappings" }
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,7 @@
+id: http://mapprojax.org/manifests/mapprojax-1.0.0
+extension_uri: http://mapprojax.org/extensions/mapprojax-1.0.0
+title: Mapprojax extension
+description: Support for mapprojax WCS objects
+tags:
+  - tag_uri: http://mapprojax.org/tags/wcs-1.0.0
+    schema_uri: http://mapprojax.org/schemas/wcs-1.0.0
