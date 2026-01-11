@@ -10,7 +10,7 @@ class WCSBase(ABC):
         
         # Precompute rotation matrix
         # crval is (lon, lat)
-        self.r_matrix = rotation_matrix(self.crval[0], self.crval[1])
+        self.r_matrix = rotation_matrix(np.radians(self.crval[0]), np.radians(self.crval[1]))
 
     @abstractmethod
     def _native_to_plane(self, xn, yn, zn):
@@ -24,7 +24,7 @@ class WCSBase(ABC):
         
     def proj(self, ra, dec):
         # 1. Spherical -> Cartesian (Celestial)
-        xc, yc, zc = radec_to_xyz(ra, dec)
+        xc, yc, zc = radec_to_xyz(np.radians(ra), np.radians(dec))
         
         # 2. Celestial -> Native (Rotation)
         # v_n = M * v_c
@@ -83,8 +83,8 @@ class WCSBase(ABC):
         xc, yc, zc = apply_rotation_transpose(self.r_matrix, xn, yn, zn)
         
         # 4. Cartesian -> Spherical
-        ra, dec = xyz_to_radec(xc, yc, zc)
-        return ra, dec
+        ra_rad, dec_rad = xyz_to_radec(xc, yc, zc)
+        return np.degrees(ra_rad), np.degrees(dec_rad)
 
     def to_dict(self):
         """Basic serialization helper."""
@@ -122,7 +122,7 @@ class WCSArrayBase(ABC):
         # Let's check our utils implementation.
         # In utils.py, we constructed it manually. 
         # If inputs are arrays shape S, the resulting 'mat' has shape (3, 3, S).
-        self.r_matrices = rotation_matrix(ra_arr, dec_arr)
+        self.r_matrices = rotation_matrix(np.radians(ra_arr), np.radians(dec_arr))
         # Shape is (3, 3) + crval_shape
 
     @abstractmethod
@@ -158,7 +158,7 @@ class WCSArrayBase(ABC):
         # xn shape will be broadcast(S_wcs, S_in).
         # This works naturally with NumPy broadcasting!
         
-        xc, yc, zc = radec_to_xyz(ra, dec)
+        xc, yc, zc = radec_to_xyz(np.radians(ra), np.radians(dec))
         
         # apply_rotation expects matrix (3, 3, ...). 
         # It accesses matrix[0,0] which gives shape S_wcs.
@@ -198,8 +198,8 @@ class WCSArrayBase(ABC):
         
         xc, yc, zc = apply_rotation_transpose(self.r_matrices, xn, yn, zn)
         
-        ra, dec = xyz_to_radec(xc, yc, zc)
-        return ra, dec
+        ra_rad, dec_rad = xyz_to_radec(xc, yc, zc)
+        return np.degrees(ra_rad), np.degrees(dec_rad)
 
     def to_dict(self):
         return {

@@ -1,11 +1,11 @@
 import numpy as np
 
-def radec_to_xyz(ra_deg, dec_deg):
+def radec_to_xyz(ra_rad, dec_rad):
     """
-    Convert RA/Dec (degrees) to unit vector (x, y, z).
+    Convert RA/Dec (radians) to unit vector (x, y, z).
     """
-    ra = np.radians(ra_deg)
-    dec = np.radians(dec_deg)
+    ra = ra_rad
+    dec = dec_rad
     
     cos_dec = np.cos(dec)
     x = cos_dec * np.cos(ra)
@@ -15,7 +15,7 @@ def radec_to_xyz(ra_deg, dec_deg):
 
 def xyz_to_radec(x, y, z):
     """
-    Convert unit vector (x, y, z) to RA/Dec (degrees).
+    Convert unit vector (x, y, z) to RA/Dec (radians).
     """
     dist = np.sqrt(x*x + y*y + z*z)
     # Avoid division by zero
@@ -25,18 +25,17 @@ def xyz_to_radec(x, y, z):
     dec = np.arcsin(z / dist)
     ra = np.arctan2(y, x)
     
-    # Normalize RA to [0, 360)
-    ra = np.degrees(ra) % 360.0
-    dec = np.degrees(dec)
+    # Normalize RA to [0, 2*pi)
+    ra = ra % (2 * np.pi)
     
     return ra, dec
 
-def rotation_matrix(lon_deg, lat_deg):
+def rotation_matrix(lon_rad, lat_rad):
     """
     Generate the rotation matrix M that rotates a celestial vector
     into the native frame (where center is (1,0,0)).
     
-    Defined by CRVAL = (lon, lat).
+    Defined by CRVAL = (lon, lat) in radians.
     
     From implementation.md:
     M = [
@@ -46,8 +45,7 @@ def rotation_matrix(lon_deg, lat_deg):
     ]
     where L = lon (alpha), P = lat (delta).
     """
-    lon_rad = np.radians(lon_deg) # lambda
-    p = np.radians(lat_deg) # phi
+    p = lat_rad # phi
     
     cos_l = np.cos(lon_rad)
     sin_l = np.sin(lon_rad)
