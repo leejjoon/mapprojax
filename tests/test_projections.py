@@ -12,14 +12,14 @@ def test_tan_roundtrip():
     wcs = Tan(crpix, cd, crval)
     
     # Test Reference pixel
-    x, y = wcs.proj(45.0, 30.0)
+    x, y = wcs.proj(np.radians(45.0), np.radians(30.0))
     assert x == pytest.approx(100.0)
     assert y == pytest.approx(100.0)
     
     # Test Inverse at reference
     ra, dec = wcs.unproj(100.0, 100.0)
-    assert ra == pytest.approx(45.0)
-    assert dec == pytest.approx(30.0)
+    assert ra == pytest.approx(np.radians(45.0))
+    assert dec == pytest.approx(np.radians(30.0))
     
     # Test off-center point
     # Move 10 pixels in X
@@ -59,13 +59,13 @@ def test_tan_array_broadcasting():
     wcs_arr = TanArray(crpix, cd, (ra_centers, dec_centers))
     
     # 1. Project center points (should all be 100, 100)
-    x, y = wcs_arr.proj(ra_centers, dec_centers)
+    x, y = wcs_arr.proj(np.radians(ra_centers), np.radians(dec_centers))
     np.testing.assert_allclose(x, 100.0)
     np.testing.assert_allclose(y, 100.0)
     
     # 2. Broadcast single point (45, 30) against 3 WCSs
     # Point matches 1st WCS center
-    x_bc, y_bc = wcs_arr.proj(45.0, 30.0)
+    x_bc, y_bc = wcs_arr.proj(np.radians(45.0), np.radians(30.0))
     assert x_bc.shape == (3,)
     assert x_bc[0] == pytest.approx(100.0)
     assert x_bc[1] != pytest.approx(100.0)
@@ -82,7 +82,7 @@ def test_tan_array_broadcasting():
     # Case A: pts shape (3,) matching WCS shape (3,)
     pts_ra_match = np.array([45.0, 50.0, 55.0])
     pts_dec_match = np.array([30.0, 30.0, 30.0])
-    x_match, y_match = wcs_arr.proj(pts_ra_match, pts_dec_match)
+    x_match, y_match = wcs_arr.proj(np.radians(pts_ra_match), np.radians(pts_dec_match))
     np.testing.assert_allclose(x_match, 100.0)
     
     # Case B: 2 points vs 3 WCSs -> explicit reshape
@@ -90,7 +90,7 @@ def test_tan_array_broadcasting():
     pts_ra_col = pts_ra.reshape(2, 1)
     pts_dec_col = pts_dec.reshape(2, 1)
     
-    x_cart, y_cart = wcs_arr.proj(pts_ra_col, pts_dec_col)
+    x_cart, y_cart = wcs_arr.proj(np.radians(pts_ra_col), np.radians(pts_dec_col))
     assert x_cart.shape == (2, 3)
     
     # (0, 0): Point 0 (45) vs WCS 0 (45) -> 100
@@ -107,7 +107,7 @@ def test_sin_array():
     wcs_arr = SinArray(crpix, cd, crvals)
     
     # Proj center
-    x, y = wcs_arr.proj([0.0, 10.0], [0.0, 0.0])
+    x, y = wcs_arr.proj(np.radians([0.0, 10.0]), np.radians([0.0, 0.0]))
     np.testing.assert_allclose(x, 50.0)
     np.testing.assert_allclose(y, 50.0)
 
@@ -115,4 +115,4 @@ def test_singular_cd_error():
     """Test that singular CD matrix raises ValueError."""
     wcs = Tan([0,0], [[0,0],[0,0]], [0,0])
     with pytest.raises(ValueError):
-        wcs.proj(0, 0)
+        wcs.proj(0.0, 0.0)

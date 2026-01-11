@@ -38,14 +38,14 @@ wcs = Tan(crpix, cd_matrix, crval)
 
 ### Proj (Sky -> Pixel)
 
-The `proj` method converts Right Ascension and Declination (in degrees) to Pixel Coordinates.
+The `proj` method converts Right Ascension and Declination (in radians) to Pixel Coordinates.
 
 **Method Signature:**
 `proj(ra, dec) -> (x, y)`
 
 **Arguments:**
-*   `ra`: Right Ascension in degrees (scalar, list, or numpy array).
-*   `dec`: Declination in degrees (scalar, list, or numpy array).
+*   `ra`: Right Ascension in radians (scalar, list, or numpy array).
+*   `dec`: Declination in radians (scalar, list, or numpy array).
 
 **Returns:**
 *   `x`: Pixel X coordinate.
@@ -55,15 +55,15 @@ The `proj` method converts Right Ascension and Declination (in degrees) to Pixel
 
 **1. Single Point**
 ```python
-ra, dec = 45.1, 30.1
+ra, dec = np.radians(45.1), np.radians(30.1)
 x, y = wcs.proj(ra, dec)
 print(f"Pixel: {x}, {y}")
 ```
 
 **2. Array of Points (1D)**
 ```python
-ra_list = np.array([45.0, 45.1, 45.2])
-dec_list = np.array([30.0, 30.1, 30.2])
+ra_list = np.radians([45.0, 45.1, 45.2])
+dec_list = np.radians([30.0, 30.1, 30.2])
 
 x, y = wcs.proj(ra_list, dec_list)
 # x and y are numpy arrays of shape (3,)
@@ -72,8 +72,8 @@ x, y = wcs.proj(ra_list, dec_list)
 **3. 2D Array of Points**
 ```python
 # Grid of coordinates
-ra_grid = np.array([[45.0, 45.1], [45.0, 45.1]])
-dec_grid = np.array([[30.0, 30.0], [30.1, 30.1]])
+ra_grid = np.radians([[45.0, 45.1], [45.0, 45.1]])
+dec_grid = np.radians([[30.0, 30.0], [30.1, 30.1]])
 
 x, y = wcs.proj(ra_grid, dec_grid)
 # x and y are numpy arrays of shape (2, 2)
@@ -81,7 +81,7 @@ x, y = wcs.proj(ra_grid, dec_grid)
 
 ### Unproj (Pixel -> Sky)
 
-The `unproj` method converts Pixel Coordinates to Right Ascension and Declination.
+The `unproj` method converts Pixel Coordinates to Right Ascension and Declination (in radians).
 
 **Method Signature:**
 `unproj(x, y) -> (ra, dec)`
@@ -91,14 +91,15 @@ The `unproj` method converts Pixel Coordinates to Right Ascension and Declinatio
 *   `y`: Pixel Y coordinate.
 
 **Returns:**
-*   `ra`: Right Ascension in degrees.
-*   `dec`: Declination in degrees.
+*   `ra`: Right Ascension in radians.
+*   `dec`: Declination in radians.
 
 **Example:**
 ```python
 x = [100, 110, 120]
 y = [100, 110, 120]
-ra, dec = wcs.unproj(x, y)
+ra_rad, dec_rad = wcs.unproj(x, y)
+ra_deg = np.degrees(ra_rad)
 ```
 
 ---
@@ -137,8 +138,8 @@ If you have N WCS instances and provide N coordinates, the operation is element-
 
 ```python
 # 3 WCS instances, 3 coordinate points
-ra = [45.1, 50.1, 55.1]
-dec = [30.1, 30.1, 30.1]
+ra = np.radians([45.1, 50.1, 55.1])
+dec = np.radians([30.1, 30.1, 30.1])
 
 x, y = wcs_array.proj(ra, dec)
 # Result: x and y have shape (3,)
@@ -149,8 +150,8 @@ Project a single sky point into all WCS frames.
 
 ```python
 # 1 coordinate point
-ra = 45.0
-dec = 30.0
+ra = np.radians(45.0)
+dec = np.radians(30.0)
 
 x, y = wcs_array.proj(ra, dec)
 # Result: x and y have shape (3,)
@@ -163,8 +164,8 @@ To project M points into N WCSs, use reshaping to trigger broadcasting.
 # 3 WCS instances -> shape (3, 1)
 # 5 points -> shape (1, 5)
 
-ra_points = np.array([45, 46, 47, 48, 49])
-dec_points = np.full(5, 30.0)
+ra_points = np.radians(np.array([45, 46, 47, 48, 49]))
+dec_points = np.radians(np.full(5, 30.0))
 
 # Reshape input for broadcasting
 # wcs_array internal crvals are shape (3,)

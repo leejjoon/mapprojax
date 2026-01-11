@@ -23,8 +23,11 @@ class WCSBase(ABC):
         pass
         
     def proj(self, ra, dec):
+        """
+        Forward projection: Celestial (radians) -> Pixel coordinates.
+        """
         # 1. Spherical -> Cartesian (Celestial)
-        xc, yc, zc = radec_to_xyz(np.radians(ra), np.radians(dec))
+        xc, yc, zc = radec_to_xyz(ra, dec)
         
         # 2. Celestial -> Native (Rotation)
         # v_n = M * v_c
@@ -64,6 +67,9 @@ class WCSBase(ABC):
         return x_img, y_img
 
     def unproj(self, x, y):
+        """
+        Inverse projection: Pixel coordinates -> Celestial (radians).
+        """
         x = np.asarray(x)
         y = np.asarray(y)
         
@@ -84,7 +90,7 @@ class WCSBase(ABC):
         
         # 4. Cartesian -> Spherical
         ra_rad, dec_rad = xyz_to_radec(xc, yc, zc)
-        return np.degrees(ra_rad), np.degrees(dec_rad)
+        return ra_rad, dec_rad
 
     def to_dict(self):
         """Basic serialization helper."""
@@ -134,6 +140,10 @@ class WCSArrayBase(ABC):
         pass
 
     def proj(self, ra, dec):
+        """
+        Forward projection: Celestial (radians) -> Pixel coordinates.
+        Supports broadcasting.
+        """
         # Broadcasting strategy:
         # Input RA/Dec shape: S_in
         # WCS Array shape: S_wcs (from crvals)
@@ -158,7 +168,7 @@ class WCSArrayBase(ABC):
         # xn shape will be broadcast(S_wcs, S_in).
         # This works naturally with NumPy broadcasting!
         
-        xc, yc, zc = radec_to_xyz(np.radians(ra), np.radians(dec))
+        xc, yc, zc = radec_to_xyz(ra, dec)
         
         # apply_rotation expects matrix (3, 3, ...). 
         # It accesses matrix[0,0] which gives shape S_wcs.
@@ -185,6 +195,10 @@ class WCSArrayBase(ABC):
         return x_img, y_img
 
     def unproj(self, x, y):
+        """
+        Inverse projection: Pixel coordinates -> Celestial (radians).
+        Supports broadcasting.
+        """
         x = np.asarray(x)
         y = np.asarray(y)
         
@@ -199,7 +213,7 @@ class WCSArrayBase(ABC):
         xc, yc, zc = apply_rotation_transpose(self.r_matrices, xn, yn, zn)
         
         ra_rad, dec_rad = xyz_to_radec(xc, yc, zc)
-        return np.degrees(ra_rad), np.degrees(dec_rad)
+        return ra_rad, dec_rad
 
     def to_dict(self):
         return {
