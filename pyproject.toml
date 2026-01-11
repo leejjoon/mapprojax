@@ -19,6 +19,7 @@ classifiers = [
 
 [project.optional-dependencies]
 serialization = ["asdf"]
+test = ["pytest"]
 
 [project.entry-points]
 "asdf.extensions" = { mapprojax = "mapprojax.io.asdf.extension:get_extensions" }
