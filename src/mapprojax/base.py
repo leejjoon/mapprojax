@@ -3,14 +3,16 @@ import numpy as np
 from .utils import radec_to_xyz, xyz_to_radec, rotation_matrix, apply_rotation, apply_rotation_transpose
 
 class WCSBase(ABC):
+    xp = np
+
     def __init__(self, crpix, cd, crval):
-        self.crpix = np.array(crpix, dtype=float)
-        self.cd = np.array(cd, dtype=float)
-        self.crval = np.array(crval, dtype=float)
+        self.crpix = self.xp.array(crpix, dtype=float)
+        self.cd = self.xp.array(cd, dtype=float)
+        self.crval = self.xp.array(crval, dtype=float)
         
         # Precompute rotation matrix
         # crval is (lon, lat)
-        self.r_matrix = rotation_matrix(np.radians(self.crval[0]), np.radians(self.crval[1]))
+        self.r_matrix = rotation_matrix(self.xp.radians(self.crval[0]), self.xp.radians(self.crval[1]), xp=self.xp)
 
     @abstractmethod
     def _native_to_plane(self, xn, yn, zn):
@@ -27,7 +29,7 @@ class WCSBase(ABC):
         Forward projection: Celestial (radians) -> Pixel coordinates.
         """
         # 1. Spherical -> Cartesian (Celestial)
-        xc, yc, zc = radec_to_xyz(ra, dec)
+        xc, yc, zc = radec_to_xyz(ra, dec, xp=self.xp)
         
         # 2. Celestial -> Native (Rotation)
         # v_n = M * v_c
@@ -46,8 +48,8 @@ class WCSBase(ABC):
         # (x_img - crpix) = CD_inv * (Xp, Yp)
         
         try:
-            cd_inv = np.linalg.inv(self.cd)
-        except np.linalg.LinAlgError:
+            cd_inv = self.xp.linalg.inv(self.cd)
+        except self.xp.linalg.LinAlgError:
             raise ValueError("CD matrix is singular/non-invertible")
             
         # Linear algebra:
@@ -70,8 +72,8 @@ class WCSBase(ABC):
         """
         Inverse projection: Pixel coordinates -> Celestial (radians).
         """
-        x = np.asarray(x)
-        y = np.asarray(y)
+        x = self.xp.asarray(x)
+        y = self.xp.asarray(y)
         
         # 1. Pixel -> Plane (Linear)
         # (Xp, Yp) = CD * (x_img - crpix)
@@ -89,7 +91,7 @@ class WCSBase(ABC):
         xc, yc, zc = apply_rotation_transpose(self.r_matrix, xn, yn, zn)
         
         # 4. Cartesian -> Spherical
-        ra_rad, dec_rad = xyz_to_radec(xc, yc, zc)
+        ra_rad, dec_rad = xyz_to_radec(xc, yc, zc, xp=self.xp)
         return ra_rad, dec_rad
 
     def to_dict(self):
@@ -111,13 +113,15 @@ class WCSBase(ABC):
 
 
 class WCSArrayBase(ABC):
+    xp = np
+
     def __init__(self, crpix, cd, crvals):
-        self.crpix = np.array(crpix, dtype=float)
-        self.cd = np.array(cd, dtype=float)
+        self.crpix = self.xp.array(crpix, dtype=float)
+        self.cd = self.xp.array(cd, dtype=float)
         
         # crvals is expected to be (ra_array, dec_array) or similar
         # shape: (2, N) or tuple of arrays
-        ra_arr, dec_arr = np.asarray(crvals[0]), np.asarray(crvals[1])
+        ra_arr, dec_arr = self.xp.asarray(crvals[0]), self.xp.asarray(crvals[1])
         if ra_arr.shape != dec_arr.shape:
              raise ValueError("RA and Dec arrays in crvals must have same shape")
              
@@ -128,7 +132,7 @@ class WCSArrayBase(ABC):
         # Let's check our utils implementation.
         # In utils.py, we constructed it manually. 
         # If inputs are arrays shape S, the resulting 'mat' has shape (3, 3, S).
-        self.r_matrices = rotation_matrix(np.radians(ra_arr), np.radians(dec_arr))
+        self.r_matrices = rotation_matrix(self.xp.radians(ra_arr), self.xp.radians(dec_arr), xp=self.xp)
         # Shape is (3, 3) + crval_shape
 
     @abstractmethod
@@ -168,7 +172,7 @@ class WCSArrayBase(ABC):
         # xn shape will be broadcast(S_wcs, S_in).
         # This works naturally with NumPy broadcasting!
         
-        xc, yc, zc = radec_to_xyz(ra, dec)
+        xc, yc, zc = radec_to_xyz(ra, dec, xp=self.xp)
         
         # apply_rotation expects matrix (3, 3, ...). 
         # It accesses matrix[0,0] which gives shape S_wcs.
@@ -182,8 +186,8 @@ class WCSArrayBase(ABC):
         # CD is (2,2) constant for all WCS.
         # Xp, Yp shape is broadcast(S_wcs, S_in).
         try:
-            cd_inv = np.linalg.inv(self.cd)
-        except np.linalg.LinAlgError:
+            cd_inv = self.xp.linalg.inv(self.cd)
+        except self.xp.linalg.LinAlgError:
             raise ValueError("CD matrix is singular")
             
         x_diff = cd_inv[0,0] * Xp + cd_inv[0,1] * Yp
@@ -199,8 +203,8 @@ class WCSArrayBase(ABC):
         Inverse projection: Pixel coordinates -> Celestial (radians).
         Supports broadcasting.
         """
-        x = np.asarray(x)
-        y = np.asarray(y)
+        x = self.xp.asarray(x)
+        y = self.xp.asarray(y)
         
         x_diff = x - self.crpix[0]
         y_diff = y - self.crpix[1]
@@ -212,13 +216,13 @@ class WCSArrayBase(ABC):
         
         xc, yc, zc = apply_rotation_transpose(self.r_matrices, xn, yn, zn)
         
-        ra_rad, dec_rad = xyz_to_radec(xc, yc, zc)
+        ra_rad, dec_rad = xyz_to_radec(xc, yc, zc, xp=self.xp)
         return ra_rad, dec_rad
 
     def to_dict(self):
         return {
             'crpix': self.crpix.tolist(),
             'cd': self.cd.tolist(),
-            'crvals': [np.asarray(c).tolist() for c in self.crvals],
+            'crvals': [self.xp.asarray(c).tolist() for c in self.crvals],
             'type': self.__class__.__name__
         }

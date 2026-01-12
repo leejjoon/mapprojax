@@ -1,36 +1,36 @@
 import numpy as np
 
-def radec_to_xyz(ra_rad, dec_rad):
+def radec_to_xyz(ra_rad, dec_rad, xp=np):
     """
     Convert RA/Dec (radians) to unit vector (x, y, z).
     """
     ra = ra_rad
     dec = dec_rad
     
-    cos_dec = np.cos(dec)
-    x = cos_dec * np.cos(ra)
-    y = cos_dec * np.sin(ra)
-    z = np.sin(dec)
+    cos_dec = xp.cos(dec)
+    x = cos_dec * xp.cos(ra)
+    y = cos_dec * xp.sin(ra)
+    z = xp.sin(dec)
     return x, y, z
 
-def xyz_to_radec(x, y, z):
+def xyz_to_radec(x, y, z, xp=np):
     """
     Convert unit vector (x, y, z) to RA/Dec (radians).
     """
-    dist = np.sqrt(x*x + y*y + z*z)
+    dist = xp.sqrt(x*x + y*y + z*z)
     # Avoid division by zero
     # If dist is effectively zero, just return 0,0 (or handle gracefully)
     # But usually these are unit vectors.
     
-    dec = np.arcsin(z / dist)
-    ra = np.arctan2(y, x)
+    dec = xp.arcsin(z / dist)
+    ra = xp.arctan2(y, x)
     
     # Normalize RA to [0, 2*pi)
     ra = ra % (2 * np.pi)
     
     return ra, dec
 
-def rotation_matrix(lon_rad, lat_rad):
+def rotation_matrix(lon_rad, lat_rad, xp=np):
     """
     Generate the rotation matrix M that rotates a celestial vector
     into the native frame (where center is (1,0,0)).
@@ -47,10 +47,10 @@ def rotation_matrix(lon_rad, lat_rad):
     """
     p = lat_rad # phi
     
-    cos_l = np.cos(lon_rad)
-    sin_l = np.sin(lon_rad)
-    cos_p = np.cos(p)
-    sin_p = np.sin(p)
+    cos_l = xp.cos(lon_rad)
+    sin_l = xp.sin(lon_rad)
+    cos_p = xp.cos(p)
+    sin_p = xp.sin(p)
     
     # Row 0
     m00 = cos_p * cos_l
@@ -60,7 +60,7 @@ def rotation_matrix(lon_rad, lat_rad):
     # Row 1
     m10 = -sin_l
     m11 = cos_l
-    m12 = np.zeros_like(lon_rad)
+    m12 = xp.zeros_like(lon_rad)
     
     # Row 2
     m20 = -sin_p * cos_l
@@ -78,7 +78,7 @@ def rotation_matrix(lon_rad, lat_rad):
     # Let's align with what we need.
     
     # If we construct it simply:
-    mat = np.array([
+    mat = xp.array([
         [m00, m01, m02],
         [m10, m11, m12],
         [m20, m21, m22]

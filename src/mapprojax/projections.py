@@ -10,7 +10,7 @@ class TanMixin:
         return y / x, z / x
 
     def _plane_to_native(self, X, Y):
-        r = np.sqrt(1 + X**2 + Y**2)
+        r = self.xp.sqrt(1 + X**2 + Y**2)
         # x = 1/r, y = X/r, z = Y/r
         return 1.0/r, X/r, Y/r
 
@@ -29,7 +29,7 @@ class SinMixin:
         # Use np.sqrt handling negative values -> nan
         
         # To avoid RuntimeWarning for invalid pixels, we might mask, but raw numpy is requested
-        x = np.sqrt(1 - r2) 
+        x = self.xp.sqrt(1 - r2) 
         # y = X, z = Y
         return x, X, Y
 
