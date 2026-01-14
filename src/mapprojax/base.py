@@ -1,14 +1,16 @@
 from abc import ABC, abstractmethod
 import numpy as np
 from .utils import radec_to_xyz, xyz_to_radec, rotation_matrix, apply_rotation, apply_rotation_transpose
+from .sip import Sip
 
 class WCSBase(ABC):
     xp = np
 
-    def __init__(self, crpix, cd, crval):
+    def __init__(self, crpix, cd, crval, sip=None):
         self.crpix = self.xp.array(crpix, dtype=float)
         self.cd = self.xp.array(cd, dtype=float)
         self.crval = self.xp.array(crval, dtype=float)
+        self.sip = sip
         
         # Precompute rotation matrix
         # crval is (lon, lat)
@@ -32,7 +34,7 @@ class WCSBase(ABC):
         # 2. Native -> Plane (Projection specific)
         Xp, Yp = self._native_to_plane(xn, yn, zn)
         
-        # 3. Plane -> Pixel (Linear)
+        # 3. Plane -> Pixel (Linear + Distortion)
         # Xp, Yp from projections are in radians (dimensionless ratios).
         # FITS CD matrix is usually in degrees.
         Xp_deg = self.xp.degrees(Xp)
@@ -43,11 +45,14 @@ class WCSBase(ABC):
         except self.xp.linalg.LinAlgError:
             raise ValueError("CD matrix is singular/non-invertible")
             
-        x_diff = cd_inv[0,0] * Xp_deg + cd_inv[0,1] * Yp_deg
-        y_diff = cd_inv[1,0] * Xp_deg + cd_inv[1,1] * Yp_deg
+        U = cd_inv[0,0] * Xp_deg + cd_inv[0,1] * Yp_deg
+        V = cd_inv[1,0] * Xp_deg + cd_inv[1,1] * Yp_deg
         
-        x_img = x_diff + self.crpix[0]
-        y_img = y_diff + self.crpix[1]
+        if self.sip is not None:
+             U, V = self.sip.foc_to_pix(U, V, xp=self.xp)
+        
+        x_img = U + self.crpix[0]
+        y_img = V + self.crpix[1]
         
         return x_img, y_img
 
@@ -59,13 +64,15 @@ class WCSBase(ABC):
         x = self.xp.asarray(x)
         y = self.xp.asarray(y)
         
-        # 1. Pixel -> Plane (Linear)
-        # (Xp, Yp) = CD * (x_img - crpix)
-        x_diff = x - self.crpix[0]
-        y_diff = y - self.crpix[1]
+        # 1. Pixel -> Plane (Linear + Distortion)
+        u = x - self.crpix[0]
+        v = y - self.crpix[1]
         
-        Xp_deg = self.cd[0,0] * x_diff + self.cd[0,1] * y_diff
-        Yp_deg = self.cd[1,0] * x_diff + self.cd[1,1] * y_diff
+        if self.sip is not None:
+             u, v = self.sip.pix_to_foc(u, v, xp=self.xp)
+        
+        Xp_deg = self.cd[0,0] * u + self.cd[0,1] * v
+        Yp_deg = self.cd[1,0] * u + self.cd[1,1] * v
         
         # 2. Plane -> Native (Projection specific)
         # Convert to radians for projection logic
@@ -117,24 +124,24 @@ class WCSBase(ABC):
             'crpix': self.crpix.tolist(),
             'cd': self.cd.tolist(),
             'crval': self.crval.tolist(),
+            'sip': self.sip.to_dict() if self.sip else None,
             'type': self.__class__.__name__
         }
     
     @classmethod
     def from_dict(cls, data):
-        # This needs to be handled by the specific subclass or a factory
-        # For now, we assume calling on correct class
-        return cls(data['crpix'], data['cd'], data['crval'])
-    
-    # ASDF and Custom Binary hooks can be added here or in subclasses
+        sip_data = data.get('sip')
+        sip = Sip.from_dict(sip_data) if sip_data else None
+        return cls(data['crpix'], data['cd'], data['crval'], sip=sip)
 
 
 class WCSArrayBase(ABC):
     xp = np
 
-    def __init__(self, crpix, cd, crvals):
+    def __init__(self, crpix, cd, crvals, sip=None):
         self.crpix = self.xp.array(crpix, dtype=float)
         self.cd = self.xp.array(cd, dtype=float)
+        self.sip = sip
         
         # crvals is expected to be (ra_array, dec_array) or similar
         # shape: (2, N) or tuple of arrays
@@ -145,10 +152,6 @@ class WCSArrayBase(ABC):
         self.crvals = (ra_arr, dec_arr)
         
         # Precompute rotation matrices for all crvals
-        # rotation_matrix util returns (3, 3, ...) if input is array?
-        # Let's check our utils implementation.
-        # In utils.py, we constructed it manually. 
-        # If inputs are arrays shape S, the resulting 'mat' has shape (3, 3, S).
         self.r_matrices = rotation_matrix(self.xp.radians(ra_arr), self.xp.radians(dec_arr), xp=self.xp)
         # Shape is (3, 3) + crval_shape
 
@@ -175,11 +178,14 @@ class WCSArrayBase(ABC):
         except self.xp.linalg.LinAlgError:
             raise ValueError("CD matrix is singular")
             
-        x_diff = cd_inv[0,0] * Xp_deg + cd_inv[0,1] * Yp_deg
-        y_diff = cd_inv[1,0] * Xp_deg + cd_inv[1,1] * Yp_deg
+        U = cd_inv[0,0] * Xp_deg + cd_inv[0,1] * Yp_deg
+        V = cd_inv[1,0] * Xp_deg + cd_inv[1,1] * Yp_deg
         
-        x_img = x_diff + self.crpix[0]
-        y_img = y_diff + self.crpix[1]
+        if self.sip is not None:
+             U, V = self.sip.foc_to_pix(U, V, xp=self.xp)
+             
+        x_img = U + self.crpix[0]
+        y_img = V + self.crpix[1]
         
         return x_img, y_img
 
@@ -191,11 +197,14 @@ class WCSArrayBase(ABC):
         x = self.xp.asarray(x)
         y = self.xp.asarray(y)
         
-        x_diff = x - self.crpix[0]
-        y_diff = y - self.crpix[1]
+        u = x - self.crpix[0]
+        v = y - self.crpix[1]
         
-        Xp_deg = self.cd[0,0] * x_diff + self.cd[0,1] * y_diff
-        Yp_deg = self.cd[1,0] * x_diff + self.cd[1,1] * y_diff
+        if self.sip is not None:
+             u, v = self.sip.pix_to_foc(u, v, xp=self.xp)
+             
+        Xp_deg = self.cd[0,0] * u + self.cd[0,1] * v
+        Yp_deg = self.cd[1,0] * u + self.cd[1,1] * v
         
         Xp_rad = self.xp.radians(Xp_deg)
         Yp_rad = self.xp.radians(Yp_deg)
@@ -241,5 +250,6 @@ class WCSArrayBase(ABC):
             'crpix': self.crpix.tolist(),
             'cd': self.cd.tolist(),
             'crvals': [self.xp.asarray(c).tolist() for c in self.crvals],
+            'sip': self.sip.to_dict() if self.sip else None,
             'type': self.__class__.__name__
         }
