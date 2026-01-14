@@ -1,3 +1,13 @@
+"""
+Benchmark: Broad-scale Coordinate Transformation Efficiency
+
+Tests:
+    Comparision of raw throughput for high-volume coordinate mapping (10 million total transformations)
+    between NumPy (f64), JAX Standard (f64), and JAX Mixed Precision.
+
+Workload:
+    Broadcasts 100,000 celestial points against 100 separate WCS definitions.
+"""
 import time
 import numpy as np
 import jax

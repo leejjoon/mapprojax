@@ -1,3 +1,15 @@
+"""
+Benchmark: Memory Scalability and Tiling Overhead
+
+Tests:
+    Evaluates the trade-off between full vectorization (`block_size=None`) and sequential 
+    chunked processing for the `adaptive_reproject` algorithm. 
+    Crucial for identifying optimal strategies to avoid OOM on large images or limited memory hardware.
+
+Workload:
+    Executes the full adaptive reprojection pipeline (Jacobians, SVD, Convolution) 
+    on images of varying sizes (1k, 2k, 4k).
+"""
 import time
 import jax
 import jax.numpy as jnp

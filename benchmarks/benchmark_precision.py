@@ -1,3 +1,13 @@
+"""
+Benchmark: Performance Scaling with Resolution
+
+Tests:
+    Evaluates how JAX-accelerated geometric mapping scales with data volume compared 
+    to standard NumPy implementations across image resolutions from 512x512 to 8192x8192.
+    
+Comparison:
+    NumPy (f64) vs. JAX Standard (f64) vs. JAX Mixed Precision (Opt).
+"""
 import time
 import jax
 import jax.numpy as jnp

@@ -1,3 +1,15 @@
+"""
+Benchmark: Geometric Optimization Paths
+
+Tests:
+    Compares the efficiency of different coordinate transformation pipelines:
+    1. Full (RA/Dec): Standard path via spherical coordinates.
+    2. XYZ (Vector): Direct path using unit vectors (skipping trigonometry).
+    3. Optimized (Rot): Manually fused rotation matrices.
+
+Goal:
+    Demonstrate the significant speedup achieved by the XYZ path.
+"""
 import time
 import jax
 import jax.numpy as jnp
