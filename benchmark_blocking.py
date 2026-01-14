@@ -2,7 +2,7 @@ import time
 import jax
 import jax.numpy as jnp
 import numpy as np
-from mapprojax.jax_projections import TanJax, SinJax
+from mapprojax import TanJaxMixed, SinJaxMixed
 from mapprojax.adaptive import adaptive_reproject
 
 # Enable x64 globally for JAX
@@ -11,9 +11,10 @@ jax.config.update("jax_enable_x64", True)
 def run_benchmark():
     backend = jax.devices()[0].platform.upper()
     print(f"JAX Backend: {backend}")
+    print("Using Mixed Precision (f32 for pixel/native, f64 for celestial)")
 
     # Image sizes to test
-    image_sizes = [4096, 8192]
+    image_sizes = [1024, 2048, 4096]
     
     # Block sizes to test
     # None = Full Vectorization
@@ -26,9 +27,9 @@ def run_benchmark():
     cd = [[-0.0001, 0.0], [0.0, 0.0001]] 
     crval = [45.0, 30.0]
 
-    # Setup WCS (Reusing standard objects)
-    wcs_src = SinJax(crpix, cd, crval)
-    wcs_tgt = TanJax(crpix, cd, crval)
+    # Setup WCS (Using Mixed Precision objects)
+    wcs_src = SinJaxMixed(crpix, cd, crval)
+    wcs_tgt = TanJaxMixed(crpix, cd, crval)
 
     # Transform function (Optimized XYZ path)
     def transform(x, y):
@@ -40,12 +41,8 @@ def run_benchmark():
 
     for N in image_sizes:
         shape = (N, N)
-        # Create dummy input image
-        # We don't need real data, just the shape/memory footprint
-        # Use simple gradient
-        # Note: Allocating 8k x 8k float64 array is 512MB.
-        # JAX handles lazy allocation often, but let's be real.
-        data_in = jnp.zeros(shape, dtype=jnp.float64)
+        # Create dummy input image in f32
+        data_in = jnp.zeros(shape, dtype=jnp.float32)
         
         for b_size, b_label in zip(block_sizes, block_labels):
             
