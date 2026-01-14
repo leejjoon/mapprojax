@@ -24,14 +24,11 @@ class WCSBase(ABC):
         """Map projection plane (X, Y) to native unit vector (xn, yn, zn)."""
         pass
 
-    def proj_xyz(self, x, y, z):
+    def native_to_pix(self, xn, yn, zn):
         """
-        Forward projection: Celestial unit vector -> Pixel coordinates.
+        Map native unit vector to pixel coordinates.
+        Does NOT apply the celestial rotation.
         """
-        # 1. Celestial -> Native (Rotation)
-        # v_n = M * v_c
-        xn, yn, zn = apply_rotation(self.r_matrix, x, y, z)
-        
         # 2. Native -> Plane (Projection specific)
         Xp, Yp = self._native_to_plane(xn, yn, zn)
         
@@ -53,19 +50,11 @@ class WCSBase(ABC):
         y_img = y_diff + self.crpix[1]
         
         return x_img, y_img
-        
-    def proj(self, ra, dec):
-        """
-        Forward projection: Celestial (radians) -> Pixel coordinates.
-        """
-        # 1. Spherical -> Cartesian (Celestial)
-        xc, yc, zc = radec_to_xyz(ra, dec, xp=self.xp)
-        
-        return self.proj_xyz(xc, yc, zc)
 
-    def unproj_xyz(self, x, y):
+    def pix_to_native(self, x, y):
         """
-        Inverse projection: Pixel coordinates -> Celestial unit vector.
+        Map pixel coordinates to native unit vector.
+        Does NOT apply the celestial rotation.
         """
         x = self.xp.asarray(x)
         y = self.xp.asarray(y)
@@ -83,13 +72,34 @@ class WCSBase(ABC):
         Xp_rad = self.xp.radians(Xp_deg)
         Yp_rad = self.xp.radians(Yp_deg)
         
-        xn, yn, zn = self._plane_to_native(Xp_rad, Yp_rad)
+        return self._plane_to_native(Xp_rad, Yp_rad)
+
+    def proj_xyz(self, x, y, z):
+        """
+        Forward projection: Celestial unit vector -> Pixel coordinates.
+        """
+        # 1. Celestial -> Native (Rotation)
+        # v_n = M * v_c
+        xn, yn, zn = apply_rotation(self.r_matrix, x, y, z)
+        return self.native_to_pix(xn, yn, zn)
+        
+    def proj(self, ra, dec):
+        """
+        Forward projection: Celestial (radians) -> Pixel coordinates.
+        """
+        # 1. Spherical -> Cartesian (Celestial)
+        xc, yc, zc = radec_to_xyz(ra, dec, xp=self.xp)
+        return self.proj_xyz(xc, yc, zc)
+
+    def unproj_xyz(self, x, y):
+        """
+        Inverse projection: Pixel coordinates -> Celestial unit vector.
+        """
+        xn, yn, zn = self.pix_to_native(x, y)
         
         # 3. Native -> Celestial (Inverse Rotation)
         # v_c = M.T * v_n
-        xc, yc, zc = apply_rotation_transpose(self.r_matrix, xn, yn, zn)
-        
-        return xc, yc, zc
+        return apply_rotation_transpose(self.r_matrix, xn, yn, zn)
 
     def unproj(self, x, y):
         """
@@ -150,22 +160,13 @@ class WCSArrayBase(ABC):
     def _plane_to_native(self, X, Y):
         pass
 
-    def proj_xyz(self, x, y, z):
+    def native_to_pix(self, xn, yn, zn):
         """
-        Forward projection: Celestial unit vector -> Pixel coordinates.
-        Supports broadcasting.
+        Map native unit vector to pixel coordinates.
+        Does NOT apply celestial rotation.
         """
-        # apply_rotation expects matrix (3, 3, ...). 
-        # It accesses matrix[0,0] which gives shape S_wcs.
-        # It multiplies by x which has shape S_in.
-        # Result shape: broadcast(S_wcs, S_in).
-        xn, yn, zn = apply_rotation(self.r_matrices, x, y, z)
-        
         Xp, Yp = self._native_to_plane(xn, yn, zn)
         
-        # Linear transform part
-        # CD is (2,2) constant for all WCS.
-        # Convert Xp, Yp (radians) to degrees for CD matrix
         Xp_deg = self.xp.degrees(Xp)
         Yp_deg = self.xp.degrees(Yp)
         
@@ -182,6 +183,33 @@ class WCSArrayBase(ABC):
         
         return x_img, y_img
 
+    def pix_to_native(self, x, y):
+        """
+        Map pixel coordinates to native unit vector.
+        Does NOT apply celestial rotation.
+        """
+        x = self.xp.asarray(x)
+        y = self.xp.asarray(y)
+        
+        x_diff = x - self.crpix[0]
+        y_diff = y - self.crpix[1]
+        
+        Xp_deg = self.cd[0,0] * x_diff + self.cd[0,1] * y_diff
+        Yp_deg = self.cd[1,0] * x_diff + self.cd[1,1] * y_diff
+        
+        Xp_rad = self.xp.radians(Xp_deg)
+        Yp_rad = self.xp.radians(Yp_deg)
+        
+        return self._plane_to_native(Xp_rad, Yp_rad)
+
+    def proj_xyz(self, x, y, z):
+        """
+        Forward projection: Celestial unit vector -> Pixel coordinates.
+        Supports broadcasting.
+        """
+        xn, yn, zn = apply_rotation(self.r_matrices, x, y, z)
+        return self.native_to_pix(xn, yn, zn)
+
     def proj(self, ra, dec):
         """
         Forward projection: Celestial (radians) -> Pixel coordinates.
@@ -195,24 +223,8 @@ class WCSArrayBase(ABC):
         Inverse projection: Pixel coordinates -> Celestial unit vector.
         Supports broadcasting.
         """
-        x = self.xp.asarray(x)
-        y = self.xp.asarray(y)
-        
-        x_diff = x - self.crpix[0]
-        y_diff = y - self.crpix[1]
-        
-        Xp_deg = self.cd[0,0] * x_diff + self.cd[0,1] * y_diff
-        Yp_deg = self.cd[1,0] * x_diff + self.cd[1,1] * y_diff
-        
-        # Convert to radians for projection logic
-        Xp_rad = self.xp.radians(Xp_deg)
-        Yp_rad = self.xp.radians(Yp_deg)
-        
-        xn, yn, zn = self._plane_to_native(Xp_rad, Yp_rad)
-        
-        xc, yc, zc = apply_rotation_transpose(self.r_matrices, xn, yn, zn)
-        
-        return xc, yc, zc
+        xn, yn, zn = self.pix_to_native(x, y)
+        return apply_rotation_transpose(self.r_matrices, xn, yn, zn)
 
     def unproj(self, x, y):
         """
