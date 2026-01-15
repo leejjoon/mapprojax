@@ -10,59 +10,7 @@ import jax.numpy as jnp
 from mapprojax.projections import Tan
 from mapprojax.jax_projections import TanJax
 from mapprojax.sip import Sip
-
-def parse_sip_matrix(header, prefix, order_key):
-    if order_key not in header:
-        return None
-    
-    order = header[order_key]
-    matrix = np.zeros((order + 1, order + 1))
-    
-    for i in range(order + 1):
-        for j in range(order + 1):
-            key = f"{prefix}_{i}_{j}"
-            if key in header:
-                matrix[i, j] = header[key]
-                
-    return matrix
-
-def load_wcs_from_json(json_path):
-    with open(json_path, 'r') as f:
-        data = json.load(f)
-        
-    header = data['header_keywords']
-    
-    # 1. Parse SIP
-    a = parse_sip_matrix(header, 'A', 'A_ORDER')
-    b = parse_sip_matrix(header, 'B', 'B_ORDER')
-    ap = parse_sip_matrix(header, 'AP', 'AP_ORDER')
-    bp = parse_sip_matrix(header, 'BP', 'BP_ORDER')
-    
-    sip = Sip(a=a, b=b, ap=ap, bp=bp)
-    
-    # 2. Parse Linear WCS
-    # CRPIX: FITS (1-based) -> Python (0-based)
-    crpix = [header['CRPIX1'] - 1.0, header['CRPIX2'] - 1.0]
-    
-    # CRVAL
-    crval = [header['CRVAL1'], header['CRVAL2']]
-    
-    # CD Matrix
-    # If PC_i_j and CDELT_i are present
-    cdelt1 = header.get('CDELT1', 1.0)
-    cdelt2 = header.get('CDELT2', 1.0)
-    
-    pc1_1 = header.get('PC1_1', 1.0)
-    pc1_2 = header.get('PC1_2', 0.0)
-    pc2_1 = header.get('PC2_1', 0.0)
-    pc2_2 = header.get('PC2_2', 1.0)
-    
-    cd = [
-        [cdelt1 * pc1_1, cdelt1 * pc1_2],
-        [cdelt2 * pc2_1, cdelt2 * pc2_2]
-    ]
-    
-    return crpix, cd, crval, sip, data
+from mapprojax.wcs_utils import load_wcs_params_from_header
 
 def test_wcs_consistency_with_json():
     # Path relative to project root
@@ -71,7 +19,11 @@ def test_wcs_consistency_with_json():
     if not os.path.exists(json_path):
         pytest.skip(f"Test data not found at {json_path}")
         
-    crpix, cd, crval, sip, data = load_wcs_from_json(json_path)
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+        
+    # Use the utility to parse parameters from the header dictionary
+    crpix, cd, crval, sip = load_wcs_params_from_header(data['header_keywords'])
     
     # Instantiate WCS objects
     wcs_np = Tan(crpix, cd, crval, sip=sip)

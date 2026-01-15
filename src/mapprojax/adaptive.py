@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 
-@partial(jax.jit, static_argnames=['transform_func', 'output_shape', 'kernel', 'max_window_radius', 'block_size'])
+@partial(jax.jit, static_argnames=['transform_func', 'output_shape', 'kernel', 'max_window_radius', 'block_size', 'min_coverage'])
 def adaptive_reproject(
     image,
     transform_func,
@@ -10,8 +10,9 @@ def adaptive_reproject(
     kernel='gaussian',
     kernel_width=1.0,
     sample_region_width=4.0,
-    max_window_radius=20,
-    block_size=None
+    max_window_radius=5,
+    block_size=None,
+    min_coverage=0.5
 ):
     """
     Adaptive reprojection algorithm using JAX.
@@ -29,6 +30,11 @@ def adaptive_reproject(
         max_window_radius: Maximum radius (in input pixels) for the convolution window.
         block_size: Optional integer. Number of pixels to process in a single vectorized batch.
                     Use this to reduce memory usage for large images. If None, processes all pixels at once.
+        min_coverage: Minimum fraction of the kernel weight that must fall on valid (non-NaN) 
+                      input pixels to produce a valid output pixel. 
+                      0.0 means any overlap with valid data produces a result (can smear edges).
+                      1.0 means the kernel must be fully within valid data.
+                      Default 0.5.
     
     Returns:
         Reprojected image of shape output_shape.
@@ -128,10 +134,9 @@ def adaptive_reproject(
         dy_prime = J_inv[1, 0] * du + J_inv[1, 1] * dv
         
         # 8. Compute Weights
-        weights = get_kernel_weight(dx_prime, dy_prime)
+        raw_weights = get_kernel_weight(dx_prime, dy_prime)
         
         # Mask valid pixels (check original image bounds and ignore NaNs)
-        # Global coordinates
         global_v = v0_int - max_window_radius + win_v_idx
         global_u = u0_int - max_window_radius + win_u_idx
         
@@ -139,15 +144,19 @@ def adaptive_reproject(
         not_nan = ~jnp.isnan(window)
         valid_mask = in_bounds & not_nan
         
-        weights = weights * valid_mask
+        masked_weights = raw_weights * valid_mask
+        
+        total_possible_weight = jnp.sum(raw_weights)
+        valid_weight_sum = jnp.sum(masked_weights)
         
         # Compute weighted sum ignoring NaNs
-        # (Where valid_mask is False, weights is 0, so we use 0 to avoid NaN propagation)
-        weighted_sum = jnp.sum(jnp.where(valid_mask, window * weights, 0.0))
-        weight_total = jnp.sum(weights)
+        weighted_sum = jnp.sum(jnp.where(valid_mask, window * masked_weights, 0.0))
         
-        # Avoid division by zero
-        return jnp.where(weight_total > 1e-8, weighted_sum / weight_total, jnp.nan)
+        # Check coverage condition
+        # If total_possible_weight is 0 (e.g. kernel completely out of bounds?), result is NaN
+        coverage = jnp.where(total_possible_weight > 1e-8, valid_weight_sum / total_possible_weight, 0.0)
+        
+        return jnp.where(coverage >= min_coverage, weighted_sum / valid_weight_sum, jnp.nan)
 
     if block_size is None:
         # Standard full vectorization
