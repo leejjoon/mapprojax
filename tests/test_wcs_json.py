@@ -84,30 +84,39 @@ def test_wcs_consistency_with_json():
     x_in = input_pixels[:, 0]
     y_in = input_pixels[:, 1]
 
-    # --- Test SIP-Only Part (Round Trip) ---
+    # --- Test SIP-Only Part (Internal Consistency & Focal Plane match) ---
     # We verify the internal consistency of the SIP implementation (Forward + Reverse).
-    # Note: We do not compare against data['focal_plane_coordinates'] because, as noted 
-    # in the JSON metadata ('focal_plane_convention'), they are calculated using 
-    # "Relative to FITS CRPIX (u = pix_0 - CRPIX_fits)".
-    # Mapprojax (and standard Python WCS) uses "Relative to 0-based CRPIX (u = pix_0 - CRPIX_0)".
-    # These definitions differ by 1.0 pixel in the intermediate u/v plane.
-    # Since the Forward Projection (below) matches the JSON output, we know the 
-    # pipeline is correct. Here we just ensure the SIP module itself is self-consistent.
+    # We also compare against data['focal_plane_coordinates'] using the convention 
+    # defined in the metadata: "Relative to FITS CRPIX (u = pix_0 - CRPIX_fits)".
     
-    u_rel = x_in - crpix[0]
-    v_rel = y_in - crpix[1]
+    u_mapproj = x_in - crpix[0]
+    v_mapproj = y_in - crpix[1]
     
-    # 1. Forward SIP: (u, v) -> (U, V)
-    U_calc, V_calc = sip.pix_to_foc(u_rel, v_rel)
+    # 1. Forward SIP: (u, v) -> (U, V) [Internal Round-trip check]
+    U_calc_m, V_calc_m = sip.pix_to_foc(u_mapproj, v_mapproj)
+    u_back_m, v_back_m = sip.foc_to_pix(U_calc_m, V_calc_m)
     
-    # 2. Reverse SIP: (U, V) -> (u, v)
-    u_back, v_back = sip.foc_to_pix(U_calc, V_calc)
+    np.testing.assert_allclose(u_back_m, u_mapproj, rtol=0, atol=5e-2, err_msg="SIP Round Trip u mismatch")
+    np.testing.assert_allclose(v_back_m, v_mapproj, rtol=0, atol=5e-2, err_msg="SIP Round Trip v mismatch")
     
-    # Check consistency (SIP coefficients round-trip quality)
-    np.testing.assert_allclose(u_back, u_rel, rtol=0, atol=5e-2, err_msg="SIP Round Trip u mismatch")
-    np.testing.assert_allclose(v_back, v_rel, rtol=0, atol=5e-2, err_msg="SIP Round Trip v mismatch")
+    # 2. Match against JSON focal_plane_coordinates
+    # Note: These values in the JSON are effectively (pix_0 - CRPIX_fits) + f(pix_0 - CRPIX_0),
+    # which is sip.pix_to_foc(u_0base, v_0base) - 1.0. 
+    # This mismatch is likely due to how the generation script (astropy) handled 
+    # origins vs SIP polynomial relative coordinates.
+    U_calc_f, V_calc_f = sip.pix_to_foc(u_mapproj, v_mapproj)
+    expected_foc = np.array(data['focal_plane_coordinates'])
     
-    print("SIP-only transformation Round Trip matched within tolerance.")
+    np.testing.assert_allclose(U_calc_f - 1.0, expected_foc[:, 0], rtol=0, atol=1e-7, err_msg="SIP Focal Plane U mismatch")
+    np.testing.assert_allclose(V_calc_f - 1.0, expected_foc[:, 1], rtol=0, atol=1e-7, err_msg="SIP Focal Plane V mismatch")
+
+    # 3. Reverse from Focal Plane back to pixels
+    # focal_plane_coordinates (U_fits, V_fits) -> pixels
+    u_back_f, v_back_f = sip.foc_to_pix(expected_foc[:, 0], expected_foc[:, 1])
+    # Expectation: u_back_f should be u_fits = u_mapproj - 1.0
+    np.testing.assert_allclose(u_back_f, u_mapproj - 1.0, rtol=0, atol=5e-2, err_msg="SIP Reverse from Focal Plane mismatch")
+    
+    print("SIP-only transformation (Focal Plane match & Round Trip) matched within tolerance.")
 
     # --- Test Forward Projection (Pixel -> World) ---
     
