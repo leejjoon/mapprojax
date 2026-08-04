@@ -113,10 +113,143 @@ class WCSBase(ABC):
         Inverse projection: Pixel coordinates -> Celestial (radians).
         """
         xc, yc, zc = self.unproj_xyz(x, y)
-        
+
         # 4. Cartesian -> Spherical
         ra_rad, dec_rad = xyz_to_radec(xc, yc, zc, xp=self.xp)
         return ra_rad, dec_rad
+
+    def unproj_offset(self, x, y):
+        """Inverse projection: pixel -> small sky offset from CRVAL,
+        ``(Delta_alpha * cos(dec0), Delta_delta)`` (radians).
+
+        Unlike :meth:`unproj`, this never forms an absolute (O(1)) RA/Dec
+        value: every intermediate quantity here is field-of-view-sized,
+        computed via spherical trig (``fo64_report_and_plan.md`` Phase 2,
+        dfreproject-style), so this is accurate in float32 regardless of
+        ``jax_enable_x64`` -- see :meth:`unproj_absolute` for the O(1)
+        epilogue that recovers true RA/Dec, and DEVELOPER.md's Precision
+        Strategy section for why ``unproj``/``unproj_xyz`` need float64
+        but this does not.
+
+        The ``cos(dec0)`` scaling is the standard astrometric convention
+        (RA offsets compress toward the pole); it degenerates as CRVAL's
+        declination approaches +/-90 deg, same as any RA-based offset.
+
+        Returns
+        -------
+        dalpha_cosdec, ddelta : same shape as x, y
+        """
+        xn, yn, zn = self.pix_to_native(x, y)
+        p = self.xp.radians(self.crval[1])
+        cos_p, sin_p = self.xp.cos(p), self.xp.sin(p)
+
+        # w, zc: the native vector rotated by CRVAL's declination alone
+        # (no dependence on CRVAL's RA) -- safe to compute in fp32 since
+        # xn is O(1) (near the native pole) and yn/zn are field-sized, so
+        # this is "large + small", never a difference of two O(1) terms.
+        w = cos_p * xn - sin_p * zn
+        zc = sin_p * xn + cos_p * zn
+
+        # Delta_alpha = atan2(yn, w) is *exact* (not an approximation):
+        # yn = cos(delta)*sin(Delta_alpha) and w = cos(delta)*cos(Delta_alpha)
+        # are themselves exact identities, so their ratio's atan2 recovers
+        # Delta_alpha exactly modulo ordinary fp32 rounding -- no
+        # cancellation, regardless of field-center separation.
+        dalpha = self.xp.arctan2(yn, w)
+
+        # Delta_delta via the sin/cos-difference formulas, with cos(delta)
+        # recovered safely as hypot(yn, w) (exact; no cancellation) rather
+        # than sqrt(1 - zc**2). A naive "arcsin(zc) - dec0" would subtract
+        # two O(1) angles (recreating the exact problem this function
+        # exists to avoid); computing sin(Delta_delta)/cos(Delta_delta)
+        # this way and wrapping with atan2 keeps the fp32 error at the
+        # ~1e-7 rad floor (ordinary fp32 rounding) across separations from
+        # sub-degree to >45 deg, instead of growing with separation
+        # (measured: atan2(zn, xn) alone -- the naive small-angle
+        # shortcut -- grows to ~0.08 rad error by 20 deg; this formula
+        # stays ~1e-7).
+        cos_delta = self.xp.hypot(yn, w)
+        sin_ddelta = zc * cos_p - cos_delta * sin_p
+        cos_ddelta = cos_delta * cos_p + zc * sin_p
+        ddelta = self.xp.arctan2(sin_ddelta, cos_ddelta)
+
+        return dalpha * cos_p, ddelta
+
+    def unproj_absolute(self, x, y):
+        """Inverse projection: pixel -> true celestial (RA, Dec) in
+        radians, RA wrapped to ``[0, 2*pi)``.
+
+        The bulk math (:meth:`unproj_offset`) runs in whatever precision
+        ``self.xp`` gives it; only the final ``crval + offset`` add and
+        the ``% 2*pi`` wrap -- negligible cost -- need float64, which is
+        why this requires a NumPy-backed WCS (``Tan``/``Sin``): a JAX
+        WCS's own ``crval`` may already be truncated to float32 at
+        *construction* time if ``jax_enable_x64`` was off then, and this
+        method cannot recover precision that was already discarded.
+        """
+        if self.xp is not np:
+            raise TypeError(
+                "unproj_absolute requires a NumPy-backed WCS (e.g. Tan/Sin): "
+                "the float64 epilogue needs crval's true precision, and a JAX "
+                "WCS's crval may already be truncated to float32 (if "
+                "jax_enable_x64 was off when it was constructed) before this "
+                "method ever runs. Use unproj_offset directly if crval-scale "
+                "float64 doesn't matter for your use case."
+            )
+        dalpha_cosdec, ddelta = self.unproj_offset(x, y)
+        dec0 = np.radians(self.crval[1])
+        ra0 = np.radians(self.crval[0])
+        dalpha = dalpha_cosdec / np.cos(dec0)
+        ra = np.mod(ra0 + dalpha, 2 * np.pi)
+        dec = dec0 + ddelta
+        return ra, dec
+
+    def proj_offset(self, dalpha_cosdec, ddelta):
+        """Forward projection: a small sky offset from CRVAL,
+        ``(Delta_alpha * cos(dec0), Delta_delta)`` (radians) -> pixel
+        coordinates. Inverse of :meth:`unproj_offset`; see its docstring
+        for the accuracy/precision rationale.
+        """
+        p = self.xp.radians(self.crval[1])
+        cos_p, sin_p = self.xp.cos(p), self.xp.sin(p)
+        dalpha = dalpha_cosdec / cos_p
+
+        cos_dd, sin_dd = self.xp.cos(ddelta), self.xp.sin(ddelta)
+        cos_da, sin_da = self.xp.cos(dalpha), self.xp.sin(dalpha)
+
+        # Inverse of unproj_offset's rotation-by-dec0 step: cos(delta) and
+        # sin(delta) recovered via the safe sum formulas (large + small,
+        # since Delta_delta is field-sized), then rotated back by -dec0.
+        cos_delta = cos_p * cos_dd - sin_p * sin_dd
+        zc = sin_p * cos_dd + cos_p * sin_dd
+        w = cos_delta * cos_da
+        yn = cos_delta * sin_da
+        xn = w * cos_p + zc * sin_p
+        zn = -w * sin_p + zc * cos_p
+
+        return self.native_to_pix(xn, yn, zn)
+
+    def proj_absolute(self, ra, dec):
+        """Forward projection: true celestial (RA, Dec) in radians ->
+        pixel coordinates.
+
+        Wraps ``ra - ra0`` to ``(-pi, pi]`` in float64 (cheap, exact for
+        any input range including RA near the 0/2*pi boundary) before
+        handing the now-small offset to :meth:`proj_offset`'s float32
+        bulk math. See :meth:`unproj_absolute` for why this requires a
+        NumPy-backed WCS.
+        """
+        if self.xp is not np:
+            raise TypeError(
+                "proj_absolute requires a NumPy-backed WCS (e.g. Tan/Sin) -- "
+                "see unproj_absolute's docstring for why."
+            )
+        ra0 = np.radians(self.crval[0])
+        dec0 = np.radians(self.crval[1])
+        dalpha = np.mod(np.asarray(ra) - ra0 + np.pi, 2 * np.pi) - np.pi
+        ddelta = np.asarray(dec) - dec0
+        dalpha_cosdec = dalpha * np.cos(dec0)
+        return self.proj_offset(dalpha_cosdec, ddelta)
 
     def to_dict(self):
         """Basic serialization helper."""
