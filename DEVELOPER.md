@@ -181,6 +181,20 @@ One subtlety makes the fp32 native path work: the vector component along the bor
 
 The payoff is performance: fp32 halves memory bandwidth and is substantially faster on GPU/TPU (where fp64 throughput is often 1/32–1/64 of fp32), while the fp64 portion is just a 3×3 matrix–vector multiply per pixel — so the mixed classes deliver fp64-grade astrometry at close to fp32 cost.
 
+### Beyond the mixed classes: removing fp64 from the per-pixel path entirely
+
+The mixed classes still keep the celestial↔native rotation itself in fp64 — cheap (one 3×3 matmul per pixel), but it means `jax_enable_x64` must be on, and every per-pixel op after the upcast still touches an fp64 value. `fo64_report_and_plan.md` asked whether fp64 can be removed *entirely* from the per-pixel path, and worked through two of its four phases; this section is the decision tree for what to reach for. Full research/derivation/validation is in that document; measured numbers are in `docs/benchmarks/precision_results.md`.
+
+**Decision tree:**
+
+| Need | Use | Why |
+|---|---|---|
+| Reproject a pixel from one WCS to the corresponding pixel in another (the `reproject`-style use case) | **`mapprojax.reproject.Reprojector`** (Phase 1), `matrix_precision="f32"` (default) | Composes both WCSes' rotations into one matrix, once, in true float64 on the host — independent of `jax_enable_x64` — then runs the entire per-pixel path (`pix_to_native → apply that matrix → native_to_pix`) in float32. Fastest mode measured on both CPU and GPU (§ below); accurate to ~1e-3–1e-2 px for overlapping fields at typical plate scales, degrading with field-center separation and finer plate scales — see its docstring before trusting it for a wide-separation or sub-arcsecond-plate-scale pair. |
+| True absolute (RA, Dec) output from a single WCS, without requiring `jax_enable_x64` | **`WCSBase.unproj_offset`/`unproj_absolute`** (and `proj_offset`/`proj_absolute` for the inverse) (Phase 2) | Computes a small, field-of-view-sized sky offset from `crval` via spherical trig (never forming an O(1) RA/Dec value in the bulk math, so fp32 is safe), then adds it to `crval` in a cheap float64 epilogue. Requires a NumPy-backed WCS (`Tan`/`Sin`) for that epilogue — a JAX WCS's `crval` may already be truncated to float32 at construction time if `jax_enable_x64` was off then, and this can't retroactively fix that. |
+| Differentiate through the rotation with respect to `crval` itself, or need the full per-pixel `unproj_xyz`/`proj_xyz` (not a fused src→tgt map) on a datacenter GPU or CPU where fp64 is cheap (≤2x fp32, not 32–64x) | **`TanJaxMixed`/`SinJaxMixed`** (or the plain fp64 classes) | `Reprojector`'s rotation is precomputed outside JAX's trace, so it is *not* differentiable with respect to either WCS's `crval` — only `crpix`/`cd`/SIP coefficients remain differentiable through it. The mixed classes' rotation stays inside the trace. |
+| Anything above, but need to squeeze out fp64's residual quantization error at large separations or fine plate scales | *(nothing shipped)* | Phase 1's plan proposed a `matrix_precision="f32x2"` (hi/lo split matrix) for exactly this. Implemented and measured: it does not work — the `lo` correction is by construction smaller than the `hi` result's own float32 ULP, so a plain (or even Kahan-compensated) float32 add rounds it away regardless of matrix precision. Recovering it needs the value itself carried as a float32 hi/lo pair through the *entire* pipeline (true double-single/df64 arithmetic), which is Phase 3 — not implemented (only worth building if a concrete need appears; see the plan's own caveat about XLA reassociation breaking compensated-arithmetic assumptions, which is why JAX dropped its own `doubledouble` experiment). Until then, use the plain fp64 classes for this case. |
+| Never | Tensor-core fp64 emulation (bf16x9, Ozaki/cuBLAS math modes) | Ruled out in the plan's research: wrong accuracy target (bf16x9) or GEMM-only and slower than native at this operation's problem size (a memory-bound per-pixel 3×3 rotation, not a GEMM). |
+
 ## 5. Extending the Package
 
 ### Adding a New Projection
