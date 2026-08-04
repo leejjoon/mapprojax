@@ -171,15 +171,42 @@ class Reprojector:
         m_rel = compose_relative_rotation(wcs_src, wcs_tgt, frame_rotation=frame_rotation)
         self.m_rel = jnp.asarray(m_rel, dtype=self._dtype)
 
-    def pix_to_pix(self, x, y):
-        """Map pixel coordinates in ``wcs_src`` to the corresponding pixel
-        coordinates in ``wcs_tgt``.
+    @property
+    def tgt_leg(self):
+        """The ``wcs_tgt``-side leg object (exposes ``pix_to_native``,
+        ``native_to_pix``, ``crpix``, ``cd``, ``sip``, all at this
+        ``Reprojector``'s dtype) -- for callers that need to post-process
+        the native-frame vector themselves before finishing
+        ``native_to_pix`` (e.g. refining an approximate SIP inverse with
+        their own Newton iteration; that refinement is itself entirely in
+        the relative/native regime, so it composes cleanly with this
+        class's fp32 path). See also :meth:`pix_to_native_tgt`.
+        """
+        return self._tgt_leg
+
+    @property
+    def src_leg(self):
+        """The ``wcs_src``-side leg object. See :attr:`tgt_leg`."""
+        return self._src_leg
+
+    def pix_to_native_tgt(self, x, y):
+        """Map pixel coordinates in ``wcs_src`` to the native-frame unit
+        vector components ``(xn, yn, zn)`` in ``wcs_tgt``'s frame --
+        :meth:`pix_to_pix` stops one step short of this, returning
+        ``self.tgt_leg.native_to_pix(*this)``. Exposed for callers that
+        need that intermediate vector directly.
         """
         x = jnp.asarray(x, dtype=self._dtype)
         y = jnp.asarray(y, dtype=self._dtype)
 
         xn, yn, zn = self._src_leg.pix_to_native(x, y)
-        xt, yt, zt = apply_rotation(self.m_rel, xn, yn, zn)
+        return apply_rotation(self.m_rel, xn, yn, zn)
+
+    def pix_to_pix(self, x, y):
+        """Map pixel coordinates in ``wcs_src`` to the corresponding pixel
+        coordinates in ``wcs_tgt``.
+        """
+        xt, yt, zt = self.pix_to_native_tgt(x, y)
         return self._tgt_leg.native_to_pix(xt, yt, zt)
 
     def tree_flatten(self):
