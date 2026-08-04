@@ -130,7 +130,58 @@ wcs = Tan(crpix, cd, crval, sip=sip)
 ra, dec = wcs.unproj(x, y)
 ```
 
-## 4. Extending the Package
+## 4. Precision Strategy: Why fp64 (and Where fp32 Is Safe)
+
+The pipeline mixes fp64 and fp32 deliberately. The rule is:
+
+> **fp64 is required for anything carrying an *absolute* position on the celestial sphere** — `crval`, the rotation matrix built from it, the celestial↔native rotation (`apply_rotation` / `apply_rotation_transpose` in `utils.py`), and RA/Dec values themselves. **Everything on the other side of that rotation is safe in fp32** — the TAN/SIN projection formulas, the CD matrix, SIP polynomials, and `crpix` offsets — because those operate on coordinates *relative* to the projection center.
+
+The `MixedPrecisionWCSJaxMixin` / `MixedPrecisionWCSJaxArrayMixin` classes in `jax_base.py` implement exactly this split.
+
+### The dynamic-range argument
+
+Floating point has *relative* precision: fp32 gives ~7 significant digits (ε ≈ 1.2e-7) regardless of magnitude. What matters is the ratio between the magnitude of stored values and the absolute accuracy required.
+
+*   **Absolute sky coordinates** span the full sphere: unit-vector components are O(1), RA spans 0–2π. Sub-pixel astrometry needs absolute angular accuracy of ~1e-8–1e-9 rad (0.001–0.01″), i.e. a relative precision of ~1e-8 on an O(1) quantity — *below* fp32's ε. At best, fp32 quantizes a unit-vector direction to ~1.2e-7 rad ≈ 0.025″, and RA near 2π to ~0.15″. At a 3.6″/px plate scale that is a ~0.01 px error; at a modern 0.1″/px scale the same absolute error becomes ~0.4 px — unusable.
+*   **Native-frame coordinates** are offsets from the projection center: plane coordinates are field-of-view-sized (≤1e-2 rad), pixel offsets from `crpix` are ≤1e4. Because float precision is relative, small numbers carry proportionally small *absolute* error: a 1e-4 rad native offset in fp32 has ~1e-11 rad of error; a 1e4-pixel offset has ~1e-3 px. Both are far below sub-pixel requirements.
+
+### The mechanism: catastrophic cancellation in the rotation
+
+The celestial→native rotation is where "large absolute" becomes "small relative". In `apply_rotation`:
+
+```python
+yn = m10*x + m11*y + m12*z
+```
+
+Near the field center, the O(1) products nearly cancel to yield a tiny result (`yn`, `zn` ≈ field offsets, e.g. 1e-4 rad). In fp32 each product carries an *absolute* rounding error of ~1e-7, and those errors do not cancel with the values — so the tiny outputs inherit ~1e-7 rad of absolute error, i.e. ~0.1% of the entire field of view. Essentially all of the fp32 damage is injected in this one step (and its transpose on the inverse path).
+
+### Numerical evidence
+
+TAN round-trip (`unproj` → `proj`) on a 200×200 grid at 3.6″/px, varying which stage runs in fp32:
+
+| Configuration | Max round-trip error |
+|---|---|
+| all fp64 | 2.7e-11 px |
+| **rotation fp64, everything else fp32 (the Mixed classes)** | **7.6e-6 px** |
+| rotation fp32, everything else fp64 | 1.076e-2 px |
+| all fp32 | 1.077e-2 px |
+| all fp64 but RA/Dec quantized to fp32 | 1.7e-3 px |
+
+Casting *only* the rotation to fp32 reproduces essentially 100% of the all-fp32 error, while keeping *only* the rotation in fp64 recovers nearly all the accuracy.
+
+### How the mixed classes exploit this
+
+`MixedPrecisionWCSJaxMixin` (`jax_base.py`):
+
+*   Stores `crval` in fp64 and precomputes `r_matrix` in fp64; `crpix`/`cd` are fp32.
+*   `proj_xyz`: rotates in fp64, **then** casts the native vector down to fp32 for the plane/pixel math — safe, because at that point the components are relative quantities.
+*   `unproj_xyz`: runs pixel→native in fp32, casts **up** to fp64 *before* the inverse rotation. The upcast adds no information to the inputs, but it ensures the O(1) celestial outputs (which need ~1e-9 absolute accuracy) are not re-quantized by an fp32 rotation.
+
+One subtlety makes the fp32 native path work: the vector component along the boresight (e.g. `x = sqrt(1 - r²)` in `SinMixin._plane_to_native`) sits near 1.0 and does pick up ~6e-8 of fp32 error — but that error is *radial* (it perturbs the vector's length, not its direction) and is normalized away in `xyz_to_radec`, which divides by the vector norm. Directional accuracy is carried by the small transverse components, which fp32 stores well.
+
+The payoff is performance: fp32 halves memory bandwidth and is substantially faster on GPU/TPU (where fp64 throughput is often 1/32–1/64 of fp32), while the fp64 portion is just a 3×3 matrix–vector multiply per pixel — so the mixed classes deliver fp64-grade astrometry at close to fp32 cost.
+
+## 5. Extending the Package
 
 ### Adding a New Projection
 To add a new projection (e.g., Stereographic `STG`):
