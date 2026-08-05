@@ -204,6 +204,66 @@ def report_accuracy():
     print(f"  Offset-form's unproj_offset in fp32, jax_enable_x64=False: {err_off32:.3e} px")
 
 
+def report_plate_scale_sensitivity():
+    """Reprojector(f32) accuracy as a function of plate scale and
+    field-center separation, on a realistic large-detector WCS pair.
+
+    Motivation: the accuracy numbers in report_accuracy() above use a
+    coarse 3.6"/px plate scale. Real instruments increasingly go finer
+    than that (sub-0.1"/px), and pixel error for a given *angular* error
+    scales inversely with plate scale -- so a number measured at 3.6"/px
+    does not, by itself, tell you what to expect at 0.05"/px. This
+    measures it directly instead of extrapolating.
+
+    Two regimes, since they behave differently:
+      - "same-pointing" (separation << field of view): dithers,
+        re-registration, coaddition of exposures from one survey/pointing.
+      - "cross-field" (separation >= field of view): reprojecting between
+        genuinely different pointings/frames (e.g. an ICRS <-> Galactic
+        mosaicking template pair, as in reprojax's real SPHEREx case).
+    """
+    crpix = [2048.0, 2048.0]  # a realistic large modern detector
+
+    def make_wcs(cls, crval_deg, plate_arcsec):
+        plate_deg = plate_arcsec / 3600.0
+        cd = [[-plate_deg, 0.0], [0.0, plate_deg]]
+        return cls(crpix, cd, crval_deg)
+
+    def max_median_err(plate_arcsec, sep_arcsec, matrix_precision):
+        sep_deg = sep_arcsec / 3600.0
+        wcs_src = make_wcs(Tan, [180.0, 30.0], plate_arcsec)
+        wcs_tgt = make_wcs(Sin, [180.0, 30.0 + sep_deg], plate_arcsec)
+
+        rng = np.random.default_rng(0)
+        x = rng.uniform(0, 2 * crpix[0], 5000)
+        y = rng.uniform(0, 2 * crpix[1], 5000)
+
+        ra_ref, dec_ref = wcs_src.unproj(x, y)
+        x_ref, y_ref = wcs_tgt.proj(ra_ref, dec_ref)
+
+        rp = Reprojector(wcs_src, wcs_tgt, matrix_precision=matrix_precision)
+        x_out, y_out = rp.pix_to_pix(x, y)
+        err = np.hypot(np.asarray(x_out, dtype=np.float64) - x_ref, np.asarray(y_out, dtype=np.float64) - y_ref)
+        return np.max(err), np.median(err)
+
+    print("\n=== Reprojector(f32) accuracy vs plate scale (2048x2048 detector, TAN->SIN) ===")
+    print("--- cross-field: 0.5 deg field-center separation ---")
+    print(f"{'plate (arcsec/px)':>18} | {'f32 max (px)':>13} | {'f32 median (px)':>16} | {'f64 max (px)':>13}")
+    for plate in (3.6, 0.1, 0.05):
+        e_max32, e_med32 = max_median_err(plate, 1800.0, "f32")
+        e_max64, _ = max_median_err(plate, 1800.0, "f64")
+        print(f"{plate:>18.2f} | {e_max32:>13.3e} | {e_med32:>16.3e} | {e_max64:>13.3e}")
+
+    print("\n--- same-pointing: dithers / re-registration / coaddition ---")
+    print(f"{'plate (arcsec/px)':>18} | {'sep (arcsec)':>12} | {'f32 max (px)':>13} | {'f32 median (px)':>16} | {'f64 max (px)':>13}")
+    for plate in (0.1, 0.05, 0.02):
+        for sep_arcsec in (1.0, 10.0, 60.0, 300.0):
+            e_max32, e_med32 = max_median_err(plate, sep_arcsec, "f32")
+            e_max64, _ = max_median_err(plate, sep_arcsec, "f64")
+            print(f"{plate:>18.2f} | {sep_arcsec:>12.1f} | {e_max32:>13.3e} | {e_med32:>16.3e} | {e_max64:>13.3e}")
+
+
 if __name__ == "__main__":
     run_timing_benchmark()
     report_accuracy()
+    report_plate_scale_sensitivity()

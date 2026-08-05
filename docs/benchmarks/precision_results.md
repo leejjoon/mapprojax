@@ -1,9 +1,9 @@
 # Precision-Mode Benchmark Results
 
-**Date:** August 4, 2026
+**Date:** August 4, 2026 (plate-scale sensitivity section added August 5, 2026)
 **JAX:** 0.11.0
 **CPU:** 64 cores (`JAX_PLATFORMS=cpu`)
-**GPU:** 4x CUDA device (default backend)
+**GPU:** 4x NVIDIA RTX 5000 Ada Generation (default backend) -- a workstation/prosumer part with a crippled fp64 rate (Ada-generation dies, same family as the RTX 6000 Ada/Blackwell "server edition" SKUs increasingly used in real deployments), not a datacenter-class part like A100/H100.
 
 This benchmark (`benchmarks/benchmark_precision.py`) compares every precision
 strategy this package currently offers for a src-WCS-pixel -> tgt-WCS-pixel
@@ -74,6 +74,56 @@ celestial vector at all -- see its docstring). The f64 modes (Reprojector
 f64, offset-form) land at the expected ~1e-11 px floor: ordinary float64
 round-off, not a precision *strategy* difference.
 
+## Plate-scale sensitivity (added 2026-08-05)
+
+The accuracy numbers above use a coarse 3.6"/px-equivalent plate scale
+(`CD = 0.001 deg/px`). Pixel error for a given *angular* error scales
+inversely with plate scale, so that number alone doesn't say what to expect
+at the sub-0.1"/px scales increasingly common in real instruments --
+measured directly instead of extrapolated (`report_plate_scale_sensitivity()`
+in `benchmarks/benchmark_precision.py`), on a realistic 2048x2048-detector
+TAN->SIN pair. Two regimes, since they behave differently:
+
+### Cross-field (0.5 deg field-center separation)
+
+| Plate scale | f32 max (px) | f32 median (px) | f64 max (px) |
+| :--- | ---: | ---: | ---: |
+| 3.6"/px | 5.6e-4 | 1.4e-4 | 2.7e-11 |
+| 0.1"/px | 4.8e-3 | 1.0e-3 | 9.7e-10 |
+| 0.05"/px | 8.4e-3 | 1.7e-3 | 2.0e-9 |
+
+A degree-scale reprojection (e.g. an ICRS<->Galactic mosaicking pair, as in
+reprojax's real SPHEREx case) at a fine plate scale pushes f32 error toward
+1e-2 px -- an order of magnitude worse than the coarse-plate-scale number
+above, and potentially too coarse for sub-pixel-sensitive work.
+
+### Same-pointing (dithers / re-registration / coaddition within one survey)
+
+| Plate scale | Separation | f32 max (px) | f32 median (px) | f64 max (px) |
+| :--- | ---: | ---: | ---: | ---: |
+| 0.1"/px | 1"-60" | 6.7-7.2e-4 | 1.4e-4 | ~9.3-9.8e-10 |
+| 0.1"/px | 300" | 1.4e-3 | 2.3e-4 | 9.4e-10 |
+| 0.05"/px | 1"-60" | 5.3-7.6e-4 | 1.2-1.6e-4 | ~2.0e-9 |
+| 0.05"/px | 300" | 1.5e-3 | 3.6e-4 | 1.9e-9 |
+| 0.02"/px | 1"-60" | 5.3-8.3e-4 | 1.0-2.2e-4 | ~4.7-4.8e-9 |
+| 0.02"/px | 300" | 2.6e-3 | 5.1e-4 | 4.8e-9 |
+
+Same-pointing reprojection holds up much better than a naive
+"plate-scale-proportional" extrapolation would suggest -- it stays
+sub-milli-pixel out to 0.02"/px, across separations from 1" to 5 arcmin.
+What drives the error isn't plate scale in isolation, it's the
+separation-to-field-of-view ratio: a same-pointing dither keeps the two
+WCSes' rotations close to identity (M_rel near the identity matrix)
+regardless of how fine the pixels are, which is exactly the regime
+`Reprojector`'s design is safe in (see its docstring and
+`fo64_report_and_plan.md`).
+
+**Takeaway: plate scale alone is the wrong question.** The same fp32 mode
+that's comfortably sub-milli-pixel for same-pointing coaddition at 0.02"/px
+can approach 1e-2 px for a cross-field reprojection at a merely-fine (not
+even extreme) 0.05"/px plate scale. Check which regime a given workload is
+in before trusting a single accuracy number across both.
+
 ## Conclusion
 
 1. **Reprojector (f32) is the fastest mode at every resolution tested, on
@@ -86,15 +136,31 @@ round-off, not a precision *strategy* difference.
    fine-grained differentiation through that step (unlike Reprojector's
    rotation, which is precomputed outside the trace -- see its docstring),
    JAX Mixed remains the right tool.
-3. **The accuracy tradeoff is real but bounded** (~2e-3 px for this pair, at
-   a coarse plate scale) and, per Phase 1's own separation sweep, grows with
-   field-center separation and finer plate scales -- see
-   `fo64_report_and_plan.md` and `Reprojector`'s docstring for the documented
-   envelope before assuming f32 is accurate enough for a given instrument.
+3. **The accuracy tradeoff is real, bounded, and regime-dependent** -- see
+   "Plate-scale sensitivity" above. Same-pointing reprojection (dithers,
+   coaddition) stays sub-milli-pixel even at 0.02"/px; cross-field
+   reprojection at a fine plate scale can approach 1e-2 px. Check which
+   regime applies before assuming f32 is accurate enough for a given
+   instrument and use case.
 4. **Offset-form's fp32 path (~7e-3 px here) is in the same regime as
    Reprojector (f32)**, for a different use case (single-WCS absolute sky
    output rather than a src/tgt pixel map) -- see DEVELOPER.md Sec 4's
    decision tree for which one to reach for.
+5. **`Reprojector(f64)` is the pragmatic fallback when f32 isn't accurate
+   enough**, even on fp64-crippled GPU hardware (RTX-class, this benchmark's
+   own GPU included): it costs only ~3x over f32 here (not the 32-64x the
+   raw ALU ratio would suggest), because this workload is memory/dispatch-
+   bound rather than ALU-bound at this arithmetic intensity -- and it's
+   still faster than the old JAX Std/Mixed path. A double-single (df64)
+   rotation variant (the plan's Phase 3) was not built: besides the
+   engineering cost, it carries a real risk of silently losing precision
+   under XLA's compiler optimizations (why JAX dropped its own
+   `doubledouble` experiment) and, given this workload's memory/dispatch-
+   bound profile, a real chance it would end up *slower* than
+   `Reprojector(f64)` rather than faster, since it multiplies op count and
+   memory traffic without addressing either bottleneck. Revisit only if
+   `Reprojector(f64)`'s ~3x cost proves too slow at the scale actually
+   needed.
 
 *Note: absolute numbers depend on CPU/GPU model and load; the ratios between
 modes are the reproducible part.*
