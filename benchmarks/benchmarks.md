@@ -23,6 +23,11 @@ This directory contains scripts for evaluating the performance of different coor
 - **Comparison:** NumPy (f64) vs. JAX Std (f64) vs. JAX Mixed vs. `Reprojector` (`f32`/`f64`, `fo64_report_and_plan.md` Phase 1) across resolutions (512x512 to 8192x8192), plus a separate accuracy check that includes offset-form absolute output (Phase 2: `unproj_absolute`/`proj_absolute`).
 - **Goal:** Evaluates how each precision strategy scales with data volume, and quantifies the speed/accuracy tradeoff of each -- not speed alone. Run once with the default backend and once with `JAX_PLATFORMS=cpu` to compare GPU vs CPU (JAX picks its backend at process start and can't switch mid-process). Recorded results: `docs/benchmarks/precision_results.md`.
 
+### 4. `benchmark_accuracy.py`
+**Tests:** Accuracy against astropy, no timing.
+- **Comparison:** mapprojax (`numpy`, `jax`, `numpy_absolute`) vs. `astropy.wcs` on every case in `tests/accuracy_reference.py` (header fixtures in `tests/data/`, synthetic near-pole and RA-wrap fields), plus the real SPHEREx pair through `Reprojector` with an astropy-derived ICRS↔Galactic rotation and a transposed-rotation negative control.
+- **Goal:** Generates the published table `docs/benchmarks/accuracy_results.md` and exits non-zero on any regression. `--write-baselines` regenerates the regression caps in `tests/data/accuracy_baselines.json`; it refuses if a result exceeds its old cap unless `--allow-cap-increase` is given.
+
 ## How to Run
 Run any script directly using `python3`:
 ```bash

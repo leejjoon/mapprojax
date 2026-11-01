@@ -1,0 +1,44 @@
+{
+  "1904-66_SIN.hdr": {
+    "astropy_version": "8.0.2",
+    "extraction": "verbatim copy",
+    "license": "BSD-3-Clause (astropy); wcslib test header",
+    "representation": "single-line 80-character card stream; parse with fits.Header.fromstring(text, sep='')",
+    "sha256": "78b414160de8a49a196fa87c1145c6eb7218e74f8094a2e918c94b25fde4916c",
+    "source_path": "astropy/wcs/tests/data/maps/1904-66_SIN.hdr",
+    "upstream": "astropy (wcslib test maps)"
+  },
+  "1904-66_TAN.hdr": {
+    "astropy_version": "8.0.2",
+    "extraction": "verbatim copy",
+    "license": "BSD-3-Clause (astropy); wcslib test header",
+    "representation": "single-line 80-character card stream; parse with fits.Header.fromstring(text, sep='')",
+    "sha256": "440f91c6795d233feddf35c9f5192fee9be9d0d71627e130be67515ffe263e6b",
+    "source_path": "astropy/wcs/tests/data/maps/1904-66_TAN.hdr",
+    "upstream": "astropy (wcslib test maps)"
+  },
+  "spherex_l2.hdr": {
+    "extraction": "fits.open(src)[1].header.tostring(sep='\\n'); header only, no pixel data",
+    "hdu": "1 (IMAGE)",
+    "license": "SPHEREx public data products",
+    "representation": "newline-separated cards; parse with fits.Header.fromstring(text, sep='\\n')",
+    "sha256": "933cb99f727932de3dbf473045e70c56452fa16603690b556997b1378af9f2ae",
+    "source_path": "reproj_test/level2_2025W23_1C_0165_1D4_spx_l2b-v20-2025-251.fits",
+    "upstream": "SPHEREx L2 exposure (local copy)"
+  },
+  "spherex_template.hdr": {
+    "extraction": "fits.open(src)[0].header.tostring(sep='\\n'); header only, no pixel data",
+    "hdu": "0 (PRIMARY)",
+    "license": "project-generated",
+    "representation": "newline-separated cards; parse with fits.Header.fromstring(text, sep='\\n')",
+    "sha256": "bfc3cc478a8aaeb06dbfa1f6949c349bf12bb849e366516f543722c998c69a53",
+    "source_path": "reproj_test/template.fits",
+    "upstream": "SPHEREx reprojection template (local copy)"
+  },
+  "wcs_test_data.json": {
+    "note": "saved astropy outputs; not an independent implementation",
+    "sha256": "9de3198b1486f8ea9c74bd17c741c7adad2811a7053128413cc4b6d1d92590f9",
+    "source_path": "reproj_test/wcs_test_data.json (moved, tracked)",
+    "upstream": "astropy-generated reference for a SPHEREx TAN-SIP header (CRVAL 306.77, 39.38)"
+  }
+}

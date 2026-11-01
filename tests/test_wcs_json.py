@@ -1,7 +1,6 @@
 import json
-import os
+from pathlib import Path
 import numpy as np
-import pytest
 import jax
 # Ensure JAX 64-bit is enabled BEFORE importing mapprojax to avoid warning
 jax.config.update("jax_enable_x64", True)
@@ -12,13 +11,13 @@ from mapprojax.jax_projections import TanJax
 from mapprojax.sip import Sip
 from mapprojax.wcs_utils import load_wcs_params_from_header
 
+DATA_DIR = Path(__file__).resolve().parent / 'data'
+
+
 def test_wcs_consistency_with_json():
-    # Path relative to project root
-    json_path = os.path.join('reproj_test', 'wcs_test_data.json')
-    
-    if not os.path.exists(json_path):
-        pytest.skip(f"Test data not found at {json_path}")
-        
+    json_path = DATA_DIR / 'wcs_test_data.json'
+    assert json_path.exists(), f"required fixture missing: {json_path}"
+
     with open(json_path, 'r') as f:
         data = json.load(f)
         

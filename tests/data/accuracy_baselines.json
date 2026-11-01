@@ -1,0 +1,123 @@
+{
+  "_provenance": {
+    "generated_by": "benchmarks/benchmark_accuracy.py --write-baselines",
+    "versions": {
+      "jax": "0.11.1",
+      "numpy": "2.5.1",
+      "astropy": "8.0.2"
+    },
+    "backend": "cpu",
+    "dtype": "float64, except pair runs keyed f32 (Reprojector matrix_precision='f32')",
+    "margin": "cap = measured max x 1.2, rounded up to 2 significant figures",
+    "meaning": "Regression caps on known Stage 2 defects and the fp32 Reprojector. Not accuracy claims; Stage 2 fixes replace them with the budgets in tests/accuracy_reference.py."
+  },
+  "known_failures": {
+    "forward": {
+      "tan_near_pole_n/numpy": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.000146193568301197,
+        "measured_rms": 7.483371050716025e-06,
+        "cap": 0.00018
+      },
+      "tan_near_pole_n/jax": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.00014623936800986924,
+        "measured_rms": 7.484184617551119e-06,
+        "cap": 0.00018
+      },
+      "tan_near_pole_s/numpy": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.00014619356024622254,
+        "measured_rms": 7.48460263316395e-06,
+        "cap": 0.00018
+      },
+      "tan_near_pole_s/jax": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.00014623936274440718,
+        "measured_rms": 7.485410225431403e-06,
+        "cap": 0.00018
+      },
+      "sin_near_pole_n/numpy": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.00020284814563890298,
+        "measured_rms": 8.57926832387521e-06,
+        "cap": 0.00025
+      },
+      "sin_near_pole_n/jax": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.0002028481448011598,
+        "measured_rms": 8.579696847878592e-06,
+        "cap": 0.00025
+      },
+      "sin_near_pole_s/numpy": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.00020284814975666634,
+        "measured_rms": 8.579998261168812e-06,
+        "cap": 0.00025
+      },
+      "sin_near_pole_s/jax": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.00020284814975666634,
+        "measured_rms": 8.58043047174984e-06,
+        "cap": 0.00025
+      }
+    },
+    "inverse": {
+      "spherex_l2/numpy": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 0.02913496082147121,
+        "measured_rms": 0.004251983617291582,
+        "cap": 0.035
+      },
+      "spherex_l2/jax": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 0.02913496082147121,
+        "measured_rms": 0.004251983617291669,
+        "cap": 0.035
+      },
+      "spherex_l2/numpy_absolute": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 0.029134960824923246,
+        "measured_rms": 0.0042519836173652925,
+        "cap": 0.035
+      }
+    }
+  },
+  "pair": {
+    "forward/f64": {
+      "sample": "33x33 grid + CRPIX on the source, astropy-decided overlap",
+      "n_overlap": 1009,
+      "unit": "px",
+      "measured_max": 0.0062142767890461725,
+      "measured_rms": 0.0036205811087029953,
+      "cap": 0.0075
+    },
+    "forward/f32": {
+      "sample": "33x33 grid + CRPIX on the source, astropy-decided overlap",
+      "n_overlap": 1009,
+      "unit": "px",
+      "measured_max": 0.006294257111206525,
+      "measured_rms": 0.0036304027330160762,
+      "cap": 0.0076
+    },
+    "reverse/f32": {
+      "sample": "33x33 grid + CRPIX on the source, astropy-decided overlap",
+      "n_overlap": 320,
+      "unit": "px",
+      "measured_max": 0.00020338573195588774,
+      "measured_rms": 7.04536836063724e-05,
+      "cap": 0.00025
+    }
+  }
+}

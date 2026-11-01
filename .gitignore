@@ -149,3 +149,7 @@ cython_debug/
 
 # Project specific
 .ruff_cache/
+
+# Large local data: tests use the header-only fixtures in tests/data/
+*.fits
+*.tgz
