@@ -281,6 +281,8 @@ def main(argv=None):
     ap.add_argument("--allow-cap-increase", action="store_true",
                     help="with --write-baselines: accept results above their old caps")
     args = ap.parse_args(argv)
+    if args.allow_cap_increase and not args.write_baselines:
+        ap.error("--allow-cap-increase only applies with --write-baselines")
 
     result, problems = measure()
     env = environment()
