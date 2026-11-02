@@ -156,22 +156,30 @@ class _PipelineBase(ABC):
 
     # --- native <-> pixel -------------------------------------------------
 
-    def _native_to_pix_valid(self, xn, yn, zn):
-        """``(x, y, valid)`` with finite ``x``/``y`` everywhere."""
-        xn, yn, zn, valid = self._finite_inputs(xn, yn, zn, fill=(1.0, 0.0, 0.0))
+    def _native_to_pix_valid(self, xn, yn, zn, valid=None):
+        """``(x, y, valid)`` with finite ``x``/``y`` everywhere.
 
-        # Native -> Plane (projection specific). Xp/Yp are finite even where
-        # the sample is invalid, so the CD and SIP math below never sees a NaN.
+        ``valid`` is the validity accumulated upstream (e.g. the source leg
+        of a ``Reprojector``). Every stage swaps the samples that are invalid
+        *so far* for a regular point -- native (1, 0, 0), plane (0, 0) --
+        before its own arithmetic. Substituting only on this stage's own
+        domain test is not enough: an upstream-invalid sample can be in this
+        stage's domain yet sit where the arithmetic overflows (a huge TAN
+        coordinate fed to SIP) or a derivative is infinite (SIN's limb).
+        """
+        xn, yn, zn, ok = self._finite_inputs(xn, yn, zn, fill=(1.0, 0.0, 0.0))
+        valid = ok if valid is None else valid & ok
+        xn, yn, zn = self._standin(valid, (xn, 1.0), (yn, 0.0), (zn, 0.0))
+
+        # Native -> Plane (projection specific).
         Xp, Yp, in_domain = self._native_to_plane(xn, yn, zn)
-        valid = valid & in_domain
+        cd_inv, cd_valid = _cd_inverse(self.cd, xp=self.xp)
+        valid = valid & in_domain & cd_valid
+        Xp, Yp = self._standin(valid, (Xp, 0.0), (Yp, 0.0))
 
         # Plane (radians) -> intermediate world (degrees) -> pixel.
         Xp_deg = self.xp.degrees(Xp)
         Yp_deg = self.xp.degrees(Yp)
-
-        cd_inv, cd_valid = _cd_inverse(self.cd, xp=self.xp)
-        valid = valid & cd_valid
-
         U = cd_inv[..., 0, 0] * Xp_deg + cd_inv[..., 0, 1] * Yp_deg
         V = cd_inv[..., 1, 0] * Xp_deg + cd_inv[..., 1, 1] * Yp_deg
 
@@ -191,13 +199,17 @@ class _PipelineBase(ABC):
         return self._mask(*self._native_to_pix_valid(xn, yn, zn))
 
     def _pix_to_native_valid(self, x, y):
-        """``(xn, yn, zn, valid)`` with a finite native vector everywhere."""
+        """``(xn, yn, zn, valid)`` with a finite native vector everywhere.
+
+        As in ``_native_to_pix_valid``, samples invalid so far are swapped
+        for a regular point (relative pixel 0, plane 0) before each stage:
+        a stand-in pixel could otherwise land exactly on SIN's limb, where
+        the sqrt has an infinite derivative.
+        """
         x, y, valid = self._finite_inputs(x, y)
 
         # Pixel -> Plane (linear + distortion)
-        u = x - self.crpix[0]
-        v = y - self.crpix[1]
-
+        u, v = self._standin(valid, (x - self.crpix[0], 0.0), (y - self.crpix[1], 0.0))
         if self.sip is not None:
             u, v = self.sip.pix_to_foc(u, v, xp=self.xp)
 
@@ -208,10 +220,11 @@ class _PipelineBase(ABC):
         valid = valid & _cd_is_valid(self.cd, xp=self.xp)
         Xp_deg = cd[..., 0, 0] * u + cd[..., 0, 1] * v
         Yp_deg = cd[..., 1, 0] * u + cd[..., 1, 1] * v
+        Xp, Yp = self._standin(valid, (self.xp.radians(Xp_deg), 0.0),
+                               (self.xp.radians(Yp_deg), 0.0))
 
         # Plane -> Native (projection specific), in radians.
-        xn, yn, zn, in_domain = self._plane_to_native(self.xp.radians(Xp_deg),
-                                                      self.xp.radians(Yp_deg))
+        xn, yn, zn, in_domain = self._plane_to_native(Xp, Yp)
         return xn, yn, zn, valid & in_domain
 
     def pix_to_native(self, x, y):
@@ -243,8 +256,7 @@ class _PipelineBase(ABC):
     def _proj_xyz_valid(self, x, y, z):
         x, y, z, valid = self._finite_inputs(x, y, z, fill=(1.0, 0.0, 0.0))
         xn, yn, zn = self._celestial_to_native(x, y, z)
-        px, py, ok = self._native_to_pix_valid(xn, yn, zn)
-        return px, py, valid & ok
+        return self._native_to_pix_valid(xn, yn, zn, valid)
 
     def _unproj_xyz_valid(self, x, y):
         xn, yn, zn, valid = self._pix_to_native_valid(x, y)
@@ -266,8 +278,9 @@ class _PipelineBase(ABC):
         """
         ra, dec, valid = self._finite_inputs(ra, dec)
         xc, yc, zc = radec_to_xyz(ra, dec, xp=self.xp)
-        px, py, ok = self._proj_xyz_valid(xc, yc, zc)
-        return self._mask(px, py, valid & ok)
+        x, y, z, ok = self._finite_inputs(xc, yc, zc, fill=(1.0, 0.0, 0.0))
+        xn, yn, zn = self._celestial_to_native(x, y, z)
+        return self._mask(*self._native_to_pix_valid(xn, yn, zn, valid & ok))
 
     def unproj_xyz(self, x, y):
         """
@@ -429,8 +442,7 @@ class WCSBase(_PipelineBase):
         xn = w * cos_p + zc * sin_p
         zn = -w * sin_p + zc * cos_p
 
-        px, py, ok = self._native_to_pix_valid(xn, yn, zn)
-        return self._mask(px, py, valid & ok)
+        return self._mask(*self._native_to_pix_valid(xn, yn, zn, valid))
 
     def proj_absolute(self, ra, dec):
         """Forward projection: true celestial (RA, Dec) in radians ->

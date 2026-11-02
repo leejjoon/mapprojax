@@ -466,6 +466,64 @@ def test_invalid_standin_never_hits_a_spherical_singularity(method, crval, bad_p
     np.testing.assert_allclose(np.asarray(mixed), np.asarray(alone), rtol=1e-12, atol=0)
 
 
+def _assert_mixed_equals_alone(loss, params, mixed_args, alone_args):
+    """Eager and jitted masked-loss gradients on a mixed batch must be finite
+    and equal to the valid sample's gradient computed on its own."""
+    mixed = jax.grad(loss)(params, *mixed_args)
+    jitted = jax.jit(jax.grad(loss))(params, *mixed_args)
+    alone = jax.grad(loss)(params, *alone_args)
+    for m, j, a in zip(jax.tree_util.tree_leaves(mixed), jax.tree_util.tree_leaves(jitted),
+                       jax.tree_util.tree_leaves(alone)):
+        assert np.all(np.isfinite(np.asarray(m))) and np.all(np.isfinite(np.asarray(j))), (m, j)
+        np.testing.assert_allclose(np.asarray(m), np.asarray(a), rtol=1e-9, atol=1e-300)
+        np.testing.assert_allclose(np.asarray(j), np.asarray(a), rtol=1e-9, atol=1e-300)
+
+
+def test_nan_pixel_standin_cannot_land_on_the_sin_limb():
+    """With CRPIX = (0, R) a stand-in pixel of (0, 0) sits exactly on SIN's
+    limb (r = 1, sqrt(0)); the substitute must be a regular point instead."""
+    R = np.degrees(1.0)
+    xs, ys = jnp.asarray([10.0, np.nan]), jnp.asarray([R + 10.0, 0.0])
+
+    def loss(p, x, y):
+        return _masked(SinJax(p["crpix"], p["cd"], jnp.zeros(2)).unproj(x, y))
+
+    params = {"crpix": jnp.asarray([0.0, R]), "cd": jnp.eye(2)}
+    _assert_mixed_equals_alone(loss, params, (xs, ys), (xs[:1], ys[:1]))
+
+
+@pytest.mark.parametrize("precision", ["f64", "f32"])
+def test_invalid_source_sample_never_reaches_target_arithmetic(precision):
+    """An invalid SIN source sample (outside the disc) is in the TAN target's
+    domain but at a huge plane coordinate; SIP on it overflows. The source
+    validity has to select a regular target stand-in before the target leg."""
+    a = np.zeros((4, 4)); a[2, 0] = 1e-7; a[0, 3] = 1e-10
+    b = np.zeros((4, 4)); b[0, 2] = 1e-7; b[3, 0] = 1e-10
+    cd = np.eye(2) * 1e-3
+    src = Sin(np.zeros(2), cd, [0.0, 0.0])
+    tgt = Tan(np.zeros(2), cd, [0.0, 0.02], sip=Sip(a=a, b=b))
+    rp = Reprojector(src, tgt, matrix_precision=precision)
+    bad = 1.5 * np.degrees(1.0) / 1e-3
+    xs, ys = jnp.asarray([10.0, 0.0]), jnp.asarray([10.0, bad])
+    out = rp.pix_to_pix(xs, ys)
+    assert np.isfinite(np.asarray(out[0]))[0] and np.isnan(np.asarray(out[0]))[1], out
+
+    def loss(r, x, y):
+        return _masked(r.pix_to_pix(x, y))
+
+    # f32 gradients of the two batch shapes differ by rounding only.
+    mixed = jax.grad(loss)(rp, xs, ys)
+    jitted = jax.jit(jax.grad(loss))(rp, xs, ys)
+    alone = jax.grad(loss)(rp, xs[:1], ys[:1])
+    tol = 1e-9 if precision == "f64" else 1e-5
+    for m, j, al in zip(jax.tree_util.tree_leaves(mixed), jax.tree_util.tree_leaves(jitted),
+                        jax.tree_util.tree_leaves(alone)):
+        for got in (m, j):
+            assert np.all(np.isfinite(np.asarray(got))), got
+            np.testing.assert_allclose(np.asarray(got), np.asarray(al), rtol=tol, atol=0)
+    assert np.any(np.asarray(alone.tgt_leg.sip.a) != 0)
+
+
 @pytest.mark.parametrize("proj_cls", [Sin, Tan], ids=lambda c: c.__name__)
 @pytest.mark.parametrize("precision", ["f64", "f32"])
 def test_reprojector_masked_gradients_for_both_legs(proj_cls, precision):

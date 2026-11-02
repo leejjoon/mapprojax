@@ -229,8 +229,7 @@ class Reprojector:
         gradients for both legs' CD and SIP stay finite.
         """
         xt, yt, zt, valid = self._pix_to_native_tgt_valid(x, y)
-        px, py, ok = self._tgt_leg._native_to_pix_valid(xt, yt, zt)
-        return self._tgt_leg._mask(px, py, valid & ok)
+        return self._tgt_leg._mask(*self._tgt_leg._native_to_pix_valid(xt, yt, zt, valid))
 
     def tree_flatten(self):
         children = (self._src_leg, self._tgt_leg, self.m_rel)
