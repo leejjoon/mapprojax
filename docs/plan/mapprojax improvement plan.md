@@ -41,6 +41,8 @@ The stages are ordered so each one protects the next. The validation suite comes
 
 Commit these before the restructure so they do not wait on it. Each item is one reviewable commit, in this order, and flips a known set of Stage 1 strict `xfail`s (31 in total). A commit that changes a measured number rewrites the baselines with `benchmarks/benchmark_accuracy.py --write-baselines`, and regenerates `docs/benchmarks/accuracy_results.md`. It changes `known_failure()` / `PAIR_EXACT` in `tests/accuracy_reference.py` only when it resolves the defect they name. Order revised by the Stage 2 committee review (appended below).
 
+**Status: complete (Nov 3 2026).** Items 1–8 are `9257dc4`..`e0e4b44`; the review fixes are `9a11cfa`, `3dd0ebe`, `a46abfe` and `f15ad47`. Both committee members approved `f15ad47` with no further fixes; see "Stage 2 implementation review" below.
+
 - [x] **1. PyTree reconstruction** (flips 1: `test_eval_shape_on_jax_wcs`). `tree_unflatten` must not call `__init__` (`jax_base.py:34`, `:48`): today it recasts dtypes, rebuilds the rotation on every unflatten, and crashes on non-array leaves (`jax.eval_shape(lambda w: w, wcs)` raises `TypeError`). Reconstruct with `__new__`, as `Reprojector` does (`reproject.py:217-222`), and preserve leaf dtypes exactly. Make `r_matrix` / `r_matrices` properties derived from `crval` (`crvals` for the Array variants) when a coordinate method runs, never stored leaves: a stored rotation would stop following the `crval` leaf and silently zero the `crval` gradient. This comes first so that the CD validation in item 5 runs only at construction, never during unflatten (which also rebuilds gradient objects whose CD leaves may be singular). Tests pass WCS objects as transformation arguments: `eval_shape`; a `tree_map` cast to float32 that keeps f32 leaves; non-zero `grad` with respect to `crval` through the pytree; `jit`; `vmap` over parameters; Mixed, Array and SIP variants.
   - Done, one commit. `tree_unflatten` on `WCSJax`, `WCSJaxArray` and every
     `*Mixed`/`*Array` subclass reconstructs with `__new__`; `r_matrix` /
@@ -633,3 +635,35 @@ Fable (`claude-fable-5-1`) and Astra (`gpt-6-astra`) re-reviewed Stage 2 against
 - **CD.** Astra showed that a raw determinant test both rejects a valid tiny CD and misses an overflowing one. Fable reproduced this and gave the scaled-determinant rule.
 - **Bookkeeping.** Both found the stale references, the fixed test count of 315, and the "only f32 pair caps" criterion. Fable traced the `test_wcs_json.py:68` convention problem.
 - **Order.** Unchanged: PyTree → headers → near-pole → domains → CD → Horner → SIP → x64. Item 1 can start once the `jax_mixed` follow-up is committed.
+
+### Stage 2 implementation review — Nov 3 2026
+
+Fable (`claude-fable-5-1`) and Astra (`gpt-6-astra`) reviewed the eight item commits, then three rounds of fixes. Both approved `f15ad47` with no findings.
+
+| Round | Commits | Fable | Astra |
+| --- | --- | --- | --- |
+| 1 | `9257dc4`..`e0e4b44` | approve with fixes, 1 blocking | approve with fixes, 7 blocking (narrowed to 4) |
+| 2 | `9a11cfa`, `3dd0ebe` | approve | 1 blocking |
+| 3 | `a46abfe` | — | 2 blocking |
+| 4 | `f15ad47` | approve | approve, no findings |
+
+- **Masked gradients.** Most blockers were one bug in different places: a NaN, or a stand-in for an invalid sample, reached arithmetic with an infinite derivative, so the gradient of a masked loss became NaN.
+  - Round 1 found it in the rotation, the offset APIs and the `Reprojector` target leg.
+  - Round 2 found a stand-in landing on a pole of `atan2`/`hypot`.
+  - Round 3 found a NaN pixel's stand-in landing on SIN's limb, and an invalid SIN source overflowing a TAN+SIP target.
+  - The final rule: every stage substitutes a regular point for every sample that is already invalid, including samples marked invalid upstream, before its own arithmetic. NaN is inserted only at the public outputs, in each output's dtype.
+  - `_PipelineBase` in `base.py` now holds the shared pipeline for the NumPy, JAX, Array and Mixed classes and the `Reprojector` legs.
+- **Other fixes from round 1.**
+  - The invalid branch of `_cd_inverse` is finite.
+  - The Mixed constructors and `Reprojector` legs check the cast CD.
+  - The SIP inverse rejects roots whose final Jacobian is singular.
+  - The Array x64 guard checks both `crvals` components.
+  - An alternate-description `PC` card no longer hides `CROTA2`.
+  - The SIP tests the plan promised were added: AP/BP-seeded and identity-seeded residuals, a singular root, `inverse_steps` through PyTree and `jit`, and `check_grads` of the inverse.
+- **Cleanup (`3dd0ebe`).** The known-failure plumbing is gone from the tests, the benchmark and the baselines. `benchmark_sip.py` times the production `Sip._evaluate_poly` and the inverse at 2, 3 and 5 steps.
+- **Verification at `f15ad47`.**
+  - 500 passed, with no `xfail`s, skips or unexpected passes.
+  - `benchmark_accuracy.py` exits 0 and regenerates `docs/benchmarks/accuracy_results.md` byte for byte.
+  - Each regression test fails on the commit before its fix.
+  - Sweeps found no non-finite masked gradients: Astra ran 32 `Reprojector` cases and 40 method/class combinations; Fable ran 2,440 single-WCS cases and 48 `Reprojector` cases. The only non-finite values in Fable's sweep came from its own harness squaring a horizon pixel near 1e21 in f32; the library's outputs there are finite.
+- **Accepted as is.** The fix that keeps `inverse_steps` through PyTree flattening landed in the item 8 commit rather than item 7. The history is left unchanged.
