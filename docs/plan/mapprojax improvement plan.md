@@ -55,7 +55,7 @@ Commit these before the restructure so they do not wait on it. Each item is one 
     `dtype=float`, so "f32 leaves" only exist when built with `__new__` or
     under the Mixed constructors. That is the same root cause as the x64
     policy in item 8, not something unflatten should paper over.
-- [ ] **2. Header checks** (flips 5: `test_unsupported_key_is_honoured_or_rejected[...]`). `wcs_utils.load_wcs_params_from_header` currently ignores most keys. Rules:
+- [x] **2. Header checks** (flips 5: `test_unsupported_key_is_honoured_or_rejected[...]`). `wcs_utils.load_wcs_params_from_header` currently ignores most keys. Rules:
   - `CTYPE`: 8-character `xxxx-PPP` with optional `-SIP`. Longitude code on axis 1 from {`RA--`, `GLON`, `ELON`} with the matching latitude code on axis 2; `PPP` in {TAN, SIN} and equal on both axes. Reject anything else (CAR, swapped axes). A dense-grid comparison does detect a CAR header read as TAN (0.3″ over 1201², far above tolerance), but rejection is the fix.
   - `CUNIT`: absent or `deg`; reject otherwise.
   - `CD`: detect from any of the four `CDi_j` keys with missing ones defaulting to 0; today a header with only `CD1_2`/`CD2_1` becomes the identity because detection uses `CD1_1` alone (`wcs_utils.py:64`).
@@ -63,6 +63,17 @@ Commit these before the restructure so they do not wait on it. Each item is one 
   - `LONPOLE`: the only supported effective orientation is 180°. Reject any explicit `LONPOLE` other than 180. Reject `CRVAL2 = +90` without an explicit `LONPOLE = 180`: WCSLIB's default there is 0. The current rotation is then off against astropy by an amount that grows with field size: 141″ on a 101 px field, 2828″ at 1201². `CRVAL2 = -90` (default 180) is accepted. `LATPOLE` has no effect for zenithal projections (`tests/test_wcs_utils.py:116`) and is accepted.
   - `PV`: allow only zero `PV2_1`/`PV2_2` on SIN; reject every other `PV` card.
   - New tests: the +90 default, +90 with explicit 180, CROTA, off-diagonal-only CD.
+  - Done, one commit. The loader now validates `CTYPE`, `CUNIT`, `LONPOLE`,
+    `PV`, `CROTA2` and all four `CDi_j` keys, and rejects what it cannot
+    reproduce. Two findings from doing it:
+  - `PV` must ignore alternate-WCS versions: the real SPHEREx L2 header
+    carries `PV1_3W`/`PV2_3W` for its `WAVE-TAB` axis, so a bare `PV*`
+    scan rejects the package's own fixture. Only `PV<i>_<j>` without a
+    trailing version letter is a primary celestial card.
+  - `CROTA2` is rejected only when neither `CD` nor a real `PC` matrix is
+    present; `PCOUNT` starts with `PC` and is not a matrix card.
+  - Unchanged numerics: `benchmark_accuracy.py` exits 0 and rewrites
+    neither the baselines nor the table (`350 passed, 25 xfailed`).
 - [ ] **3. Near-pole declination** (flips 8: `test_forward_matches_astropy[{tan,sin}_near_pole_{n,s}-{numpy,jax}]`). `utils.xyz_to_radec` computes `dec = arcsin(z / dist)`, which loses 1.5–2.0e-4 mas at dec ±89.9 (budget 1e-4 mas). Use `atan2(z, hypot(x, y))`; measured 1.4–1.9e-7 mas. Keep longitude wrapping, keep an invalid vector such as `(0, 0, 0)` from becoming a valid sky position, and do not promise a differentiable longitude at an exact pole. The eight near-pole caps are replaced by the ordinary 1e-4 mas budget.
 - [ ] **4. Projection domains through the whole pipeline** (flips 8: `test_back_hemisphere_is_not_a_valid_pixel`). TAN maps a point 179.99° from the reference to a mirrored valid pixel; SIN folds the back hemisphere onto the front and takes an unguarded `sqrt` outside the unit disc (`projections.py:32`; the TAN division is at `:10`, the SIN plane return at `:21`). Invalid: `xn <= 0` for TAN, `xn < 0` for SIN, and `X² + Y² > 1` for SIN's inverse.
   - Masking only in `_native_to_plane` is not enough. The NaN flows into the CD multiply and SIP evaluation, and their pullbacks give `0 · NaN = NaN` for the `cd` (and SIP-coefficient) gradients even under a loss that masks the invalid sample; the committee reproduced this. Substitute safe values before the CD and SIP arithmetic, carry an internal validity flag through `native_to_pix` and `pix_to_native`, and restore NaN only at the public outputs. No public validity API: the boolean mask comes from the Stage 4 pixel map.

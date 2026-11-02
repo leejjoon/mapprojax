@@ -3,8 +3,7 @@
 Supported branches must reproduce astropy's pixel->sky mapping. Header keys
 the loader does not understand (axis order, units, non-TAN/SIN projections,
 LONPOLE, PV) must either be honoured or rejected with ``ValueError``; silent
-misinterpretation is the known Stage 2 loader defect and is marked strict
-``xfail`` per case.
+misinterpretation is rejected, not guessed.
 """
 
 from pathlib import Path
@@ -22,13 +21,7 @@ import accuracy_reference as ar
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
 
-LOADER = "Stage 2 header loader: unsupported key is silently misread instead of rejected"
-
 PIX = np.array([[0.0, 0.0], [10.0, 90.0], [49.5, 49.5], [99.0, 3.0], [70.0, 70.0]])
-
-
-def _xfail():
-    return pytest.mark.xfail(strict=True, raises=AssertionError, reason=LOADER)
 
 
 def _header(**cards):
@@ -133,10 +126,61 @@ UNSUPPORTED = {
 }
 
 
-@pytest.mark.parametrize("name", [pytest.param(n, marks=_xfail()) for n in UNSUPPORTED])
+@pytest.mark.parametrize("name", list(UNSUPPORTED))
 def test_unsupported_key_is_honoured_or_rejected(name):
     cards = {**BASE, **UNSUPPORTED[name]}
     _assert_supported_or_rejected(_header(**cards))
+
+
+# The two orientations that a 180-degree rotation reproduces, and the one that
+# it does not unless the header says so explicitly (WCSLIB defaults to 0 at
+# CRVAL2 = +90, and the error grows with field size: 141" on 101 px).
+
+
+def test_south_pole_without_lonpole_is_supported():
+    _assert_matches_astropy(_header(CRVAL2=-90.0, **BASE))
+
+
+def test_north_pole_with_explicit_180_lonpole_is_supported():
+    _assert_matches_astropy(_header(CRVAL2=90.0, LONPOLE=180.0, **BASE))
+
+
+def test_north_pole_without_lonpole_is_rejected():
+    with pytest.raises(ValueError, match="CRVAL2 = \\+90"):
+        load_wcs_params_from_header(_header(CRVAL2=90.0, **BASE))
+
+
+def test_crota2_without_cd_or_pc_is_rejected():
+    spaced = {k: v for k, v in BASE.items() if not k.startswith("CDELT")}
+    with pytest.raises(ValueError, match="CROTA2"):
+        load_wcs_params_from_header(_header(CROTA2=30.0, **spaced))
+
+
+def test_off_diagonal_only_cd_is_not_the_identity():
+    crpix, cd, crval, sip = load_wcs_params_from_header(
+        _header(CD1_2=3.0e-4, CD2_1=2.0e-4)
+    )
+    np.testing.assert_array_equal(cd, [[0.0, 3.0e-4], [2.0e-4, 0.0]])
+    _assert_matches_astropy(_header(CD1_2=3.0e-4, CD2_1=2.0e-4))
+
+
+def test_alternate_wcs_pv_cards_are_ignored():
+    # The SPHEREx L2 header carries PV1_3W/PV2_3W for its WAVE-TAB axis;
+    # they must not be read as primary celestial PV cards.
+    h = ar.load_header("spherex_l2.hdr")
+    assert "PV1_3W" in h
+    load_wcs_params_from_header(h)
+
+
+def test_nonstandard_ctype_shapes_are_rejected():
+    for cards in (
+        dict(CTYPE1="RA---TAN-SIPX", CTYPE2="DEC--TAN-SIP"),
+        dict(CTYPE1="RA", CTYPE2="DEC"),
+        dict(CTYPE1="RA---TAN", CTYPE2="GLAT-TAN"),
+        dict(CTYPE1="RA---TAN", CTYPE2="DEC--SIN"),
+    ):
+        with pytest.raises(ValueError):
+            load_wcs_params_from_header(_header(**{**BASE, **cards}))
 
 
 # --- real headers -----------------------------------------------------------
