@@ -16,8 +16,9 @@ import pytest
 from astropy.io import fits
 from astropy.wcs import WCS
 
-from mapprojax import (Sin, SinJax, SinJaxArray, SinJaxMixed, Tan, TanJax,
-                        TanJaxArray, TanJaxMixed)
+from mapprojax import (Reprojector, Sin, SinJax, SinJaxArray, SinJaxArrayMixed,
+                        SinJaxMixed, Tan, TanJax, TanJaxArray, TanJaxArrayMixed,
+                        TanJaxMixed)
 from mapprojax.sip import Sip
 from mapprojax.wcs_utils import load_wcs_params_from_header
 
@@ -357,6 +358,115 @@ def test_reprojector_masks_invalid_source_pixels():
     assert np.isfinite(got[0]) and np.isfinite(got[2]), got
 
 
+# --- masked-loss gradients through every public method -----------------------
+#
+# Validity is carried as a flag to the public outputs; NaN is inserted only
+# there. A NaN inserted mid-pipeline reaches a later multiply (CD inverse,
+# SIP, rotation, offset trig, the second Reprojector leg) whose pullback gives
+# 0 * NaN = NaN even under a loss that masks the invalid sample.
+
+SIP_A = np.zeros((3, 3)); SIP_A[2, 0] = 2e-6; SIP_A[1, 1] = -1e-6
+SIP_B = np.zeros((3, 3)); SIP_B[0, 2] = 2e-6; SIP_B[1, 1] = 1e-6
+R_PX = np.degrees(1.0) / CD[1][1]  # SIN's unit disc in pixels
+
+# pixel batch: valid, SIN-invalid (outside the disc), NaN input, valid
+PIX_X = np.array([30.0, 1.5 * R_PX, np.nan, -40.0])
+PIX_Y = np.array([-20.0, 0.0, 5.0, 25.0])
+# sky batch: valid, back hemisphere (both projections), NaN input, valid
+SKY_RA = np.radians(np.array([0.5, 179.0, 0.2, -0.8]))
+SKY_DEC = np.radians(np.array([0.3, 0.0, np.nan, -0.4]))
+
+
+def _masked(out):
+    return sum(jnp.sum(jnp.where(jnp.isfinite(o), o, 0.0) ** 2) for o in out)
+
+
+def _call(wcs, method):
+    if method in ("unproj", "unproj_xyz", "unproj_offset", "pix_to_native"):
+        return getattr(wcs, method)(jnp.asarray(PIX_X), jnp.asarray(PIX_Y))
+    if method == "proj":
+        return wcs.proj(jnp.asarray(SKY_RA), jnp.asarray(SKY_DEC))
+    if method == "proj_offset":
+        return wcs.proj_offset(jnp.asarray(SKY_RA), jnp.asarray(SKY_DEC))
+    from mapprojax.utils import radec_to_xyz
+    xyz = radec_to_xyz(jnp.asarray(SKY_RA), jnp.asarray(SKY_DEC), xp=jnp)
+    if method == "proj_xyz":
+        return wcs.proj_xyz(*xyz)
+    return wcs.native_to_pix(*xyz)  # native_to_pix: the sky batch as native vectors
+
+
+METHODS = ["proj", "proj_xyz", "proj_offset", "native_to_pix",
+           "unproj", "unproj_xyz", "unproj_offset", "pix_to_native"]
+
+
+@pytest.mark.parametrize("with_sip", [False, True], ids=["nosip", "sip"])
+@pytest.mark.parametrize("method", METHODS)
+@pytest.mark.parametrize("cls", [TanJax, SinJax], ids=lambda c: c.__name__)
+def test_masked_loss_gradients_are_finite_everywhere(cls, method, with_sip):
+    crval = jnp.asarray([10.0, 20.0])
+
+    def build(params):
+        sip = Sip(a=params["a"], b=params["b"]) if with_sip else None
+        return cls(params["crpix"], params["cd"], params["crval"], sip=sip)
+
+    params = {"crpix": jnp.asarray([3.0, -2.0]), "cd": jnp.asarray(CD), "crval": crval,
+              "a": jnp.asarray(SIP_A), "b": jnp.asarray(SIP_B)}
+    out = _call(build(params), method)
+    valid = np.isfinite(np.asarray(out[0]))
+    assert valid.any() and not valid.all(), (method, out)  # a genuinely mixed batch
+
+    grads = jax.grad(lambda p: _masked(_call(build(p), method)))(params)
+    for name, g in grads.items():
+        assert np.all(np.isfinite(np.asarray(g))), f"{cls.__name__}.{method} d/d{name}: {g}"
+
+
+@pytest.mark.parametrize("cls", [TanJax, SinJax], ids=lambda c: c.__name__)
+def test_masked_loss_pixel_gradients_are_finite(cls):
+    w = cls(jnp.zeros(2), jnp.asarray(CD), jnp.asarray([10.0, 20.0]),
+            sip=Sip(a=jnp.asarray(SIP_A), b=jnp.asarray(SIP_B)))
+    gx, gy = jax.grad(lambda x, y: _masked(w.unproj(x, y)), argnums=(0, 1))(
+        jnp.asarray(PIX_X), jnp.asarray(PIX_Y))
+    assert np.all(np.isfinite(np.asarray(gx))) and np.all(np.isfinite(np.asarray(gy)))
+
+
+def test_masked_gradient_of_a_valid_sample_ignores_its_invalid_neighbours():
+    """Masking must not just make gradients finite but leave the valid
+    samples' contribution exactly as if the invalid ones were absent."""
+    def loss(cd, xs, ys):
+        w = SinJax(jnp.zeros(2), cd, jnp.asarray([10.0, 20.0]))
+        return _masked(w.unproj(xs, ys))
+
+    ok = np.isfinite(PIX_X) & (np.abs(PIX_X) < R_PX)
+    full = jax.grad(loss)(jnp.asarray(CD), jnp.asarray(PIX_X), jnp.asarray(PIX_Y))
+    alone = jax.grad(loss)(jnp.asarray(CD), jnp.asarray(PIX_X[ok]), jnp.asarray(PIX_Y[ok]))
+    np.testing.assert_allclose(np.asarray(full), np.asarray(alone), rtol=1e-12, atol=0)
+
+
+@pytest.mark.parametrize("proj_cls", [Sin, Tan], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("precision", ["f64", "f32"])
+def test_reprojector_masked_gradients_for_both_legs(proj_cls, precision):
+    """The source leg's invalid output is the target leg's input; it must
+    reach the target leg as a flag, not as NaN."""
+    sip = Sip(a=SIP_A, b=SIP_B)
+    src = proj_cls([3.0, -2.0], CD, [10.0, 20.0], sip=sip)
+    tgt = proj_cls([-4.0, 6.0], CD, [10.05, 20.02], sip=sip)
+    rp = Reprojector(src, tgt, matrix_precision=precision)
+    xs, ys = jnp.asarray(PIX_X), jnp.asarray(PIX_Y)
+
+    out = rp.pix_to_pix(xs, ys)
+    valid = np.isfinite(np.asarray(out[0]))
+    assert valid.any() and not valid.all(), out
+
+    g = jax.grad(lambda r: _masked(r.pix_to_pix(xs, ys)))(rp)
+    for leg in ("src_leg", "tgt_leg"):
+        leg_g = getattr(g, leg)
+        for name, val in (("crpix", leg_g.crpix), ("cd", leg_g.cd),
+                          ("sip.a", leg_g.sip.a), ("sip.b", leg_g.sip.b)):
+            arr = np.asarray(val)
+            assert np.all(np.isfinite(arr)), f"{leg}.{name}: {arr}"
+            assert np.any(arr != 0), f"{leg}.{name} is identically zero"
+
+
 # --- singular / non-finite CD: the scaled-determinant rule -----------------
 
 @pytest.mark.parametrize(
@@ -382,11 +492,58 @@ def test_scaled_determinant_accepts_representable_extremes(cd, expect):
                       - np.eye(2)).max() < 1e-6
 
 
-def test_matrix_that_loses_rank_when_cast_to_f32_is_rejected():
-    # Distinct in fp64, identical after the f32 cast.
+def test_singular_cd_is_rejected_at_construction():
+    # Exactly singular in fp64 already: the ordinary rejection.
     cd = [[1e-3, 0.0], [1e-3 + 1e-12, 0.0]]
     with pytest.raises(ValueError):
         Tan(np.zeros(2), cd, np.zeros(2))
+
+
+# Invertible in fp64 (det ~ 1e-14), singular once cast to f32 (1 + 1e-8 == 1).
+CAST_LOSS_CD = [[1e-3, 1e-3], [1e-3, 1e-3 * (1 + 1e-8)]]
+
+
+def test_matrix_that_loses_rank_when_cast_to_f32_is_rejected():
+    """The check runs on the stored (cast) matrix, wherever the cast happens."""
+    from mapprojax import Reprojector
+
+    fp64 = Tan(np.zeros(2), CAST_LOSS_CD, np.zeros(2))  # valid in fp64
+    Reprojector(fp64, fp64, matrix_precision="f64")      # and in an f64 leg
+    with pytest.raises(ValueError):
+        Reprojector(fp64, fp64, matrix_precision="f32")
+    with pytest.raises(ValueError):
+        TanJaxMixed(np.zeros(2), CAST_LOSS_CD, np.zeros(2))
+
+
+@pytest.mark.parametrize("cls", [TanJaxMixed, SinJaxMixed, TanJaxArrayMixed, SinJaxArrayMixed],
+                         ids=lambda c: c.__name__)
+@pytest.mark.parametrize("kind", ["singular", "nan"])
+def test_mixed_constructors_reject_bad_cd(cls, kind):
+    cd = BAD_CD[kind]
+    crval = (np.zeros(1), np.zeros(1)) if "Array" in cls.__name__ else np.zeros(2)
+    with pytest.raises(ValueError):
+        cls(np.zeros(2), cd, crval)
+
+
+def test_cd_inverse_is_finite_on_the_invalid_branch():
+    from mapprojax.base import _cd_inverse
+
+    inv, valid = _cd_inverse(np.diag([np.inf, 1e-3]), xp=np)
+    assert not bool(valid)
+    assert np.all(np.isfinite(inv))
+
+
+@pytest.mark.parametrize("impl", ["proj", "unproj"])
+@pytest.mark.parametrize("cd", [[[np.inf, 0.0], [0.0, 1e-3]], BAD_CD["nan"]], ids=["inf", "nan"])
+def test_masked_gradient_wrt_non_finite_cd_is_finite(impl, cd):
+    def loss(cd):
+        w = TanJax(jnp.zeros(2), cd, jnp.zeros(2))
+        out = (w.proj(jnp.array([1e-3]), jnp.array([1e-3])) if impl == "proj"
+               else w.unproj(jnp.array([10.0]), jnp.array([20.0])))
+        return sum(jnp.sum(jnp.where(jnp.isfinite(o), o, 0.0)) for o in out)
+
+    g = jax.jit(jax.grad(loss))(jnp.asarray(cd))
+    assert np.all(np.isfinite(np.asarray(g))), g
 
 
 @pytest.mark.parametrize("impl", ["proj", "unproj"])

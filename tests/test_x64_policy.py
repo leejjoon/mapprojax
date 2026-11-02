@@ -142,3 +142,52 @@ def test_f32_sip_reprojection_has_no_f64_ops():
         print("ok")
     """)
     assert "ok" in proc.stdout
+
+
+@pytest.mark.parametrize("cls", ["TanJax", "TanJaxArray", "TanJaxMixed", "TanJaxArrayMixed"])
+def test_absolute_methods_raise_after_x64_is_switched_off(cls):
+    """Built with x64 on, used with it off: the stored leaves are still
+    float64 but every operation now truncates, so the check is on effective
+    precision. Every absolute method goes through the same rotation guard,
+    including ``unproj_xyz`` on the Mixed array class (it had none)."""
+    proc = run(f"""
+        import jax, jax.numpy as jnp
+        jax.config.update("jax_enable_x64", True)
+        import mapprojax as mp
+        arr = "Array" in "{cls}"
+        crval = (jnp.array([10.0]), jnp.array([20.0])) if arr else jnp.array([10.0, 20.0])
+        w = mp.{cls}(jnp.zeros(2), jnp.array([[1e-3, 0.], [0., 1e-3]]), crval)
+        jax.config.update("jax_enable_x64", False)
+        x = jnp.array([1.0]); y = jnp.array([2.0])
+        calls = {{
+            "proj": lambda: w.proj(x * 0.1, y * 0.1),
+            "unproj": lambda: w.unproj(x, y),
+            "proj_xyz": lambda: w.proj_xyz(x, x, x),
+            "unproj_xyz": lambda: w.unproj_xyz(x, y),
+        }}
+        for name, call in calls.items():
+            try:
+                call()
+            except TypeError:
+                continue
+            raise SystemExit(f"{{name}} did not raise")
+        print("ok")
+    """)
+    assert "ok" in proc.stdout
+
+
+def test_array_guard_checks_both_reference_components():
+    """A float32 Dec array next to a float64 RA array is not float64."""
+    proc = run("""
+        import jax, jax.numpy as jnp
+        jax.config.update("jax_enable_x64", True)
+        import mapprojax as mp
+        w = mp.TanJaxArray(jnp.zeros(2), jnp.array([[1e-3, 0.], [0., 1e-3]]),
+                           (jnp.array([10.0]), jnp.array([20.0])))
+        w.crvals = (w.crvals[0], w.crvals[1].astype(jnp.float32))
+        try:
+            w.unproj(jnp.array([1.0]), jnp.array([2.0]))
+        except TypeError:
+            print("raised")
+    """)
+    assert "raised" in proc.stdout

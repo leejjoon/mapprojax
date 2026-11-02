@@ -156,6 +156,15 @@ def test_crota2_without_cd_or_pc_is_rejected():
         load_wcs_params_from_header(_header(CROTA2=30.0, **spaced))
 
 
+def test_alternate_pc_card_does_not_hide_crota2():
+    """``PC1_1A`` belongs to an alternate WCS; it is not the primary matrix
+    the loader reads, so it must not suppress the CROTA2 rejection (it did,
+    and the header loaded 268-672 arcsec off astropy)."""
+    spaced = {k: v for k, v in BASE.items() if not k.startswith("CDELT")}
+    with pytest.raises(ValueError, match="CROTA2"):
+        load_wcs_params_from_header(_header(CROTA2=30.0, PC1_1A=1.0, **spaced))
+
+
 def test_off_diagonal_only_cd_is_not_the_identity():
     crpix, cd, crval, sip = load_wcs_params_from_header(
         _header(CD1_2=3.0e-4, CD2_1=2.0e-4)

@@ -184,7 +184,11 @@ def load_wcs_params_from_header(header):
     # Use CDi_j if any of the four keys is present, otherwise PCi_j * CDELTi.
     cd_keys = ("CD1_1", "CD1_2", "CD2_1", "CD2_2")
     has_cd = any(key in header for key in cd_keys)
-    has_pc = any(str(key).startswith("PC") and key != "PCOUNT" for key in header)
+    # Only the primary PCi_j cards the fallback below reads count: an
+    # alternate-version card (PC1_1A) belongs to another WCS and must not
+    # suppress the CROTA2 rejection.
+    pc_keys = ("PC1_1", "PC1_2", "PC2_1", "PC2_2")
+    has_pc = any(key in header for key in pc_keys)
     if not has_cd and not has_pc and "CROTA2" in header:
         raise ValueError(
             "CROTA2 without CD/PC is not supported; the loader ignores it, "

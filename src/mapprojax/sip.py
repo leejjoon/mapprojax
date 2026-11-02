@@ -143,6 +143,7 @@ class Sip:
         Public so a caller can test convergence of an approximate inverse
         without duplicating the polynomial evaluation.
         """
+        xp = _backend(xp, self.a, self.b, u_pix, v_pix, u_foc, v_foc)
         u_pix = xp.asarray(u_pix)
         v_pix = xp.asarray(v_pix)
         r_u = u_pix + self._evaluate_poly(u_pix, v_pix, self.a, xp) - xp.asarray(u_foc)
@@ -159,19 +160,38 @@ class Sip:
         this inverse), otherwise the identity. AP/BP are only a seed: using
         them as the answer is 2.9e-2 px off on the full L2 detector.
 
-        Non-convergent or non-finite points return NaN, so a caller can mask
-        them out. Steps are unrolled statically, so the whole solve is
-        differentiable.
+        Points that do not converge, or where the Jacobian is singular or
+        non-finite (the inverse has no usable derivative there), return NaN
+        so a caller can mask them out. Steps are unrolled statically, so the
+        whole solve is differentiable.
+        """
+        uu, vv, ok = self._foc_to_pix_valid(u, v, xp=xp)
+        xp = _backend(xp, uu, vv)
+        return xp.where(ok, uu, xp.nan), xp.where(ok, vv, xp.nan)
+
+    def _jacobian_det(self, uu, vv, xp):
+        j11 = 1 + self._derivative(uu, vv, self.a, 0, xp)
+        j12 = self._derivative(uu, vv, self.a, 1, xp)
+        j21 = self._derivative(uu, vv, self.b, 0, xp)
+        j22 = 1 + self._derivative(uu, vv, self.b, 1, xp)
+        return j11, j12, j21, j22, j11 * j22 - j12 * j21
+
+    def _foc_to_pix_valid(self, u, v, xp=np) -> Tuple:
+        """``(u_pix, v_pix, valid)`` with finite pixels everywhere.
+
+        Used inside the WCS pipeline, which carries validity to its public
+        outputs instead of inserting NaN here: a NaN returned mid-pipeline
+        would reach ``+ crpix`` and later arithmetic and poison gradients.
+        Invalid samples carry the focal coordinate itself as a stand-in.
         """
         xp = _backend(xp, self.a, self.b, self.ap, self.bp, u, v)
+        u = xp.asarray(u)
+        v = xp.asarray(v)
         if self.a is None and self.b is None:
             # No forward polynomial: AP/BP *is* the inverse.
             F = self._evaluate_poly(u, v, self.ap, xp)
             G = self._evaluate_poly(u, v, self.bp, xp)
-            return u + F, v + G
-
-        u = xp.asarray(u)
-        v = xp.asarray(v)
+            return u + F, v + G, xp.isfinite(u + F) & xp.isfinite(v + G)
 
         if self.ap is not None or self.bp is not None:
             uu = u + self._evaluate_poly(u, v, self.ap, xp)
@@ -181,25 +201,27 @@ class Sip:
 
         for _ in range(int(self.inverse_steps)):
             r_u, r_v = self.inverse_residual(uu, vv, u, v, xp)
-            j11 = 1 + self._derivative(uu, vv, self.a, 0, xp)
-            j12 = self._derivative(uu, vv, self.a, 1, xp)
-            j21 = self._derivative(uu, vv, self.b, 0, xp)
-            j22 = 1 + self._derivative(uu, vv, self.b, 1, xp)
-            det = j11 * j22 - j12 * j21
-            # Guard a singular Jacobian without branching on a tracer.
-            safe_det = xp.where(det == 0, xp.ones_like(det), det)
+            j11, j12, j21, j22, det = self._jacobian_det(uu, vv, xp)
+            # Guard a singular or non-finite Jacobian without branching on a
+            # tracer; the final check below rejects such points.
+            bad = (det == 0) | ~xp.isfinite(det)
+            safe_det = xp.where(bad, xp.ones_like(det), det)
             du = (j22 * r_u - j12 * r_v) / safe_det
             dv = (-j21 * r_u + j11 * r_v) / safe_det
             uu = uu - du
             vv = vv - dv
 
-        # Non-finite or unconverged points are not a usable pixel.
         r_u, r_v = self.inverse_residual(uu, vv, u, v, xp)
+        *_, det = self._jacobian_det(uu, vv, xp)
         # dtype comes from a primal value, never np.asarray on a tracer.
-        tol = 64 * jnp.finfo(uu.dtype).eps * (1 + xp.abs(u) + xp.abs(v))
-        converged = (xp.abs(r_u) <= tol) & (xp.abs(r_v) <= tol) & xp.isfinite(uu) & xp.isfinite(vv)
-        return (xp.where(converged, uu, xp.nan),
-                xp.where(converged, vv, xp.nan))
+        eps = jnp.finfo(uu.dtype).eps
+        tol = 64 * eps * (1 + xp.abs(u) + xp.abs(v))
+        # A fold of the forward map (det -> 0) has a root but no inverse
+        # derivative; |det| ~ 1 for any real SIP, so 64 eps is far from it.
+        valid = ((xp.abs(r_u) <= tol) & (xp.abs(r_v) <= tol)
+                 & xp.isfinite(uu) & xp.isfinite(vv)
+                 & xp.isfinite(det) & (xp.abs(det) > 64 * eps))
+        return xp.where(valid, uu, u), xp.where(valid, vv, v), valid
 
     def to_dict(self):
         def _to_list(arr):

@@ -19,7 +19,7 @@ import jax
 import jax.numpy as jnp
 from jax.tree_util import register_pytree_node_class
 
-from .base import WCSBase
+from .base import WCSBase, _check_cd
 from .projections import TanMixin, SinMixin
 from .sip import Sip
 from .utils import apply_rotation, compose_relative_rotation
@@ -58,8 +58,11 @@ class _ReprojectionLegBase(WCSBase):
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        crpix, cd, sip = children
-        return cls(crpix, cd, sip=sip)
+        # __new__, not __init__: unflatten must never validate or re-cast
+        # (leaves may be tracers or gradient objects).
+        obj = cls.__new__(cls)
+        obj.crpix, obj.cd, obj.sip = children
+        return obj
 
 
 @register_pytree_node_class
@@ -98,6 +101,8 @@ def _leg(wcs, dtype):
     leg_cls = _leg_cls_for(wcs)
     crpix = jnp.asarray(wcs.crpix, dtype=dtype)
     cd = jnp.asarray(wcs.cd, dtype=dtype)
+    # Validate the *cast* matrix: a CD valid in fp64 can lose rank in f32.
+    _check_cd(cd)
     sip = _cast_sip(wcs.sip, dtype)
     return leg_cls(crpix, cd, sip=sip)
 
@@ -206,18 +211,26 @@ class Reprojector:
         ``self.tgt_leg.native_to_pix(*this)``. Exposed for callers that
         need that intermediate vector directly.
         """
+        return self._src_leg._mask(*self._pix_to_native_tgt_valid(x, y))
+
+    def _pix_to_native_tgt_valid(self, x, y):
         x = jnp.asarray(x, dtype=self._dtype)
         y = jnp.asarray(y, dtype=self._dtype)
 
-        xn, yn, zn = self._src_leg.pix_to_native(x, y)
-        return apply_rotation(self.m_rel, xn, yn, zn)
+        xn, yn, zn, valid = self._src_leg._pix_to_native_valid(x, y)
+        return (*apply_rotation(self.m_rel, xn, yn, zn), valid)
 
     def pix_to_pix(self, x, y):
         """Map pixel coordinates in ``wcs_src`` to the corresponding pixel
         coordinates in ``wcs_tgt``.
+
+        Returns NaN where either leg is outside its domain. Validity is
+        carried between the legs rather than passed as NaN, so masked-loss
+        gradients for both legs' CD and SIP stay finite.
         """
-        xt, yt, zt = self.pix_to_native_tgt(x, y)
-        return self._tgt_leg.native_to_pix(xt, yt, zt)
+        xt, yt, zt, valid = self._pix_to_native_tgt_valid(x, y)
+        px, py, ok = self._tgt_leg._native_to_pix_valid(xt, yt, zt)
+        return self._tgt_leg._mask(px, py, valid & ok)
 
     def tree_flatten(self):
         children = (self._src_leg, self._tgt_leg, self.m_rel)

@@ -33,6 +33,19 @@ def _cd_is_valid(cd, xp=np):
     return _cd_inverse(cd, xp=xp)[1]
 
 
+def _cd_finite(cd, xp=np):
+    """``(cd_safe, finite)``: ``cd`` with any non-finite matrix replaced by
+    the identity, and the flag saying which matrices were replaced.
+
+    A selection, not arithmetic, so an infinite or NaN entry never reaches a
+    multiply whose pullback would turn ``0 * inf`` into NaN.
+    """
+    cd = xp.asarray(cd)
+    finite = xp.all(xp.isfinite(cd), axis=(-2, -1))
+    eye = xp.broadcast_to(xp.eye(2, dtype=cd.dtype), cd.shape)
+    return xp.where(finite[..., None, None], cd, eye), finite
+
+
 def _cd_inverse(cd, xp=np):
     """Guarded closed-form 2x2 inverse of a CD matrix.
 
@@ -52,14 +65,13 @@ def _cd_inverse(cd, xp=np):
     adjugate by the scaled determinant first keeps the intermediate inside
     the dtype's range, so the scaling cancels instead of overflowing.
     """
-    cd = xp.asarray(cd)
-    finite = xp.all(xp.isfinite(cd), axis=(-2, -1))
-    scale = xp.max(xp.abs(xp.where(xp.isfinite(cd), cd, xp.zeros_like(cd))), axis=(-2, -1))
+    cd_safe, finite = _cd_finite(cd, xp)
+    scale = xp.max(xp.abs(cd_safe), axis=(-2, -1))
 
-    # where() rather than a division: a zero or non-finite entry must not
-    # reach the arithmetic that feeds the gradients.
-    safe_scale = xp.where(finite & (scale > 0), scale, xp.ones_like(scale))
-    scaled = cd / safe_scale[..., None, None]
+    # where() rather than a division: a zero scale must not reach the
+    # arithmetic that feeds the gradients.
+    safe_scale = xp.where(scale > 0, scale, xp.ones_like(scale))
+    scaled = cd_safe / safe_scale[..., None, None]
     det = scaled[..., 0, 0] * scaled[..., 1, 1] - scaled[..., 0, 1] * scaled[..., 1, 0]
     valid = finite & (det != 0) & xp.isfinite(det)
 
@@ -72,30 +84,20 @@ def _cd_inverse(cd, xp=np):
     return cd_inv, valid
 
 
-class WCSBase(ABC):
+class _PipelineBase(ABC):
+    """Pixel <-> native <-> celestial pipeline shared by the scalar and the
+    array WCS bases (and the reprojection legs).
+
+    Every stage has an internal ``_..._valid`` form that returns finite
+    values plus a validity flag; invalid samples carry a safe substitute.
+    The public methods are thin wrappers that turn the flag into NaN at the
+    very end. Inserting NaN earlier would let it reach a later multiply --
+    the CD inverse, the SIP polynomial, the celestial rotation, the offset
+    trig -- whose pullback then gives ``0 * NaN = NaN`` for the parameter
+    gradients even when the caller masks the invalid sample out of the loss.
+    """
+
     xp = np
-
-    def __init__(self, crpix, cd, crval, sip=None):
-        self.crpix = self.xp.array(crpix, dtype=float)
-        self.cd = self.xp.array(cd, dtype=float)
-        self.crval = self.xp.array(crval, dtype=float)
-        self.sip = sip
-        _check_cd(self.cd)
-
-    @property
-    def r_matrix(self):
-        """Celestial -> native rotation, derived from ``crval``.
-
-        Never stored: a cached matrix would stop following the ``crval`` leaf
-        across a pytree flatten/unflatten and silently zero the ``crval``
-        gradient. Recomputed on access, which is a 3x3 trig evaluation, not
-        per-pixel work.
-        """
-        return rotation_matrix(
-            self.xp.radians(self.crval[0]),
-            self.xp.radians(self.crval[1]),
-            xp=self.xp,
-        )
 
     @abstractmethod
     def _native_to_plane(self, xn, yn, zn):
@@ -121,6 +123,46 @@ class WCSBase(ABC):
         *values, valid = values
         return tuple(self.xp.where(valid, v, self.xp.nan) for v in values)
 
+    def _finite_inputs(self, *values, fill=0.0):
+        """``(*safe_values, valid)``: non-finite inputs (a caller's NaN, or an
+        upstream stage's masked output) replaced by ``fill`` so they never
+        reach the arithmetic below. ``fill`` may be a tuple, one per value."""
+        xp = self.xp
+        values = [xp.asarray(v) for v in values]
+        valid = xp.isfinite(values[0])
+        for v in values[1:]:
+            valid = valid & xp.isfinite(v)
+        fills = fill if isinstance(fill, tuple) else (fill,) * len(values)
+        safe = [xp.where(valid, v, xp.asarray(f, dtype=v.dtype)) for v, f in zip(values, fills)]
+        return (*safe, valid)
+
+    # --- native <-> pixel -------------------------------------------------
+
+    def _native_to_pix_valid(self, xn, yn, zn):
+        """``(x, y, valid)`` with finite ``x``/``y`` everywhere."""
+        xn, yn, zn, valid = self._finite_inputs(xn, yn, zn, fill=(1.0, 0.0, 0.0))
+
+        # Native -> Plane (projection specific). Xp/Yp are finite even where
+        # the sample is invalid, so the CD and SIP math below never sees a NaN.
+        Xp, Yp, in_domain = self._native_to_plane(xn, yn, zn)
+        valid = valid & in_domain
+
+        # Plane (radians) -> intermediate world (degrees) -> pixel.
+        Xp_deg = self.xp.degrees(Xp)
+        Yp_deg = self.xp.degrees(Yp)
+
+        cd_inv, cd_valid = _cd_inverse(self.cd, xp=self.xp)
+        valid = valid & cd_valid
+
+        U = cd_inv[..., 0, 0] * Xp_deg + cd_inv[..., 0, 1] * Yp_deg
+        V = cd_inv[..., 1, 0] * Xp_deg + cd_inv[..., 1, 1] * Yp_deg
+
+        if self.sip is not None:
+            U, V, converged = self.sip._foc_to_pix_valid(U, V, xp=self.xp)
+            valid = valid & converged
+
+        return U + self.crpix[0], V + self.crpix[1], valid
+
     def native_to_pix(self, xn, yn, zn):
         """
         Map native unit vector to pixel coordinates.
@@ -128,30 +170,31 @@ class WCSBase(ABC):
 
         Returns NaN outside the projection's domain.
         """
-        # 2. Native -> Plane (Projection specific). Xp/Yp are finite even
-        #    where the sample is invalid, so the CD and SIP math below never
-        #    sees a NaN and their gradients stay finite.
-        Xp, Yp, valid = self._native_to_plane(xn, yn, zn)
+        return self._mask(*self._native_to_pix_valid(xn, yn, zn))
 
-        # 3. Plane -> Pixel (Linear + Distortion)
-        # Xp, Yp from projections are in radians (dimensionless ratios).
-        # FITS CD matrix is usually in degrees.
-        Xp_deg = self.xp.degrees(Xp)
-        Yp_deg = self.xp.degrees(Yp)
-        
-        cd_inv, cd_valid = _cd_inverse(self.cd, xp=self.xp)
-        valid = valid & cd_valid
+    def _pix_to_native_valid(self, x, y):
+        """``(xn, yn, zn, valid)`` with a finite native vector everywhere."""
+        x, y, valid = self._finite_inputs(x, y)
 
-        U = cd_inv[0,0] * Xp_deg + cd_inv[0,1] * Yp_deg
-        V = cd_inv[1,0] * Xp_deg + cd_inv[1,1] * Yp_deg
-        
+        # Pixel -> Plane (linear + distortion)
+        u = x - self.crpix[0]
+        v = y - self.crpix[1]
+
         if self.sip is not None:
-             U, V = self.sip.foc_to_pix(U, V, xp=self.xp)
-        
-        x_img = U + self.crpix[0]
-        y_img = V + self.crpix[1]
+            u, v = self.sip.pix_to_foc(u, v, xp=self.xp)
 
-        return self._mask(x_img, y_img, valid)
+        # Multiplying by a singular CD gives a finite but meaningless native
+        # vector, so the matrix itself has to be checked; a non-finite one is
+        # replaced by the identity before the multiply.
+        cd, _ = _cd_finite(self.cd, xp=self.xp)
+        valid = valid & _cd_is_valid(self.cd, xp=self.xp)
+        Xp_deg = cd[..., 0, 0] * u + cd[..., 0, 1] * v
+        Yp_deg = cd[..., 1, 0] * u + cd[..., 1, 1] * v
+
+        # Plane -> Native (projection specific), in radians.
+        xn, yn, zn, in_domain = self._plane_to_native(self.xp.radians(Xp_deg),
+                                                      self.xp.radians(Yp_deg))
+        return xn, yn, zn, valid & in_domain
 
     def pix_to_native(self, x, y):
         """
@@ -160,48 +203,53 @@ class WCSBase(ABC):
 
         Returns NaN outside the projection's domain.
         """
-        x = self.xp.asarray(x)
-        y = self.xp.asarray(y)
-        
-        # 1. Pixel -> Plane (Linear + Distortion)
-        u = x - self.crpix[0]
-        v = y - self.crpix[1]
-        
-        if self.sip is not None:
-             u, v = self.sip.pix_to_foc(u, v, xp=self.xp)
-        
-        Xp_deg = self.cd[0,0] * u + self.cd[0,1] * v
-        Yp_deg = self.cd[1,0] * u + self.cd[1,1] * v
-        
-        # 2. Plane -> Native (Projection specific)
-        # Convert to radians for projection logic
-        Xp_rad = self.xp.radians(Xp_deg)
-        Yp_rad = self.xp.radians(Yp_deg)
+        return self._mask(*self._pix_to_native_valid(x, y))
 
-        xn, yn, zn, valid = self._plane_to_native(Xp_rad, Yp_rad)
-        # Multiplying by a singular or non-finite CD gives a finite but
-        # meaningless native vector, so the matrix itself has to be checked.
-        valid = valid & _cd_is_valid(self.cd, xp=self.xp)
-        return self._mask(xn, yn, zn, valid)
+    # --- celestial <-> native ---------------------------------------------
+
+    def _rotation(self):
+        """Celestial -> native rotation (one matrix, or one per element)."""
+        raise NotImplementedError
+
+    def _check_rotation_precision(self):
+        """Hook for the JAX classes, whose rotation must run in float64."""
+
+    def _celestial_to_native(self, x, y, z):
+        self._check_rotation_precision()
+        return apply_rotation(self._rotation(), x, y, z)
+
+    def _native_to_celestial(self, xn, yn, zn):
+        self._check_rotation_precision()
+        return apply_rotation_transpose(self._rotation(), xn, yn, zn)
+
+    def _proj_xyz_valid(self, x, y, z):
+        x, y, z, valid = self._finite_inputs(x, y, z, fill=(1.0, 0.0, 0.0))
+        xn, yn, zn = self._celestial_to_native(x, y, z)
+        px, py, ok = self._native_to_pix_valid(xn, yn, zn)
+        return px, py, valid & ok
+
+    def _unproj_xyz_valid(self, x, y):
+        xn, yn, zn, valid = self._pix_to_native_valid(x, y)
+        return (*self._native_to_celestial(xn, yn, zn), valid)
 
     def proj_xyz(self, x, y, z):
         """
         Forward projection: Celestial unit vector -> Pixel coordinates.
+
+        Returns NaN where the position falls outside the projection's domain.
         """
-        # 1. Celestial -> Native (Rotation)
-        # v_n = M * v_c
-        xn, yn, zn = apply_rotation(self.r_matrix, x, y, z)
-        return self.native_to_pix(xn, yn, zn)
-        
+        return self._mask(*self._proj_xyz_valid(x, y, z))
+
     def proj(self, ra, dec):
         """
         Forward projection: Celestial (radians) -> Pixel coordinates.
 
         Returns NaN where the position falls outside the projection's domain.
         """
-        # 1. Spherical -> Cartesian (Celestial)
+        ra, dec, valid = self._finite_inputs(ra, dec)
         xc, yc, zc = radec_to_xyz(ra, dec, xp=self.xp)
-        return self.proj_xyz(xc, yc, zc)
+        px, py, ok = self._proj_xyz_valid(xc, yc, zc)
+        return self._mask(px, py, valid & ok)
 
     def unproj_xyz(self, x, y):
         """
@@ -209,11 +257,7 @@ class WCSBase(ABC):
 
         Returns NaN outside the projection's domain.
         """
-        xn, yn, zn = self.pix_to_native(x, y)
-        
-        # 3. Native -> Celestial (Inverse Rotation)
-        # v_c = M.T * v_n
-        return apply_rotation_transpose(self.r_matrix, xn, yn, zn)
+        return self._mask(*self._unproj_xyz_valid(x, y))
 
     def unproj(self, x, y):
         """
@@ -221,11 +265,38 @@ class WCSBase(ABC):
 
         Returns NaN outside the projection's domain.
         """
-        xc, yc, zc = self.unproj_xyz(x, y)
-
-        # 4. Cartesian -> Spherical
+        xc, yc, zc, valid = self._unproj_xyz_valid(x, y)
         ra_rad, dec_rad = xyz_to_radec(xc, yc, zc, xp=self.xp)
-        return ra_rad, dec_rad
+        return self._mask(ra_rad, dec_rad, valid)
+
+
+class WCSBase(_PipelineBase):
+    xp = np
+
+    def __init__(self, crpix, cd, crval, sip=None):
+        self.crpix = self.xp.array(crpix, dtype=float)
+        self.cd = self.xp.array(cd, dtype=float)
+        self.crval = self.xp.array(crval, dtype=float)
+        self.sip = sip
+        _check_cd(self.cd)
+
+    @property
+    def r_matrix(self):
+        """Celestial -> native rotation, derived from ``crval``.
+
+        Never stored: a cached matrix would stop following the ``crval`` leaf
+        across a pytree flatten/unflatten and silently zero the ``crval``
+        gradient. Recomputed on access, which is a 3x3 trig evaluation, not
+        per-pixel work.
+        """
+        return rotation_matrix(
+            self.xp.radians(self.crval[0]),
+            self.xp.radians(self.crval[1]),
+            xp=self.xp,
+        )
+
+    def _rotation(self):
+        return self.r_matrix
 
     def unproj_offset(self, x, y):
         """Inverse projection: pixel -> small sky offset from CRVAL,
@@ -248,7 +319,7 @@ class WCSBase(ABC):
         -------
         dalpha_cosdec, ddelta : same shape as x, y
         """
-        xn, yn, zn = self.pix_to_native(x, y)
+        xn, yn, zn, valid = self._pix_to_native_valid(x, y)
         p = self.xp.radians(self.crval[1])
         cos_p, sin_p = self.xp.cos(p), self.xp.sin(p)
 
@@ -282,7 +353,7 @@ class WCSBase(ABC):
         cos_ddelta = cos_delta * cos_p + zc * sin_p
         ddelta = self.xp.arctan2(sin_ddelta, cos_ddelta)
 
-        return dalpha * cos_p, ddelta
+        return self._mask(dalpha * cos_p, ddelta, valid)
 
     def unproj_absolute(self, x, y):
         """Inverse projection: pixel -> true celestial (RA, Dec) in
@@ -319,6 +390,7 @@ class WCSBase(ABC):
         coordinates. Inverse of :meth:`unproj_offset`; see its docstring
         for the accuracy/precision rationale.
         """
+        dalpha_cosdec, ddelta, valid = self._finite_inputs(dalpha_cosdec, ddelta)
         p = self.xp.radians(self.crval[1])
         cos_p, sin_p = self.xp.cos(p), self.xp.sin(p)
         dalpha = dalpha_cosdec / cos_p
@@ -336,7 +408,8 @@ class WCSBase(ABC):
         xn = w * cos_p + zc * sin_p
         zn = -w * sin_p + zc * cos_p
 
-        return self.native_to_pix(xn, yn, zn)
+        px, py, ok = self._native_to_pix_valid(xn, yn, zn)
+        return self._mask(px, py, valid & ok)
 
     def proj_absolute(self, ra, dec):
         """Forward projection: true celestial (RA, Dec) in radians ->
@@ -377,7 +450,7 @@ class WCSBase(ABC):
         return cls(data['crpix'], data['cd'], data['crval'], sip=sip)
 
 
-class WCSArrayBase(ABC):
+class WCSArrayBase(_PipelineBase):
     xp = np
 
     def __init__(self, crpix, cd, crvals, sip=None):
@@ -406,113 +479,8 @@ class WCSArrayBase(ABC):
             xp=self.xp,
         )
 
-    @abstractmethod
-    def _native_to_plane(self, xn, yn, zn):
-        """Map native unit vector to ``(X, Y, valid)``; X/Y finite."""
-        pass
-
-    @abstractmethod
-    def _plane_to_native(self, X, Y):
-        """Map projection plane to ``(xn, yn, zn, valid)``."""
-        pass
-
-    def _mask(self, *values):
-        """NaN out the invalid samples of ``values``, selected not multiplied.
-
-        ``finite * nan`` poisons the pullback with ``0 * nan = nan``, so a
-        multiplicative mask defeats the purpose of masking. ``where`` selects,
-        and its gradient is the identity on the selected branch.
-
-        The validity flag is the last positional argument.
-        """
-        *values, valid = values
-        return tuple(self.xp.where(valid, v, self.xp.nan) for v in values)
-
-    def native_to_pix(self, xn, yn, zn):
-        """
-        Map native unit vector to pixel coordinates.
-        Does NOT apply celestial rotation.
-        """
-        Xp, Yp, valid = self._native_to_plane(xn, yn, zn)
-        
-        Xp_deg = self.xp.degrees(Xp)
-        Yp_deg = self.xp.degrees(Yp)
-        
-        cd_inv, cd_valid = _cd_inverse(self.cd, xp=self.xp)
-        valid = valid & cd_valid
-
-        U = cd_inv[0,0] * Xp_deg + cd_inv[0,1] * Yp_deg
-        V = cd_inv[1,0] * Xp_deg + cd_inv[1,1] * Yp_deg
-        
-        if self.sip is not None:
-             U, V = self.sip.foc_to_pix(U, V, xp=self.xp)
-             
-        x_img = U + self.crpix[0]
-        y_img = V + self.crpix[1]
-
-        return self._mask(x_img, y_img, valid)
-
-    def pix_to_native(self, x, y):
-        """
-        Map pixel coordinates to native unit vector.
-        Does NOT apply celestial rotation.
-
-        Returns NaN outside the projection's domain.
-        """
-        x = self.xp.asarray(x)
-        y = self.xp.asarray(y)
-        
-        u = x - self.crpix[0]
-        v = y - self.crpix[1]
-        
-        if self.sip is not None:
-             u, v = self.sip.pix_to_foc(u, v, xp=self.xp)
-             
-        Xp_deg = self.cd[0,0] * u + self.cd[0,1] * v
-        Yp_deg = self.cd[1,0] * u + self.cd[1,1] * v
-        
-        Xp_rad = self.xp.radians(Xp_deg)
-        Yp_rad = self.xp.radians(Yp_deg)
-
-        xn, yn, zn, valid = self._plane_to_native(Xp_rad, Yp_rad)
-        # Multiplying by a singular or non-finite CD gives a finite but
-        # meaningless native vector, so the matrix itself has to be checked.
-        valid = valid & _cd_is_valid(self.cd, xp=self.xp)
-        return self._mask(xn, yn, zn, valid)
-
-    def proj_xyz(self, x, y, z):
-        """
-        Forward projection: Celestial unit vector -> Pixel coordinates.
-        Supports broadcasting.
-        """
-        xn, yn, zn = apply_rotation(self.r_matrices, x, y, z)
-        return self.native_to_pix(xn, yn, zn)
-
-    def proj(self, ra, dec):
-        """
-        Forward projection: Celestial (radians) -> Pixel coordinates.
-        Supports broadcasting.
-        """
-        xc, yc, zc = radec_to_xyz(ra, dec, xp=self.xp)
-        return self.proj_xyz(xc, yc, zc)
-
-    def unproj_xyz(self, x, y):
-        """
-        Inverse projection: Pixel coordinates -> Celestial unit vector.
-        Supports broadcasting.
-        """
-        xn, yn, zn = self.pix_to_native(x, y)
-        return apply_rotation_transpose(self.r_matrices, xn, yn, zn)
-
-    def unproj(self, x, y):
-        """
-        Inverse projection: Pixel coordinates -> Celestial (radians).
-        Supports broadcasting.
-        """
-        xc, yc, zc = self.unproj_xyz(x, y)
-        
-        ra_rad, dec_rad = xyz_to_radec(xc, yc, zc, xp=self.xp)
-        return ra_rad, dec_rad
+    def _rotation(self):
+        return self.r_matrices
 
     def to_dict(self):
         return {

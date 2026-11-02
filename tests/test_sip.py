@@ -256,3 +256,139 @@ def test_inverse_is_jittable_and_differentiable():
     assert np.allclose(float(jitted(jnp.asarray(sip.a))), float(f(jnp.asarray(sip.a))))
     grad = jax.grad(f)(jnp.asarray(sip.a))
     assert np.all(np.isfinite(np.asarray(grad)))
+
+
+# --- the item 7 acceptance tests on the real SPHEREx L2 header --------------
+
+def _l2():
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent))
+    import accuracy_reference as ar
+    from mapprojax.wcs_utils import load_wcs_params_from_header
+
+    header = ar.load_header("spherex_l2.hdr")
+    crpix, cd, crval, sip = load_wcs_params_from_header(header)
+    pix = ar.pixel_grid(header) - np.asarray(crpix)  # relative pixels, 33x33 + CRPIX
+    return sip, pix
+
+
+def _with(sip, **kw):
+    fields = dict(a=sip.a, b=sip.b, ap=sip.ap, bp=sip.bp, inverse_steps=sip.inverse_steps)
+    fields.update(kw)
+    return Sip(**fields)
+
+
+def test_l2_ap_bp_seeded_newton_reaches_the_floor_in_two_steps():
+    """The plan's discriminating test: with AP/BP as the seed, two Newton
+    steps reach < 1e-10 px over the full 2040x2040 detector. A fixed-point
+    iteration without the Jacobian is ~1e-5 px here after two steps."""
+    sip, pix = _l2()
+    assert sip.ap is not None and sip.bp is not None
+    U, V = sip.pix_to_foc(pix[:, 0], pix[:, 1])
+    x, y = _with(sip, inverse_steps=2).foc_to_pix(U, V)
+    err = np.hypot(x - pix[:, 0], y - pix[:, 1])
+    assert np.isfinite(err).all()
+    assert err.max() < 1e-10, err.max()
+
+
+def test_l2_ab_only_inverse_converges_on_the_full_detector():
+    """A/B with no AP/BP: identity seed, default steps, full detector (the
+    regression case elsewhere is a 100 px field and converges early)."""
+    sip, pix = _l2()
+    ab = _with(sip, ap=None, bp=None)
+    U, V = ab.pix_to_foc(pix[:, 0], pix[:, 1])
+    x, y = ab.foc_to_pix(U, V)
+    err = np.hypot(x - pix[:, 0], y - pix[:, 1])
+    assert np.isfinite(err).all()
+    assert err.max() < 1e-6, err.max()
+
+
+def test_singular_jacobian_root_is_rejected():
+    """u - u^2 = U folds at u = 1/2 (Jacobian 1 - 2u = 0). AP/BP seeds the
+    solver straight onto that root; it solves the equation but has no
+    inverse derivative, so it must come back NaN rather than du/dU = 6."""
+    a = np.zeros((3, 3)); a[2, 0] = -1.0
+    ap = np.zeros((3, 3)); ap[2, 0] = 4.0
+    sip = Sip(a=a, b=np.zeros((3, 3)), ap=ap, bp=np.zeros((3, 3)))
+    x, y = sip.foc_to_pix(np.array([0.25]), np.array([0.0]))
+    assert np.isnan(x).all() and np.isnan(y).all()
+
+
+def test_inverse_residual_follows_jax_inputs_under_jit():
+    sip = _realistic_sip()
+    f = jax.jit(lambda u: sip.inverse_residual(u, u, u, u))  # default xp=np
+    r_u, r_v = f(jnp.asarray([3.0, -4.0]))
+    assert np.all(np.isfinite(np.asarray(r_u)))
+
+
+def test_non_default_steps_survive_pytree_and_cast():
+    from mapprojax import TanJax
+    from mapprojax.reproject import _cast_sip
+
+    sip = _with(_realistic_sip(), inverse_steps=0)  # 0: every point unconverged
+    leaves, treedef = jax.tree_util.tree_flatten(sip)
+    assert jax.tree_util.tree_unflatten(treedef, leaves).inverse_steps == 0
+    assert _cast_sip(sip, jnp.float32).inverse_steps == 0
+
+    # Observable under jit: the starved solver must stay starved.
+    U, V = sip.pix_to_foc(np.array([20.0]), np.array([-15.0]))
+    x, _ = jax.jit(lambda s: s.foc_to_pix(jnp.asarray(U), jnp.asarray(V)))(sip)
+    assert np.isnan(np.asarray(x)).all()
+
+    wcs = TanJax(jnp.zeros(2), jnp.eye(2) * 1e-3, jnp.zeros(2), sip=sip)
+    back = jax.tree_util.tree_unflatten(*reversed(jax.tree_util.tree_flatten(wcs)))
+    assert back.sip.inverse_steps == 0
+
+
+# --- inverse JVP/VJP: numerical gradient checks --------------------------------
+
+@pytest.fixture
+def _x64():
+    prev = jax.config.jax_enable_x64
+    jax.config.update("jax_enable_x64", True)
+    yield
+    jax.config.update("jax_enable_x64", prev)
+
+
+def _inverse_case(kind):
+    """``ap_bp_seed``: A/B with a first-order AP/BP = -A/-B as the seed;
+    ``identity_seed``: A/B only; ``zero``: all-zero A/B, identity seed."""
+    if kind == "zero":
+        return Sip(a=np.zeros((4, 4)), b=np.zeros((4, 4)))
+    sip = _realistic_sip()
+    if kind == "identity_seed":
+        return sip
+    return _with(sip, ap=-sip.a, bp=-sip.b)
+
+
+CD0 = 1e-3      # deg/px
+SIP_SCALE = 1e-5
+
+
+@pytest.mark.parametrize("kind", ["ap_bp_seed", "identity_seed", "zero"])
+def test_inverse_gradients_match_finite_differences(_x64, kind):
+    """``check_grads`` (forward and reverse mode) on the SIP inverse inside
+    ``native_to_pix``, with respect to CRPIX, CD and the A/B coefficients.
+
+    The parameters are rescaled to O(1) so one finite-difference step size
+    suits all of them (CD is ~1e-3, the SIP coefficients ~1e-5).
+    """
+    from jax.test_util import check_grads
+    from mapprojax import TanJax
+    from mapprojax.utils import radec_to_xyz
+
+    sip = _inverse_case(kind)
+    sky = jnp.radians(jnp.asarray([[0.01, -0.012, 0.004], [0.006, 0.009, -0.011]]))
+    native = radec_to_xyz(sky[0], sky[1], xp=jnp)
+
+    def pixels(crpix, cd_n, a_n, b_n):
+        s = _with(sip, a=a_n * SIP_SCALE, b=b_n * SIP_SCALE)
+        w = TanJax(crpix, cd_n * CD0, jnp.zeros(2), sip=s)
+        x, y = w.native_to_pix(*native)
+        return jnp.stack([x, y])
+
+    args = (jnp.asarray([5.0, -3.0]), jnp.asarray([[-1.0, 0.01], [0.02, 1.0]]),
+            jnp.asarray(sip.a, dtype=float) / SIP_SCALE, jnp.asarray(sip.b, dtype=float) / SIP_SCALE)
+    assert np.all(np.isfinite(np.asarray(pixels(*args))))
+    check_grads(pixels, args, order=1, modes=("fwd", "rev"), eps=1e-4, rtol=1e-5, atol=1e-5)
