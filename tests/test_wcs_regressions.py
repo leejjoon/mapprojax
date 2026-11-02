@@ -16,7 +16,9 @@ import pytest
 from astropy.io import fits
 from astropy.wcs import WCS
 
-from mapprojax import Sin, SinJax, Tan, TanJax
+from mapprojax import (Sin, SinJax, SinJaxArray, SinJaxMixed, Tan, TanJax,
+                        TanJaxArray, TanJaxMixed)
+from mapprojax.sip import Sip
 from mapprojax.wcs_utils import load_wcs_params_from_header
 
 
@@ -157,8 +159,103 @@ def test_ab_only_inverse_matches_astropy():
 
 # --- PyTree reconstruction ---------------------------------------------------
 
-@_xfail(PYTREE, raises=TypeError)
-def test_eval_shape_on_jax_wcs():
-    wcs = TanJax([0.0, 0.0], CD, [0.0, 0.0])
+@pytest.mark.parametrize("cls", [TanJax, SinJax], ids=lambda c: c.__name__)
+def test_eval_shape_on_jax_wcs(cls):
+    wcs = cls([0.0, 0.0], CD, [0.0, 0.0])
     out = jax.eval_shape(lambda w: w, wcs)
     assert out.crpix.shape == (2,)
+    assert out.crval.shape == (2,)
+
+
+def test_unflatten_preserves_leaf_dtypes():
+    """No re-cast on reconstruction: leaves come back exactly as they went in.
+
+    Construction itself promotes to f64 (``WCSBase.__init__`` uses
+    ``dtype=float``), so the invariant is round-trip stability, not f32.
+    """
+    wcs = TanJax([0.0, 0.0], CD, [180.0, 0.0])
+    leaves, treedef = jax.tree_util.tree_flatten(wcs)
+    back = jax.tree_util.tree_unflatten(treedef, leaves)
+    for name in ("crpix", "cd", "crval"):
+        assert getattr(back, name).dtype == getattr(wcs, name).dtype, name
+
+
+def test_unflatten_does_not_promote_f32_leaves():
+    """A hand-built f32 object must survive unflatten without being promoted.
+
+    ``tree_unflatten`` used to call ``__init__``, which applies
+    ``dtype=float``; that silently rewrote f32 parameters to f64 on every
+    ``jit`` boundary. Build with ``__new__`` to bypass construction and check
+    the unflatten path in isolation.
+    """
+    f32 = lambda a: jnp.asarray(a, dtype=jnp.float32)
+    wcs = TanJax.__new__(TanJax)
+    wcs.crpix, wcs.cd, wcs.crval, wcs.sip = f32([0.0, 0.0]), f32(CD), f32([180.0, 0.0]), None
+    leaves, treedef = jax.tree_util.tree_flatten(wcs)
+    back = jax.tree_util.tree_unflatten(treedef, leaves)
+    for name in ("crpix", "cd", "crval"):
+        assert getattr(back, name).dtype == jnp.float32, name
+
+
+def test_tree_map_cast_moves_every_leaf():
+    """A pytree-level cast reaches crpix, cd and crval alike."""
+    wcs = TanJax([0.0, 0.0], CD, [180.0, 0.0])
+    cast = jax.tree_util.tree_map(lambda a: jnp.asarray(a, dtype=jnp.float32), wcs)
+    for name in ("crpix", "cd", "crval"):
+        assert getattr(cast, name).dtype == jnp.float32, name
+
+
+def test_crval_gradient_survives_the_pytree():
+    """r_matrix is derived, not a stored leaf, so crval stays differentiable."""
+    def f(crval):
+        wcs = TanJax([0.0, 0.0], CD, crval)
+        ra, _ = wcs.unproj(jnp.array(10.0), jnp.array(10.0))
+        return ra
+
+    grad = jax.grad(f)(jnp.array([180.0, 0.0]))
+    assert np.all(np.isfinite(grad))
+    assert np.any(np.abs(grad) > 1e-9), f"crval gradient was zeroed: {grad}"
+
+
+@pytest.mark.parametrize("cls", [TanJax, SinJax], ids=lambda c: c.__name__)
+def test_jit_and_vmap_over_parameters(cls):
+    def state(crpix):
+        wcs = cls(crpix, CD, [180.0, 0.0])
+        ra, dec = wcs.unproj(jnp.array(10.0), jnp.array(10.0))
+        return ra, dec
+
+    jitted = jax.jit(state)(jnp.array([0.0, 0.0]))
+    vmapped = jax.vmap(state)(jnp.zeros((3, 2)))
+    assert np.all(np.isfinite(np.asarray(jitted)))
+    assert np.asarray(vmapped[0]).shape == (3,)
+
+
+@pytest.mark.parametrize("cls", [TanJaxMixed, SinJaxMixed], ids=lambda c: c.__name__)
+def test_mixed_unflatten_keeps_the_precision_split(cls):
+    wcs = cls([0.0, 0.0], CD, [180.0, 0.0])
+    leaves, treedef = jax.tree_util.tree_flatten(wcs)
+    back = jax.tree_util.tree_unflatten(treedef, leaves)
+    assert back.crpix.dtype == jnp.float32
+    assert back.cd.dtype == jnp.float32
+    assert back.crval.dtype == jnp.float64
+
+
+def test_array_unflatten_preserves_dtypes():
+    crvals = (jnp.asarray([180.0, 181.0]), jnp.asarray([0.0, 1.0]))
+    wcs = TanJaxArray(jnp.asarray([0.0, 0.0]), jnp.asarray(CD), crvals)
+    leaves, treedef = jax.tree_util.tree_flatten(wcs)
+    back = jax.tree_util.tree_unflatten(treedef, leaves)
+    for name in ("crpix", "cd"):
+        assert getattr(back, name).dtype == getattr(wcs, name).dtype, name
+    for got, want in zip(back.crvals, wcs.crvals):
+        assert got.dtype == want.dtype
+
+
+def test_sip_survives_unflatten():
+    a = np.zeros((3, 3)); a[2, 0] = 1e-5
+    sip = Sip(a=a)
+    wcs = TanJax([0.0, 0.0], CD, [180.0, 0.0], sip=sip)
+    leaves, treedef = jax.tree_util.tree_flatten(wcs)
+    back = jax.tree_util.tree_unflatten(treedef, leaves)
+    np.testing.assert_array_equal(np.asarray(back.sip.a), a)
+    assert back.sip is not None

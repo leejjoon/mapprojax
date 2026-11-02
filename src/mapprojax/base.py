@@ -11,10 +11,21 @@ class WCSBase(ABC):
         self.cd = self.xp.array(cd, dtype=float)
         self.crval = self.xp.array(crval, dtype=float)
         self.sip = sip
-        
-        # Precompute rotation matrix
-        # crval is (lon, lat)
-        self.r_matrix = rotation_matrix(self.xp.radians(self.crval[0]), self.xp.radians(self.crval[1]), xp=self.xp)
+
+    @property
+    def r_matrix(self):
+        """Celestial -> native rotation, derived from ``crval``.
+
+        Never stored: a cached matrix would stop following the ``crval`` leaf
+        across a pytree flatten/unflatten and silently zero the ``crval``
+        gradient. Recomputed on access, which is a 3x3 trig evaluation, not
+        per-pixel work.
+        """
+        return rotation_matrix(
+            self.xp.radians(self.crval[0]),
+            self.xp.radians(self.crval[1]),
+            xp=self.xp,
+        )
 
     @abstractmethod
     def _native_to_plane(self, xn, yn, zn):
@@ -283,10 +294,18 @@ class WCSArrayBase(ABC):
              raise ValueError("RA and Dec arrays in crvals must have same shape")
              
         self.crvals = (ra_arr, dec_arr)
-        
-        # Precompute rotation matrices for all crvals
-        self.r_matrices = rotation_matrix(self.xp.radians(ra_arr), self.xp.radians(dec_arr), xp=self.xp)
-        # Shape is (3, 3) + crval_shape
+
+    @property
+    def r_matrices(self):
+        """Celestial -> native rotation per element, derived from ``crvals``.
+        See :attr:`WCSBase.r_matrix` for why this is not stored.
+        """
+        ra_arr, dec_arr = self.crvals
+        return rotation_matrix(
+            self.xp.radians(ra_arr),
+            self.xp.radians(dec_arr),
+            xp=self.xp,
+        )
 
     @abstractmethod
     def _native_to_plane(self, xn, yn, zn):

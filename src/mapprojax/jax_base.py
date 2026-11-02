@@ -30,8 +30,13 @@ class WCSJax(WCSBase):
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        # children corresponds to (crpix, cd, crval, sip)
-        return cls(*children)
+        # children corresponds to (crpix, cd, crval, sip). Reconstruct via
+        # __new__: calling __init__ would re-cast dtypes (breaking f32 leaves
+        # and `eval_shape`'s ShapeDtypeStruct), and `r_matrix` is now a derived
+        # property, so there is nothing to rebuild.
+        obj = cls.__new__(cls)
+        obj.crpix, obj.cd, obj.crval, obj.sip = children
+        return obj
 
 @register_pytree_node_class
 class WCSJaxArray(WCSArrayBase):
@@ -45,7 +50,10 @@ class WCSJaxArray(WCSArrayBase):
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        return cls(*children)
+        # See WCSJax.tree_unflatten: children is (crpix, cd, crvals, sip).
+        obj = cls.__new__(cls)
+        obj.crpix, obj.cd, obj.crvals, obj.sip = children
+        return obj
 
 class MixedPrecisionWCSJaxMixin:
     def __init__(self, crpix, cd, crval, sip=None):
@@ -53,13 +61,6 @@ class MixedPrecisionWCSJaxMixin:
         self.cd = self.xp.array(cd, dtype=jnp.float32)
         self.crval = self.xp.array(crval, dtype=jnp.float64)
         self.sip = sip
-        
-        # Precompute rotation matrix in f64
-        self.r_matrix = rotation_matrix(
-            self.xp.radians(self.crval[0]), 
-            self.xp.radians(self.crval[1]), 
-            xp=self.xp
-        )
 
     def proj_xyz(self, x, y, z):
         # 1. Celestial -> Native (Rotation in f64)
@@ -92,13 +93,6 @@ class MixedPrecisionWCSJaxArrayMixin:
         
         ra_arr, dec_arr = self.xp.asarray(crvals[0], dtype=jnp.float64), self.xp.asarray(crvals[1], dtype=jnp.float64)
         self.crvals = (ra_arr, dec_arr)
-        
-        # Precompute rotation matrices in f64
-        self.r_matrices = rotation_matrix(
-            self.xp.radians(ra_arr), 
-            self.xp.radians(dec_arr), 
-            xp=self.xp
-        )
 
     def proj_xyz(self, x, y, z):
         # 1. Celestial -> Native (Rotation in f64)

@@ -41,7 +41,20 @@ The stages are ordered so each one protects the next. The validation suite comes
 
 Commit these before the restructure so they do not wait on it. Each item is one reviewable commit, in this order, and flips a known set of Stage 1 strict `xfail`s (31 in total). A commit that changes a measured number rewrites the baselines with `benchmarks/benchmark_accuracy.py --write-baselines`, and regenerates `docs/benchmarks/accuracy_results.md`. It changes `known_failure()` / `PAIR_EXACT` in `tests/accuracy_reference.py` only when it resolves the defect they name. Order revised by the Stage 2 committee review (appended below).
 
-- [ ] **1. PyTree reconstruction** (flips 1: `test_eval_shape_on_jax_wcs`). `tree_unflatten` must not call `__init__` (`jax_base.py:34`, `:48`): today it recasts dtypes, rebuilds the rotation on every unflatten, and crashes on non-array leaves (`jax.eval_shape(lambda w: w, wcs)` raises `TypeError`). Reconstruct with `__new__`, as `Reprojector` does (`reproject.py:217-222`), and preserve leaf dtypes exactly. Make `r_matrix` / `r_matrices` properties derived from `crval` (`crvals` for the Array variants) when a coordinate method runs, never stored leaves: a stored rotation would stop following the `crval` leaf and silently zero the `crval` gradient. This comes first so that the CD validation in item 5 runs only at construction, never during unflatten (which also rebuilds gradient objects whose CD leaves may be singular). Tests pass WCS objects as transformation arguments: `eval_shape`; a `tree_map` cast to float32 that keeps f32 leaves; non-zero `grad` with respect to `crval` through the pytree; `jit`; `vmap` over parameters; Mixed, Array and SIP variants.
+- [x] **1. PyTree reconstruction** (flips 1: `test_eval_shape_on_jax_wcs`). `tree_unflatten` must not call `__init__` (`jax_base.py:34`, `:48`): today it recasts dtypes, rebuilds the rotation on every unflatten, and crashes on non-array leaves (`jax.eval_shape(lambda w: w, wcs)` raises `TypeError`). Reconstruct with `__new__`, as `Reprojector` does (`reproject.py:217-222`), and preserve leaf dtypes exactly. Make `r_matrix` / `r_matrices` properties derived from `crval` (`crvals` for the Array variants) when a coordinate method runs, never stored leaves: a stored rotation would stop following the `crval` leaf and silently zero the `crval` gradient. This comes first so that the CD validation in item 5 runs only at construction, never during unflatten (which also rebuilds gradient objects whose CD leaves may be singular). Tests pass WCS objects as transformation arguments: `eval_shape`; a `tree_map` cast to float32 that keeps f32 leaves; non-zero `grad` with respect to `crval` through the pytree; `jit`; `vmap` over parameters; Mixed, Array and SIP variants.
+  - Done, one commit. `tree_unflatten` on `WCSJax`, `WCSJaxArray` and every
+    `*Mixed`/`*Array` subclass reconstructs with `__new__`; `r_matrix` /
+    `r_matrices` are derived properties. Verified: `eval_shape` works; the
+    flattened tree drops from 5 leaves to 3 (the rotation is no longer a
+    leaf); a hand-built f32 object round-trips without promotion; `crval`
+    gradients stay non-zero; `jit`/`vmap` with a WCS as a transformation
+    argument work. Numerics are unchanged — `benchmark_accuracy.py` exits 0
+    and rewrites neither the baselines nor the table. The `xfail` is gone
+    (`338 passed, 30 xfailed`).
+  - Note for item 5: construction still promotes f32 to f64 via
+    `dtype=float`, so "f32 leaves" only exist when built with `__new__` or
+    under the Mixed constructors. That is the same root cause as the x64
+    policy in item 8, not something unflatten should paper over.
 - [ ] **2. Header checks** (flips 5: `test_unsupported_key_is_honoured_or_rejected[...]`). `wcs_utils.load_wcs_params_from_header` currently ignores most keys. Rules:
   - `CTYPE`: 8-character `xxxx-PPP` with optional `-SIP`. Longitude code on axis 1 from {`RA--`, `GLON`, `ELON`} with the matching latitude code on axis 2; `PPP` in {TAN, SIN} and equal on both axes. Reject anything else (CAR, swapped axes). A dense-grid comparison does detect a CAR header read as TAN (0.3″ over 1201², far above tolerance), but rejection is the fix.
   - `CUNIT`: absent or `deg`; reject otherwise.
