@@ -108,7 +108,26 @@ Commit these before the restructure so they do not wait on it. Each item is one 
   - Contract: `proj`, `unproj`, the offset APIs and `pix_to_pix` return NaN for invalid positions. Tighten the regression tests from "non-finite" to NaN.
   - New tests: mixed valid/invalid batches, with and without SIP, through `proj`, `unproj`, the offset APIs and `Reprojector`, checking that masked-loss gradients for pixels, CD and SIP coefficients are finite. Require finite gradients inside the domain, not at SIN's limb.
   - The transposed-rotation control switches to its "rejected" path; regenerate the accuracy table.
-- [ ] **5. Singular or non-finite CD** (flips 4: `test_concrete_bad_cd_is_rejected_at_construction`). The `try/except LinAlgError` (`base.py:43`) only works for NumPy; `jnp.linalg.inv` never raises. A traced `[[inf, 0], [0, 1e-3]]` returns finite `proj` pixels, and a traced singular CD returns finite `unproj` output.
+- [x] **5. Singular or non-finite CD** (flips 4: `test_concrete_bad_cd_is_rejected_at_construction`). The `try/except LinAlgError` (`base.py:43`) only works for NumPy; `jnp.linalg.inv` never raises. A traced `[[inf, 0], [0, 1e-3]]` returns finite `proj` pixels, and a traced singular CD returns finite `unproj` output.
+  - Done, one commit. One guarded closed-form 2x2 inverse (`_cd_inverse`)
+    replaces `linalg.inv` in both `native_to_pix` paths; a constructor
+    helper rejects a concrete singular or non-finite CD.
+  - Three corrections. (1) `pix_to_native` multiplies by `cd` and never
+    inverted it, so it needed its own determinant test (`_cd_is_valid`) --
+    without it a traced singular CD still produced a finite `unproj`. Both
+    directions are masked now. (2) The plan's "scaled determinant lies in
+    (0, 2]" is the *magnitude* bound for a 2x2 normalized by its largest
+    entry; the sign is not constrained, so the test is `det != 0`, not
+    `det > 0`. (3) `tests/test_projections.py::test_singular_cd_error`
+    expected the failure at `proj()` time; it now asserts construction.
+  - Verified: `diag(1e-25)` and `diag(1e25)` are accepted and invert to
+    rtol 1e-8 in f32 with the scaled form, while a raw determinant test
+    rejects the first and zeroes the second; an exactly singular matrix and
+    one that loses rank on the f32 cast are rejected; traced singular,
+    infinite and NaN CD give NaN in both directions.
+  - `jax_mixed` inverse rms moves 9.5e-6 -> 1.6e-5 px (max unchanged): the
+    closed-form inverse rounds differently from `linalg.inv` in f32.
+    `386 passed, 5 xfailed`.
   - Scaled determinant. Divide CD by its largest absolute entry before taking the determinant, so the scaled determinant lies in (0, 2]. Invalid means: scaled determinant == 0, or any non-finite entry. Form the inverse as the scaled adjugate divided by the scaled determinant and the scale.
   - A raw `det == 0` test is wrong both ways. `diag(1e-25, 1e-25)` underflows the f32 determinant although its inverse is representable. `diag(1e25, 1e25)` overflows it to `inf`, and an unscaled `d / det` silently returns 0.
   - Apply the check to the stored (cast) matrix.

@@ -112,7 +112,6 @@ def test_sin_array():
     np.testing.assert_allclose(y, 50.0)
 
 def test_singular_cd_error():
-    """Test that singular CD matrix raises ValueError."""
-    wcs = Tan([0,0], [[0,0],[0,0]], [0,0])
+    """A singular CD is rejected at construction, not deferred to proj()."""
     with pytest.raises(ValueError):
-        wcs.proj(0.0, 0.0)
+        Tan([0,0], [[0,0],[0,0]], [0,0])

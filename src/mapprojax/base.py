@@ -1,7 +1,76 @@
 from abc import ABC, abstractmethod
+
+import jax
 import numpy as np
 from .utils import radec_to_xyz, xyz_to_radec, rotation_matrix, apply_rotation, apply_rotation_transpose
 from .sip import Sip
+
+
+def _check_cd(cd):
+    """Reject a singular or non-finite concrete CD at construction.
+
+    Tracers cannot be inspected, so they are skipped here and handled by the
+    output mask in ``native_to_pix``.
+    """
+    if _is_tracer(cd):
+        return
+    _, valid = _cd_inverse(cd, xp=np)
+    if not bool(np.all(valid)):
+        raise ValueError("CD matrix is singular or has non-finite entries")
+
+
+def _is_tracer(value):
+    """True for a JAX tracer (which cannot be inspected eagerly)."""
+    return isinstance(value, jax.core.Tracer)
+
+
+def _cd_is_valid(cd, xp=np):
+    """Scale-invariant CD validity, without forming the inverse.
+
+    ``pix_to_native`` multiplies by ``cd`` rather than inverting it, so it
+    needs the same test but not the adjugate.
+    """
+    return _cd_inverse(cd, xp=xp)[1]
+
+
+def _cd_inverse(cd, xp=np):
+    """Guarded closed-form 2x2 inverse of a CD matrix.
+
+    Returns ``(cd_inv, valid)``. ``valid`` is a boolean (scalar or array
+    shaped like the batch) that is False when the matrix is singular or any
+    entry is non-finite; ``cd_inv`` is finite on that branch so downstream
+    arithmetic never sees a NaN.
+
+    The determinant is taken after dividing by the largest absolute entry, so
+    the test is scale invariant: ``diag(1e-25, 1e-25)`` underflows an f32
+    raw determinant to 0 and ``diag(1e25, 1e25)`` overflows it to inf,
+    although both are perfectly invertible. A raw ``det == 0`` test would
+    reject the first and, because ``d / det`` rounds to 0, silently zero the
+    second.
+
+    ``cd_inv`` is built as ``adjugate / (scaled_det * scale)``: dividing the
+    adjugate by the scaled determinant first keeps the intermediate inside
+    the dtype's range, so the scaling cancels instead of overflowing.
+    """
+    cd = xp.asarray(cd)
+    finite = xp.all(xp.isfinite(cd), axis=(-2, -1))
+    scale = xp.max(xp.abs(xp.where(xp.isfinite(cd), cd, xp.zeros_like(cd))), axis=(-2, -1))
+
+    # where() rather than a division: a zero or non-finite entry must not
+    # reach the arithmetic that feeds the gradients.
+    safe_scale = xp.where(finite & (scale > 0), scale, xp.ones_like(scale))
+    scaled = cd / safe_scale[..., None, None]
+    det = scaled[..., 0, 0] * scaled[..., 1, 1] - scaled[..., 0, 1] * scaled[..., 1, 0]
+    valid = finite & (det != 0) & xp.isfinite(det)
+
+    safe_det = xp.where(valid, det, xp.ones_like(det))
+    adjugate_scale = xp.where(valid, safe_scale, xp.ones_like(safe_scale))
+    cd_inv = xp.stack([
+        xp.stack([scaled[..., 1, 1], -scaled[..., 0, 1]], axis=-1),
+        xp.stack([-scaled[..., 1, 0], scaled[..., 0, 0]], axis=-1),
+    ], axis=-2) / safe_det[..., None, None] / adjugate_scale[..., None, None]
+    return cd_inv, valid
+
 
 class WCSBase(ABC):
     xp = np
@@ -11,6 +80,7 @@ class WCSBase(ABC):
         self.cd = self.xp.array(cd, dtype=float)
         self.crval = self.xp.array(crval, dtype=float)
         self.sip = sip
+        _check_cd(self.cd)
 
     @property
     def r_matrix(self):
@@ -69,11 +139,9 @@ class WCSBase(ABC):
         Xp_deg = self.xp.degrees(Xp)
         Yp_deg = self.xp.degrees(Yp)
         
-        try:
-            cd_inv = self.xp.linalg.inv(self.cd)
-        except self.xp.linalg.LinAlgError:
-            raise ValueError("CD matrix is singular/non-invertible")
-            
+        cd_inv, cd_valid = _cd_inverse(self.cd, xp=self.xp)
+        valid = valid & cd_valid
+
         U = cd_inv[0,0] * Xp_deg + cd_inv[0,1] * Yp_deg
         V = cd_inv[1,0] * Xp_deg + cd_inv[1,1] * Yp_deg
         
@@ -111,6 +179,9 @@ class WCSBase(ABC):
         Yp_rad = self.xp.radians(Yp_deg)
 
         xn, yn, zn, valid = self._plane_to_native(Xp_rad, Yp_rad)
+        # Multiplying by a singular or non-finite CD gives a finite but
+        # meaningless native vector, so the matrix itself has to be checked.
+        valid = valid & _cd_is_valid(self.cd, xp=self.xp)
         return self._mask(xn, yn, zn, valid)
 
     def proj_xyz(self, x, y, z):
@@ -313,6 +384,7 @@ class WCSArrayBase(ABC):
         self.crpix = self.xp.array(crpix, dtype=float)
         self.cd = self.xp.array(cd, dtype=float)
         self.sip = sip
+        _check_cd(self.cd)
         
         # crvals is expected to be (ra_array, dec_array) or similar
         # shape: (2, N) or tuple of arrays
@@ -366,11 +438,9 @@ class WCSArrayBase(ABC):
         Xp_deg = self.xp.degrees(Xp)
         Yp_deg = self.xp.degrees(Yp)
         
-        try:
-            cd_inv = self.xp.linalg.inv(self.cd)
-        except self.xp.linalg.LinAlgError:
-            raise ValueError("CD matrix is singular")
-            
+        cd_inv, cd_valid = _cd_inverse(self.cd, xp=self.xp)
+        valid = valid & cd_valid
+
         U = cd_inv[0,0] * Xp_deg + cd_inv[0,1] * Yp_deg
         V = cd_inv[1,0] * Xp_deg + cd_inv[1,1] * Yp_deg
         
@@ -405,6 +475,9 @@ class WCSArrayBase(ABC):
         Yp_rad = self.xp.radians(Yp_deg)
 
         xn, yn, zn, valid = self._plane_to_native(Xp_rad, Yp_rad)
+        # Multiplying by a singular or non-finite CD gives a finite but
+        # meaningless native vector, so the matrix itself has to be checked.
+        valid = valid & _cd_is_valid(self.cd, xp=self.xp)
         return self._mask(xn, yn, zn, valid)
 
     def proj_xyz(self, x, y, z):

@@ -98,10 +98,7 @@ BAD_CD = {
 
 
 @pytest.mark.parametrize("cls", [Tan, TanJax], ids=lambda c: c.__name__)
-@pytest.mark.parametrize(
-    "kind",
-    [pytest.param(k, marks=_xfail(SINGULAR)) for k in BAD_CD],
-)
+@pytest.mark.parametrize("kind", list(BAD_CD))
 def test_concrete_bad_cd_is_rejected_at_construction(cls, kind):
     try:
         cls([0.0, 0.0], BAD_CD[kind], [0.0, 0.0])
@@ -360,3 +357,49 @@ def test_reprojector_masks_invalid_source_pixels():
     got = np.asarray(x)
     assert np.isnan(got[1]), got
     assert np.isfinite(got[0]) and np.isfinite(got[2]), got
+
+
+# --- singular / non-finite CD: the scaled-determinant rule -----------------
+
+@pytest.mark.parametrize(
+    "cd, expect",
+    [
+        pytest.param([[1e-25, 0.0], [0.0, 1e-25]], True, id="tiny-f32-underflow"),
+        pytest.param([[1e25, 0.0], [0.0, 1e25]], True, id="huge-f32-overflow"),
+        pytest.param([[1e-3, 0.0], [1e-3, 0.0]], False, id="rank-deficient"),
+        pytest.param([[0.0, 0.0], [0.0, 0.0]], False, id="zero"),
+    ],
+)
+def test_scaled_determinant_accepts_representable_extremes(cd, expect):
+    """A raw det == 0 test is wrong both ways: diag(1e-25) underflows an f32
+    determinant to 0, and diag(1e25) overflows it to inf, though both are
+    invertible. Only a genuinely rank-deficient matrix is invalid."""
+    from mapprojax.base import _cd_inverse
+
+    f32 = np.asarray(cd, dtype=np.float32)
+    _, valid = _cd_inverse(f32, xp=np)
+    assert bool(valid) is expect
+    if expect:
+        assert np.abs(np.asarray(f32, float) @ _cd_inverse(f32, xp=np)[0]
+                      - np.eye(2)).max() < 1e-6
+
+
+def test_matrix_that_loses_rank_when_cast_to_f32_is_rejected():
+    # Distinct in fp64, identical after the f32 cast.
+    cd = [[1e-3, 0.0], [1e-3 + 1e-12, 0.0]]
+    with pytest.raises(ValueError):
+        Tan(np.zeros(2), cd, np.zeros(2))
+
+
+@pytest.mark.parametrize("impl", ["proj", "unproj"])
+@pytest.mark.parametrize("kind", list(BAD_CD))
+def test_traced_bad_cd_is_nan_in_both_directions(impl, kind):
+    """A traced CD cannot raise. pix_to_native multiplies rather than
+    inverts, so it needs its own validity test -- otherwise a singular CD
+    yields a finite, meaningless native vector."""
+    if impl == "proj":
+        f = jax.jit(lambda cd: TanJax(jnp.zeros(2), cd, jnp.zeros(2)).proj(1e-3, 1e-3))
+    else:
+        f = jax.jit(lambda cd: TanJax(jnp.zeros(2), cd, jnp.zeros(2)).unproj(10.0, 20.0))
+    out = f(jnp.asarray(BAD_CD[kind]))
+    assert all(np.isnan(np.asarray(v)) for v in out), out
