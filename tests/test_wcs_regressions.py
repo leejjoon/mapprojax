@@ -442,6 +442,30 @@ def test_masked_gradient_of_a_valid_sample_ignores_its_invalid_neighbours():
     np.testing.assert_allclose(np.asarray(full), np.asarray(alone), rtol=1e-12, atol=0)
 
 
+@pytest.mark.parametrize("method", ["unproj", "unproj_xyz", "unproj_offset"])
+@pytest.mark.parametrize("crval", [(0.0, 0.0), (10.0, 20.0), (0.0, 90.0), (0.0, -90.0)],
+                         ids=["origin", "ordinary", "north-pole", "south-pole"])
+@pytest.mark.parametrize("bad_pixel", [(0.0, 1.5 * R_PX), (1.5 * R_PX, 0.0)],
+                         ids=["vertical", "horizontal"])
+def test_invalid_standin_never_hits_a_spherical_singularity(method, crval, bad_pixel):
+    """An invalid SIN pixel on the vertical axis lands at native (0, 0, 2.09):
+    finite, but with CRVAL (0, 0) it rotates onto the pole of the spherical
+    conversion, whose derivative is infinite. The stand-in must be swapped in
+    before atan2/hypot, for every reference point including the poles."""
+    xs = jnp.asarray([10.0, bad_pixel[0]])
+    ys = jnp.asarray([10.0, bad_pixel[1]])
+
+    def loss(c, x, y):
+        return _masked(getattr(SinJax(jnp.zeros(2), jnp.eye(2) * 1e-3, c), method)(x, y))
+
+    c = jnp.asarray(crval)
+    mixed = jax.grad(loss)(c, xs, ys)
+    jitted = jax.jit(jax.grad(loss))(c, xs, ys)
+    alone = jax.grad(loss)(c, xs[:1], ys[:1])
+    assert np.all(np.isfinite(np.asarray(mixed))) and np.all(np.isfinite(np.asarray(jitted)))
+    np.testing.assert_allclose(np.asarray(mixed), np.asarray(alone), rtol=1e-12, atol=0)
+
+
 @pytest.mark.parametrize("proj_cls", [Sin, Tan], ids=lambda c: c.__name__)
 @pytest.mark.parametrize("precision", ["f64", "f32"])
 def test_reprojector_masked_gradients_for_both_legs(proj_cls, precision):

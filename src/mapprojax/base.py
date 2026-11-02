@@ -121,7 +121,25 @@ class _PipelineBase(ABC):
         The validity flag is the last positional argument.
         """
         *values, valid = values
-        return tuple(self.xp.where(valid, v, self.xp.nan) for v in values)
+        xp = self.xp
+        # NaN in each output's own dtype: an untyped NaN is a weak f64
+        # constant that would put a (folded-away) f64 op into an f32 trace.
+        return tuple(xp.where(valid, v, xp.asarray(np.nan, dtype=xp.asarray(v).dtype))
+                     for v in values)
+
+    def _standin(self, valid, *pairs):
+        """Replace invalid samples by a fixed, non-singular stand-in right
+        before a step with a singular derivative (atan2, hypot).
+
+        The stand-in values themselves are finite but arbitrary: an invalid
+        SIN sample, say, lands at native (0, 0, 2.09), and after the rotation
+        that can sit exactly on the pole of the spherical conversion, where
+        the local derivative is infinite and ``0 * inf`` poisons the crval
+        gradient. ``pairs`` is ``(value, fill), ...``.
+        """
+        xp = self.xp
+        return tuple(xp.where(valid, v, xp.asarray(f, dtype=xp.asarray(v).dtype))
+                     for v, f in pairs)
 
     def _finite_inputs(self, *values, fill=0.0):
         """``(*safe_values, valid)``: non-finite inputs (a caller's NaN, or an
@@ -266,6 +284,7 @@ class _PipelineBase(ABC):
         Returns NaN outside the projection's domain.
         """
         xc, yc, zc, valid = self._unproj_xyz_valid(x, y)
+        xc, yc, zc = self._standin(valid, (xc, 1.0), (yc, 0.0), (zc, 0.0))
         ra_rad, dec_rad = xyz_to_radec(xc, yc, zc, xp=self.xp)
         return self._mask(ra_rad, dec_rad, valid)
 
@@ -329,6 +348,8 @@ class WCSBase(_PipelineBase):
         # this is "large + small", never a difference of two O(1) terms.
         w = cos_p * xn - sin_p * zn
         zc = sin_p * xn + cos_p * zn
+        # Invalid samples get a stand-in before the atan2/hypot below.
+        yn, w, zc = self._standin(valid, (yn, 0.0), (w, 1.0), (zc, 0.0))
 
         # Delta_alpha = atan2(yn, w) is *exact* (not an approximation):
         # yn = cos(delta)*sin(Delta_alpha) and w = cos(delta)*cos(Delta_alpha)

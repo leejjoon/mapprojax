@@ -134,10 +134,23 @@ def test_f32_sip_reprojection_has_no_f64_ops():
         rp = Reprojector(src, tgt, matrix_precision="f32")
         jaxpr = jax.make_jaxpr(lambda x, y: rp.pix_to_pix(x, y))(
             jnp.float32(3.), jnp.float32(4.))
-        bad = [str(e.primitive) for e in jaxpr.jaxpr.eqns
-               if any(getattr(v, "aval", None) is not None
-                      and getattr(v.aval, "dtype", None) == jnp.float64
-                      for v in e.outvars)]
+
+        def walk(jx):
+            # Nested jaxprs too (pjit, where, ...): an f64 constant inside a
+            # sub-jaxpr is still an f64 op in the trace.
+            for e in jx.eqns:
+                for v in list(e.invars) + list(e.outvars):
+                    aval = getattr(v, "aval", None)
+                    if getattr(aval, "dtype", None) == jnp.float64:
+                        yield str(e.primitive)
+                for p in e.params.values():
+                    subs = p if isinstance(p, (list, tuple)) else [p]
+                    for sub in subs:
+                        inner = getattr(sub, "jaxpr", None)
+                        if inner is not None:
+                            yield from walk(getattr(inner, "jaxpr", inner))
+
+        bad = sorted(set(walk(jaxpr.jaxpr)))
         assert not bad, bad
         print("ok")
     """)
