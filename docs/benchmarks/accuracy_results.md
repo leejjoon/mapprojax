@@ -116,7 +116,7 @@ Oracle self-consistency (astropy pixel -> sky -> pixel, converged):
 | reverse | f64 | 320/1090 | 4.06e-11 | 1.69e-11 | target 1e-06 |
 | reverse | f32 | 320/1090 | 2.03e-04 | 7.05e-05 | 0.00025 |
 
-Negative control, transposed rotation (fp64), caught on every overlap sample (rejected, or wrong by more than max(1 px, 100x the correct run)): forward min error 8.85e+04 px, 0 of 1009 rejected; reverse min error 6.88e+04 px, 0 of 320 rejected.
+Negative control, transposed rotation (fp64), caught on every overlap sample (rejected, or wrong by more than max(1 px, 100x the correct run)): forward all samples rejected as invalid; reverse all samples rejected as invalid.
 
 ## Known Stage 2 defects
 

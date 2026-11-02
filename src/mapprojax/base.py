@@ -29,22 +29,40 @@ class WCSBase(ABC):
 
     @abstractmethod
     def _native_to_plane(self, xn, yn, zn):
-        """Map native unit vector (xn, yn, zn) to projection plane (X, Y)."""
-        pass
+        """Map native unit vector (xn, yn, zn) to ``(X, Y, valid)``.
+
+        ``X``/``Y`` must be finite even where ``valid`` is False; see the
+        module docstring in ``projections.py``.
+        """
 
     @abstractmethod
     def _plane_to_native(self, X, Y):
-        """Map projection plane (X, Y) to native unit vector (xn, yn, zn)."""
-        pass
+        """Map projection plane (X, Y) to ``(xn, yn, zn, valid)``."""
+
+    def _mask(self, *values):
+        """NaN out the invalid samples of ``values``, selected not multiplied.
+
+        ``finite * nan`` poisons the pullback with ``0 * nan = nan``, so a
+        multiplicative mask defeats the purpose of masking. ``where`` selects,
+        and its gradient is the identity on the selected branch.
+
+        The validity flag is the last positional argument.
+        """
+        *values, valid = values
+        return tuple(self.xp.where(valid, v, self.xp.nan) for v in values)
 
     def native_to_pix(self, xn, yn, zn):
         """
         Map native unit vector to pixel coordinates.
         Does NOT apply the celestial rotation.
+
+        Returns NaN outside the projection's domain.
         """
-        # 2. Native -> Plane (Projection specific)
-        Xp, Yp = self._native_to_plane(xn, yn, zn)
-        
+        # 2. Native -> Plane (Projection specific). Xp/Yp are finite even
+        #    where the sample is invalid, so the CD and SIP math below never
+        #    sees a NaN and their gradients stay finite.
+        Xp, Yp, valid = self._native_to_plane(xn, yn, zn)
+
         # 3. Plane -> Pixel (Linear + Distortion)
         # Xp, Yp from projections are in radians (dimensionless ratios).
         # FITS CD matrix is usually in degrees.
@@ -64,13 +82,15 @@ class WCSBase(ABC):
         
         x_img = U + self.crpix[0]
         y_img = V + self.crpix[1]
-        
-        return x_img, y_img
+
+        return self._mask(x_img, y_img, valid)
 
     def pix_to_native(self, x, y):
         """
         Map pixel coordinates to native unit vector.
         Does NOT apply the celestial rotation.
+
+        Returns NaN outside the projection's domain.
         """
         x = self.xp.asarray(x)
         y = self.xp.asarray(y)
@@ -89,8 +109,9 @@ class WCSBase(ABC):
         # Convert to radians for projection logic
         Xp_rad = self.xp.radians(Xp_deg)
         Yp_rad = self.xp.radians(Yp_deg)
-        
-        return self._plane_to_native(Xp_rad, Yp_rad)
+
+        xn, yn, zn, valid = self._plane_to_native(Xp_rad, Yp_rad)
+        return self._mask(xn, yn, zn, valid)
 
     def proj_xyz(self, x, y, z):
         """
@@ -104,6 +125,8 @@ class WCSBase(ABC):
     def proj(self, ra, dec):
         """
         Forward projection: Celestial (radians) -> Pixel coordinates.
+
+        Returns NaN where the position falls outside the projection's domain.
         """
         # 1. Spherical -> Cartesian (Celestial)
         xc, yc, zc = radec_to_xyz(ra, dec, xp=self.xp)
@@ -112,6 +135,8 @@ class WCSBase(ABC):
     def unproj_xyz(self, x, y):
         """
         Inverse projection: Pixel coordinates -> Celestial unit vector.
+
+        Returns NaN outside the projection's domain.
         """
         xn, yn, zn = self.pix_to_native(x, y)
         
@@ -122,6 +147,8 @@ class WCSBase(ABC):
     def unproj(self, x, y):
         """
         Inverse projection: Pixel coordinates -> Celestial (radians).
+
+        Returns NaN outside the projection's domain.
         """
         xc, yc, zc = self.unproj_xyz(x, y)
 
@@ -309,18 +336,32 @@ class WCSArrayBase(ABC):
 
     @abstractmethod
     def _native_to_plane(self, xn, yn, zn):
+        """Map native unit vector to ``(X, Y, valid)``; X/Y finite."""
         pass
 
     @abstractmethod
     def _plane_to_native(self, X, Y):
+        """Map projection plane to ``(xn, yn, zn, valid)``."""
         pass
+
+    def _mask(self, *values):
+        """NaN out the invalid samples of ``values``, selected not multiplied.
+
+        ``finite * nan`` poisons the pullback with ``0 * nan = nan``, so a
+        multiplicative mask defeats the purpose of masking. ``where`` selects,
+        and its gradient is the identity on the selected branch.
+
+        The validity flag is the last positional argument.
+        """
+        *values, valid = values
+        return tuple(self.xp.where(valid, v, self.xp.nan) for v in values)
 
     def native_to_pix(self, xn, yn, zn):
         """
         Map native unit vector to pixel coordinates.
         Does NOT apply celestial rotation.
         """
-        Xp, Yp = self._native_to_plane(xn, yn, zn)
+        Xp, Yp, valid = self._native_to_plane(xn, yn, zn)
         
         Xp_deg = self.xp.degrees(Xp)
         Yp_deg = self.xp.degrees(Yp)
@@ -338,13 +379,15 @@ class WCSArrayBase(ABC):
              
         x_img = U + self.crpix[0]
         y_img = V + self.crpix[1]
-        
-        return x_img, y_img
+
+        return self._mask(x_img, y_img, valid)
 
     def pix_to_native(self, x, y):
         """
         Map pixel coordinates to native unit vector.
         Does NOT apply celestial rotation.
+
+        Returns NaN outside the projection's domain.
         """
         x = self.xp.asarray(x)
         y = self.xp.asarray(y)
@@ -360,8 +403,9 @@ class WCSArrayBase(ABC):
         
         Xp_rad = self.xp.radians(Xp_deg)
         Yp_rad = self.xp.radians(Yp_deg)
-        
-        return self._plane_to_native(Xp_rad, Yp_rad)
+
+        xn, yn, zn, valid = self._plane_to_native(Xp_rad, Yp_rad)
+        return self._mask(xn, yn, zn, valid)
 
     def proj_xyz(self, x, y, z):
         """

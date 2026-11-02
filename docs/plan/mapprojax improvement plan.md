@@ -86,7 +86,24 @@ Commit these before the restructure so they do not wait on it. Each item is one 
   - `jax_mixed` also improves (0.135 -> 0.135 mas here, but the near-pole
     rows no longer sit apart from the ordinary ones).
   - `353 passed, 17 xfailed`; `benchmark_accuracy.py` exits 0.
-- [ ] **4. Projection domains through the whole pipeline** (flips 8: `test_back_hemisphere_is_not_a_valid_pixel`). TAN maps a point 179.99° from the reference to a mirrored valid pixel; SIN folds the back hemisphere onto the front and takes an unguarded `sqrt` outside the unit disc (`projections.py:32`; the TAN division is at `:10`, the SIN plane return at `:21`). Invalid: `xn <= 0` for TAN, `xn < 0` for SIN, and `X² + Y² > 1` for SIN's inverse.
+- [x] **4. Projection domains through the whole pipeline** (flips 8: `test_back_hemisphere_is_not_a_valid_pixel`). TAN maps a point 179.99° from the reference to a mirrored valid pixel; SIN folds the back hemisphere onto the front and takes an unguarded `sqrt` outside the unit disc (`projections.py:32`; the TAN division is at `:10`, the SIN plane return at `:21`). Invalid: `xn <= 0` for TAN, `xn < 0` for SIN, and `X² + Y² > 1` for SIN's inverse.
+  - Done, one commit. The mixins return `(X, Y, valid)` /
+    `(xn, yn, zn, valid)` with finite values everywhere; `WCSBase` and
+    `WCSArrayBase` restore NaN at the public outputs.
+  - Two corrections to the plan's mechanism. (1) A multiplicative NaN mask
+    does not work either: `finite * nan` is the same `0 * nan` in the
+    pullback. The output step has to be a `where` **select**, not a
+    multiply. (2) TAN's inverse is unbounded — every finite pixel is on the
+    forward hemisphere — so only SIN's unit disc can express an invalid
+    *pixel*; a test that expects TAN to reject a far pixel is wrong.
+  - Verified: `cd`, `crval`, SIP-coefficient and pixel gradients are all
+    finite under a masked loss with mixed valid/invalid batches; gradients
+    are finite inside the domain; `proj`, `unproj`, the offset APIs and
+    `Reprojector.pix_to_pix` return NaN for invalid input. The
+    transposed-rotation control now takes its "rejected" path (all samples
+    NaN) as the plan predicted, which is the only table change.
+  - No accuracy movement: no non-finite samples on any published case, and
+    the baselines are unchanged. `373 passed, 9 xfailed`.
   - Masking only in `_native_to_plane` is not enough. The NaN flows into the CD multiply and SIP evaluation, and their pullbacks give `0 · NaN = NaN` for the `cd` (and SIP-coefficient) gradients even under a loss that masks the invalid sample; the committee reproduced this. Substitute safe values before the CD and SIP arithmetic, carry an internal validity flag through `native_to_pix` and `pix_to_native`, and restore NaN only at the public outputs. No public validity API: the boolean mask comes from the Stage 4 pixel map.
   - Contract: `proj`, `unproj`, the offset APIs and `pix_to_pix` return NaN for invalid positions. Tighten the regression tests from "non-finite" to NaN.
   - New tests: mixed valid/invalid batches, with and without SIP, through `proj`, `unproj`, the offset APIs and `Reprojector`, checking that masked-loss gradients for pixels, CD and SIP coefficients are finite. Require finite gradients inside the domain, not at SIN's limb.

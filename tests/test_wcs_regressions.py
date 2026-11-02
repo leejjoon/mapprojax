@@ -32,7 +32,6 @@ def _x64_enabled():
 
 CD = [[-1e-3, 0.0], [0.0, 1e-3]]
 
-DOMAINS = "Stage 2 projection domains: back hemisphere must not map to a valid pixel"
 SINGULAR = "Stage 2 singular or non-finite CD: reject concrete CD at construction"
 SIP_INVERSE = "Stage 2 SIP inverse: A/B without AP/BP skips the inverse correction"
 PYTREE = "Stage 2 PyTree reconstruction: tree_unflatten must not call __init__"
@@ -45,19 +44,24 @@ def _xfail(reason, raises=AssertionError):
 # --- projection domains -----------------------------------------------------
 
 @pytest.mark.parametrize("cls", [Tan, TanJax, Sin, SinJax], ids=lambda c: c.__name__)
-@pytest.mark.parametrize(
-    "sep_deg",
-    [
-        pytest.param(135.0, marks=_xfail(DOMAINS)),
-        pytest.param(179.99, marks=_xfail(DOMAINS)),
-    ],
-)
+@pytest.mark.parametrize("sep_deg", [135.0, 179.99])
 def test_back_hemisphere_is_not_a_valid_pixel(cls, sep_deg):
+    """Outside the domain the contract is NaN, not merely "not finite"."""
     wcs = cls([0.0, 0.0], CD, [0.0, 0.0])
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        x, y = wcs.proj(np.radians(sep_deg), 0.0)
-    assert not np.isfinite(x) and not np.isfinite(y)
+    x, y = wcs.proj(np.radians(sep_deg), 0.0)
+    assert np.isnan(x) and np.isnan(y), (x, y)
+
+
+@pytest.mark.parametrize("cls", [Tan, TanJax, Sin, SinJax], ids=lambda c: c.__name__)
+def test_mixed_valid_invalid_batch(cls):
+    """Validity is per sample: masking one pixel must not spoil the others."""
+    wcs = cls([0.0, 0.0], CD, [0.0, 0.0])
+    sep = np.array([10.0, 135.0, 20.0, 179.99, 5.0])
+    x, y = wcs.proj(np.radians(sep), np.zeros_like(sep))
+    good = np.array([True, False, True, False, True])
+    assert np.all(np.isfinite(x[good])), x
+    assert np.all(np.isnan(x[~good])), x
+    assert np.all(np.isnan(y[~good])), y
 
 
 @pytest.mark.parametrize("cls", [Tan, TanJax, Sin, SinJax], ids=lambda c: c.__name__)
@@ -67,13 +71,11 @@ def test_front_hemisphere_is_finite(cls):
     assert np.isfinite(x) and np.isfinite(y)
 
 
-def test_tan_native_horizon_is_not_finite():
+def test_tan_native_horizon_is_nan():
     # xn == 0 exactly: the tangent plane is at infinity.
     wcs = Tan([0.0, 0.0], CD, [0.0, 0.0])
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", RuntimeWarning)
-        x, y = wcs.native_to_pix(np.array(0.0), np.array(1.0), np.array(0.0))
-    assert not np.isfinite(x)
+    x, y = wcs.native_to_pix(np.array(0.0), np.array(1.0), np.array(0.0))
+    assert np.isnan(x) and np.isnan(y)
 
 
 def test_sin_plane_outside_unit_disc_is_nan_and_boundary_is_valid():
@@ -259,3 +261,102 @@ def test_sip_survives_unflatten():
     back = jax.tree_util.tree_unflatten(treedef, leaves)
     np.testing.assert_array_equal(np.asarray(back.sip.a), a)
     assert back.sip is not None
+
+
+# --- projection domains: gradients and the full pipeline ---------------------
+
+MIXED_SEP = np.radians(np.array([10.0, 135.0, 20.0, 179.99, 5.0]))
+
+
+@pytest.mark.parametrize("cls", [TanJax, SinJax], ids=lambda c: c.__name__)
+def test_masked_loss_keeps_parameter_gradients_finite(cls):
+    """A NaN reaching the CD multiply poisons its pullback (0 * NaN = NaN).
+
+    Both a multiplicative mask and masking only in `_native_to_plane` fail
+    this; the fix substitutes before the arithmetic and selects at the output.
+    """
+    cd = jnp.asarray(CD)
+
+    def loss_cd(cd_):
+        wcs = cls(jnp.zeros(2), cd_, jnp.zeros(2))
+        x, y = wcs.proj(MIXED_SEP, jnp.zeros_like(MIXED_SEP))
+        return jnp.nansum(x) + jnp.nansum(y)
+
+    def loss_crval(crval_):
+        wcs = cls(jnp.zeros(2), cd, crval_)
+        x, _ = wcs.proj(MIXED_SEP, jnp.zeros_like(MIXED_SEP))
+        return jnp.nansum(x)
+
+    for name, grad in (("cd", jax.grad(loss_cd)(cd)),
+                       ("crval", jax.grad(loss_crval)(jnp.zeros(2)))):
+        assert np.all(np.isfinite(np.asarray(grad))), f"{cls.__name__} {name}: {grad}"
+
+
+def test_masked_loss_keeps_sip_gradients_finite():
+    a = jnp.zeros((3, 3)).at[2, 0].set(1e-5)
+
+    def loss(a_):
+        wcs = TanJax(jnp.zeros(2), jnp.asarray(CD), jnp.zeros(2), sip=Sip(a=a_))
+        x, _ = wcs.proj(MIXED_SEP, jnp.zeros_like(MIXED_SEP))
+        return jnp.nansum(x)
+
+    assert np.all(np.isfinite(np.asarray(jax.grad(loss)(a))))
+
+
+def test_gradients_are_finite_inside_the_domain():
+    """Finite gradients are required inside the domain, not at SIN's limb."""
+    sep = np.radians(np.array([1.0, 5.0, 10.0]))
+
+    def loss(a_):
+        wcs = TanJax(jnp.zeros(2), jnp.asarray(CD), jnp.zeros(2), sip=Sip(a=a_))
+        x, y = wcs.proj(sep, np.zeros_like(sep))
+        return jnp.sum(x ** 2 + y ** 2)
+
+    jac = jax.jacrev(loss)(jnp.zeros((3, 3)))
+    assert np.all(np.isfinite(np.asarray(jac)))
+
+
+def test_sin_inverse_domain_is_nan_outside_the_unit_disc():
+    """SIN's inverse is bounded (X^2 + Y^2 <= 1); TAN's is not."""
+    wcs = SinJax(jnp.zeros(2), jnp.asarray(CD), jnp.zeros(2))
+    r_px = np.degrees(2.0) / CD[1][1]  # 2 rad > 1 rad limb
+    ra, dec = wcs.unproj(jnp.asarray([r_px, 0.0]), jnp.asarray([0.0, 0.0]))
+    assert np.isnan(np.asarray(ra)[0]) and np.isnan(np.asarray(dec)[0])
+    assert np.isfinite(np.asarray(ra)[1])
+
+
+def test_tan_inverse_has_no_radius_limit():
+    """TAN's inverse is finite for every finite pixel, so a "far" pixel is
+    still valid there -- unlike SIN."""
+    wcs = TanJax(jnp.zeros(2), jnp.asarray(CD), jnp.zeros(2))
+    r_px = np.degrees(2.0) / CD[1][1]
+    ra, dec = wcs.unproj(jnp.asarray(r_px), jnp.asarray(0.0))
+    assert np.isfinite(np.asarray(ra)) and np.isfinite(np.asarray(dec))
+
+
+def test_offset_apis_are_nan_outside_the_domain():
+    wcs = Tan([0.0, 0.0], CD, [0.0, 0.0])
+    ra_bad = np.radians(135.0)
+    dalpha, ddelta = wcs.unproj_offset(np.array([np.degrees(1.0) / CD[1][1]]), np.array([0.0]))
+    assert np.all(np.isfinite(dalpha))
+    x, y = wcs.proj(ra_bad, 0.0)
+    assert np.isnan(x) and np.isnan(y)
+
+
+def test_reprojector_masks_invalid_source_pixels():
+    """SIN's inverse is bounded, so a pixel past the limb is invalid there.
+
+    TAN's inverse is unbounded (every finite pixel is on the forward
+    hemisphere), so SIN is the projection that can express this in pixel
+    space.
+    """
+    from mapprojax import Reprojector
+
+    src = Sin(np.zeros(2), CD, [0.0, 0.0])
+    tgt = Sin(np.zeros(2), CD, [0.0, 0.0])
+    rp = Reprojector(src, tgt)
+    r_px = np.degrees(1.0) / CD[1][1]  # the unit disc in pixels
+    x, y = rp.pix_to_pix(np.array([0.0, r_px * 1.01, r_px * 0.5]), np.zeros(3))
+    got = np.asarray(x)
+    assert np.isnan(got[1]), got
+    assert np.isfinite(got[0]) and np.isfinite(got[2]), got
