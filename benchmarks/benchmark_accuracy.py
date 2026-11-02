@@ -19,11 +19,9 @@ New entries (a cap that did not exist before) are always allowed.
 
 Exits non-zero if: the astropy oracle does not converge or its own round trip
 exceeds 1e-8 px; any mapprojax output on a valid pixel or in a pair overlap is
-non-finite; a result breaks its budget without being a known Stage 2 defect;
-a known defect or capped pair run lacks a cap or exceeds it; a known defect
-or the forward pair starts meeting its target (remove the xfail); the
-SIP-free reverse pair misses 1e-6 px; or the transposed-rotation control is
-not grossly wrong.
+non-finite; an fp64 result breaks its budget; an fp32 row or capped pair run
+lacks a cap or exceeds it; an exact (fp64) pair run misses 1e-6 px; or the
+transposed-rotation control is not grossly wrong.
 
 Runs offline on the header fixtures in ``tests/data``; it does not depend on
 the working directory or the original FITS files. JAX runs on CPU unless
@@ -78,9 +76,6 @@ def measure():
             r = ar.evaluate(case, impl)
             for metric, budget in (("forward", ar.FORWARD_MAS), ("inverse", ar.INVERSE_PX)):
                 stats = r[ar.METRIC_KEYS[metric][0]]
-                # Every Stage 2 defect is fixed; the caps that guarded them
-                # remain as ordinary regression checks (see check_caps).
-                known = False
                 # fp32 paths are guarded by measured caps, not fp64 budgets.
                 budget = ar.budget(impl, metric)
                 within = budget is not None and stats["max"] < budget
@@ -89,16 +84,11 @@ def measure():
                     stats["status"] = "cap"
                     stats["cap"] = None  # filled in by check_caps
                 else:
-                    stats["status"] = "pass" if within else ("known" if known else "FAIL")
-                if known:
-                    stats["known_failure"] = known
+                    stats["status"] = "pass" if within else "FAIL"
                 if stats["n_nonfinite"]:
                     problems.append(f"{case.name}/{impl} {metric}: {stats['n_nonfinite']} non-finite")
                 if stats["status"] == "FAIL":
                     problems.append(f"{case.name}/{impl} {metric}: {stats['max']:.3e} > {budget}")
-                if known and within:
-                    problems.append(f"{case.name}/{impl} {metric}: known failure now passes; "
-                                    "remove the xfail and update the report")
             rows.append(r)
 
     pairs = []
@@ -121,14 +111,6 @@ def measure():
             "transposed_rotation": controls}, problems
 
 
-def _known_rows(result):
-    """(metric, key, stats) for every known-failure result."""
-    for r in result["cases"]:
-        for metric, (field, _) in ar.METRIC_KEYS.items():
-            if "known_failure" in r[field]:
-                yield metric, f"{r['case']}/{r['impl']}", r[field]
-
-
 def _fp32_rows(result):
     """(metric, key, stats) for the fp32 path (``jax_mixed``), which is a
     different precision contract rather than a defect and so is capped on its
@@ -146,19 +128,17 @@ def _capped_pairs(result):
 
 
 def check_caps(result, baselines):
-    """Every known failure, every fp32 row and every non-exact pair run must
-    have a cap and stay within it; a missing cap is itself a problem."""
+    """Every fp32 row and every non-exact pair run must have a cap and stay
+    within it; a missing cap is itself a problem."""
     problems = []
-    for rows, section in ((_known_rows(result), "known_failures"),
-                          (_fp32_rows(result), "fp32")):
-        for metric, key, stats in rows:
-            entry = baselines.get(section, {}).get(metric, {}).get(key)
-            if entry is None:
-                problems.append(f"no regression cap for {section} {key} ({metric})")
-                continue
-            stats["cap"] = entry["cap"]
-            if stats["max"] > entry["cap"]:
-                problems.append(f"{key} {metric} {stats['max']:.3e} > cap {entry['cap']} {entry['unit']}")
+    for metric, key, stats in _fp32_rows(result):
+        entry = baselines.get("fp32", {}).get(metric, {}).get(key)
+        if entry is None:
+            problems.append(f"no regression cap for fp32 {key} ({metric})")
+            continue
+        stats["cap"] = entry["cap"]
+        if stats["max"] > entry["cap"]:
+            problems.append(f"{key} {metric} {stats['max']:.3e} > cap {entry['cap']} {entry['unit']}")
     for key, p in _capped_pairs(result):
         entry = baselines["pair"].get(key)
         if entry is None:
@@ -177,9 +157,6 @@ def baselines_from(result):
                 "measured_rms": stats["rms"], "cap": _cap(stats["max"])}
 
     grid = f"{ar.GRID_N}x{ar.GRID_N} grid + CRPIX"
-    known = {metric: {} for metric in ar.METRIC_KEYS}
-    for metric, key, stats in _known_rows(result):
-        known[metric][key] = entry(stats, ar.METRIC_KEYS[metric][1], grid)
     fp32 = {metric: {} for metric in ar.METRIC_KEYS}
     for metric, key, stats in _fp32_rows(result):
         fp32[metric][key] = entry(stats, ar.METRIC_KEYS[metric][1], grid)
@@ -195,11 +172,10 @@ def baselines_from(result):
             "dtype": ("float64, except the jax_mixed rows (fp32 pixels, crpix, cd and SIP; fp64 "
                       "crval and rotation) and pair runs keyed f32 (Reprojector matrix_precision='f32')"),
             "margin": f"cap = measured max x {BASELINE_MARGIN}, rounded up to 2 significant figures",
-            "meaning": ("Regression caps on known Stage 2 defects, on the jax_mixed fp32 floor "
-                        "and on the fp32 Reprojector. Not accuracy claims; Stage 2 fixes replace "
-                        "the defect caps with the budgets in tests/accuracy_reference.py."),
+            "meaning": ("Regression caps on the jax_mixed fp32 floor and on the fp32 "
+                        "Reprojector. Not accuracy claims; the fp64 paths are held to the "
+                        "budgets in tests/accuracy_reference.py instead."),
         },
-        "known_failures": known,
         "fp32": fp32,
         "pair": pair,
     }
@@ -217,8 +193,7 @@ def _g(x):
 
 def _status(stats):
     if stats.get("cap") is not None:
-        kind = "fp32 cap" if stats["status"] == "cap" else "known"
-        return f"{kind} (cap {stats['cap']:g})"
+        return f"fp32 cap ({stats['cap']:g})"
     return stats["status"]
 
 
@@ -238,9 +213,7 @@ def render_markdown(result, env):
         "  `all_pix2world(origin=0)`, in milliarcseconds.",
         "- Inverse: mapprojax `proj` of the astropy sky position against the original pixel.",
         f"  The oracle's own converged inverse (`all_world2pix`, tol {ar.ORACLE_TOL:g}) is reported too.",
-        f"- Budgets: forward < {ar.FORWARD_MAS:g} mas; inverse < {ar.INVERSE_PX:g} px. "
-        "`known (cap X)` marks a Stage 2 defect tracked by a strict `xfail`, also held to the",
-        "  regression cap X from `tests/data/accuracy_baselines.json` (not an accuracy claim).",
+        f"- Budgets (fp64 paths): forward < {ar.FORWARD_MAS:g} mas; inverse < {ar.INVERSE_PX:g} px.",
         "- `numpy_absolute` is `unproj_absolute` / `proj_absolute`, measured on every case,",
         "  including the exact-pole `1904-66_*` fixtures (CRVAL2 = -90).",
         "- `jax_mixed` is `TanJaxMixed` / `SinJaxMixed` fed f32 pixels: fp32 pixels, `crpix`,",
@@ -268,9 +241,10 @@ def render_markdown(result, env):
         "## Real SPHEREx pair (`Reprojector`)",
         "",
         "- forward: Galactic template pixel -> L2 exposure pixel (rotation Galactic -> ICRS).",
-        "  Ends in the L2 SIP inverse, so it measures the AP/BP approximation.",
+        "  Ends in the L2 SIP inverse, a Newton solve against A/B seeded by AP/BP.",
         "- reverse: L2 pixel -> template pixel (rotation ICRS -> Galactic). Uses only the SIP",
         "  forward and a SIP-free inverse, so in fp64 it isolates the frame rotation.",
+        "- The fp32 runs are limited by float32 precision, not by the solver.",
         "- Overlap is decided from astropy's destination pixel. `cap` is the regression cap from",
         "  `tests/data/accuracy_baselines.json`, not an accuracy claim.",
         "",
@@ -293,12 +267,6 @@ def render_markdown(result, env):
                 "(rejected, or wrong by more than max(1 px, 100x the correct run)): "
                 f"forward {_ctl(c['forward'])}; reverse {_ctl(c['reverse'])}.", ""]
 
-    out += ["## Known Stage 2 defects", ""]
-    seen = sorted({s["known_failure"] for r in result["cases"]
-                   for s in (r["forward_mas"], r["inverse_px"]) if "known_failure" in s})
-    out += [f"- {reason}" for reason in seen]
-    out += ["- Single-WCS SIP inverse caps (`spherex_l2`) are on the full detector grid, where the",
-            "  AP/BP error is largest at the corners; the pair numbers cover the overlap only.", ""]
     return "\n".join(out)
 
 

@@ -93,24 +93,6 @@ def test_fp32_within_measured_cap(case, impl, metric):
     assert stats["max"] <= cap, f"{stats['max']:.3e} {unit} > cap {cap} {unit}"
 
 
-KNOWN = [
-    pytest.param(case, impl, metric, id=f"{case.name}-{impl}-{metric}")
-    for case in CASES
-    for impl in ar.implementations_for(case)
-    for metric in ar.METRIC_KEYS
-    if ar.budget(impl, metric) is not None
-    and ar.known_failure_cap_or_none(case, impl, metric) is not None
-]
-
-
-@pytest.mark.parametrize("case, impl, metric", KNOWN)
-def test_known_failure_within_regression_cap(case, impl, metric):
-    key, unit = ar.METRIC_KEYS[metric]
-    cap = ar.known_failure_cap(case, impl, metric)
-    stats = ar.evaluate(case, impl)[key]
-    assert stats["max"] <= cap, f"{stats['max']:.3e} {unit} > cap {cap} {unit}"
-
-
 # --- explicit sky -> pixel cases off the pixel grid --------------------------
 
 def _ring(lon0_deg, lat0_deg, sep_deg, n=8):

@@ -9,11 +9,7 @@
     "backend": "cpu",
     "dtype": "float64, except the jax_mixed rows (fp32 pixels, crpix, cd and SIP; fp64 crval and rotation) and pair runs keyed f32 (Reprojector matrix_precision='f32')",
     "margin": "cap = measured max x 1.2, rounded up to 2 significant figures",
-    "meaning": "Regression caps on known Stage 2 defects, on the jax_mixed fp32 floor and on the fp32 Reprojector. Not accuracy claims; Stage 2 fixes replace the defect caps with the budgets in tests/accuracy_reference.py."
-  },
-  "known_failures": {
-    "forward": {},
-    "inverse": {}
+    "meaning": "Regression caps on the jax_mixed fp32 floor and on the fp32 Reprojector. Not accuracy claims; the fp64 paths are held to the budgets in tests/accuracy_reference.py instead."
   },
   "fp32": {
     "forward": {

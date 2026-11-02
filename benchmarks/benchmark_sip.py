@@ -5,12 +5,13 @@
 is O(order) multiplies per point.
 
 Run with `python benchmarks/benchmark_sip.py`. JAX runs on CPU unless
-`JAX_PLATFORMS` says otherwise. Timings are warmed and synchronized under
-`jit`; compile time is reported separately because it is a one-off cost per
-shape, not per call.
+`JAX_PLATFORMS` says otherwise. Steady-state timings are warmed and
+synchronized under `jit`. The "first call" column is compilation plus the
+first execution, a one-off cost per shape.
 
-This measures the forward polynomial only. The SIP inverse (item 7) adds its
-own timing on top of the same evaluator.
+The Horner row times the production `Sip._evaluate_poly`; the broadcast row
+is the pre-Horner form, kept here only as the baseline. The SIP inverse is
+timed separately, at the step counts that converge.
 """
 
 import os
@@ -49,19 +50,11 @@ def _broadcast(c, xp):
 
 
 def _horner(c, xp):
+    """The production evaluator, so the benchmark tracks the real code."""
+    sip = Sip()
+
     def evaluate(u, v):
-        m, n = c.shape
-
-        def row(p):
-            acc = c[p, n - 1] * xp.ones_like(v)
-            for q in range(n - 2, -1, -1):
-                acc = acc * v + c[p, q]
-            return acc
-
-        acc = row(m - 1)
-        for p in range(m - 2, -1, -1):
-            acc = acc * u + row(p)
-        return acc
+        return sip._evaluate_poly(u, v, c, xp)
     return evaluate
 
 
@@ -98,13 +91,13 @@ def main():
         results = {}
         for form, factory in (("broadcast", _broadcast), ("horner", _horner)):
             fn = factory(coeff, jnp)
-            compile_start = __import__("time").perf_counter()
+            first_start = __import__("time").perf_counter()
             jax.block_until_ready(jax.jit(fn)(u, v))
-            compile_ms = (__import__("time").perf_counter() - compile_start) * 1e3
+            first_ms = (__import__("time").perf_counter() - first_start) * 1e3
             ms = _time(fn, (u, v)) * 1e3
             results[form] = ms
             print(f"{label if form == 'broadcast' else '':32} {form:10} {ms:8.2f}  "
-                  f"(compile {compile_ms:5.0f} ms)")
+                  f"(first call {first_ms:5.0f} ms)")
         print(f"{'':32} {'horner is':10} {results['broadcast'] / results['horner']:8.1f}x\n")
 
     # The inverse solve, on top of the same evaluator. Before the Newton
@@ -123,10 +116,16 @@ def main():
             return s.foc_to_pix(u, v)[0]
         return run
 
+    # One step does not converge on this detector (most points come back NaN
+    # by design), so it is not a usable setting and is not timed. Two is the
+    # fewest that converges here; three is the default.
     print("\nSIP inverse (Newton in focal coordinates), 2040x2040, order 3:")
-    for steps in (1, 2, 3, 5):
+    for steps in (2, 3, 5):
         ms = _time(solve(steps), (u, v)) * 1e3
-        print(f"  inverse_steps={steps}: {ms:7.2f} ms")
+        x = solve(steps)(u, v)
+        n_nan = int(jnp.isnan(x).sum())
+        note = " (default)" if steps == 3 else ""
+        print(f"  inverse_steps={steps}: {ms:7.2f} ms, {n_nan} unconverged{note}")
     print()
 
     # Agreement between the two forms on the real coefficients.

@@ -3,8 +3,8 @@
 Directions follow ``Reprojector``'s API (first WCS supplies the pixels):
 
 - forward: Galactic template pixel -> Galactic -> ICRS -> L2 exposure pixel,
-  rotation Galactic -> ICRS. Ends in the L2 SIP *inverse* (AP/BP), so its
-  residual is the AP/BP approximation, not the frame rotation.
+  rotation Galactic -> ICRS. Ends in the L2 SIP inverse (a Newton solve
+  against A/B, seeded by AP/BP), so it is exact in fp64 as well.
 - reverse: L2 pixel -> ICRS -> Galactic -> template pixel, rotation
   ICRS -> Galactic. Uses only the SIP forward and a SIP-free TAN inverse, so
   it must be exact; this pins the rotation independently of SIP.

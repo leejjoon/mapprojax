@@ -427,21 +427,6 @@ def load_baselines() -> dict:
     return json.loads(BASELINES_PATH.read_text())
 
 
-def known_failure_cap_or_none(case: Case, impl: str, metric: str) -> float | None:
-    """Regression cap for a formerly-known defect, or ``None`` once it is fixed.
-
-    Stage 2 fixed every entry; the caps stay as ordinary regression guards so
-    a later change cannot silently reintroduce the error.
-    """
-    entry = load_baselines().get("known_failures", {}).get(metric, {}).get(f"{case.name}/{impl}")
-    return None if entry is None else entry["cap"]
-
-
-def known_failure_cap(case: Case, impl: str, metric: str) -> float:
-    """Regression cap for a formerly-known defect, in the metric's unit."""
-    return load_baselines()["known_failures"][metric][f"{case.name}/{impl}"]["cap"]
-
-
 def fp32_cap(case: Case, impl: str, metric: str) -> float:
     """Regression cap for an fp32-contract implementation, in the metric's unit."""
     return load_baselines()["fp32"][metric][f"{case.name}/{impl}"]["cap"]
