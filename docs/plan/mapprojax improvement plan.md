@@ -205,7 +205,30 @@ Commit these before the restructure so they do not wait on it. Each item is one 
     - Regenerate the table and add the inverse to `benchmark_sip.py`.
     - Add a `jit`-compiled check and a denser SPHEREx verification before calling it done.
 
-- [ ] **8. x64 policy** (flips 0). Remove the import-time warning (`__init__.py:4-10`). `Reprojector(matrix_precision="f64")` and explicit Mixed constructors raise `ValueError` when x64 is off, before any cast: `jnp.asarray(..., float64)` returns float32 there, with only JAX's generic truncation warning.
+- [x] **8. x64 policy** (flips 0). Remove the import-time warning (`__init__.py:4-10`). `Reprojector(matrix_precision="f64")` and explicit Mixed constructors raise `ValueError` when x64 is off, before any cast: `jnp.asarray(..., float64)` returns float32 there, with only JAX's generic truncation warning.
+  - Done, one commit. The import-time warning is gone (import is quiet under
+    `-W error`). `Reprojector(matrix_precision="f64")` and both Mixed
+    constructors raise `ValueError` before any cast. Bare JAX classes keep
+    constructing and keep the offset APIs, `pix_to_native` and gradients;
+    their `proj`/`unproj`/`*_xyz` raise `TypeError` when the effective
+    `crval` precision is not float64, matching what `unproj_absolute`
+    already did on JAX classes.
+  - The check is on the *effective* precision of the stored crval, as the
+    re-review asked: a WCS built with x64 on keeps f64 leaves after x64 is
+    switched off, so `jax_enable_x64` alone would be the wrong test.
+  - `tests/test_x64_policy.py` runs each case in a fresh interpreter (x64 is
+    process-global and effectively latched once arrays exist): quiet import,
+    NumPy use, f32 reprojection, the offset APIs, three explicit-f64 raises,
+    the bare-class raise, and a no-fp64-in-the-jaxpr check that includes SIP.
+    Extending the last one to SIP needed the mixed-precision path to stop
+    routing through a NumPy default; see item 7's `_backend` note.
+  - Also fixed while here: the `Sip` PyTree dropped `inverse_steps` on
+    unflatten (it is aux data now, so a step-count change does not force a
+    recompile).
+  - Stage 2 is complete: `406 passed, 1 skipped, 0 xfailed` (the skip is an
+    astropy-only case); `benchmark_accuracy.py` exits 0; the
+    `known_failures` section is empty and only the 14+14 `jax_mixed` fp32
+    caps and the two f32 pair caps remain.
   - Bare JAX classes keep working with x64 off for construction, `pix_to_native`, the offset APIs and gradients.
   - Their `proj`, `unproj`, `proj_xyz` and `unproj_xyz` raise `TypeError` when the effective precision of `crval` (`crvals` for the Array classes) is not float64. That is the error `unproj_absolute` already raises on JAX classes (`tests/test_offset_projection.py:258-270`). The message points to the offset APIs, `Reprojector` and x64.
   - Check the effective precision, not just the stored dtype: a WCS built with x64 on keeps f64 leaves after x64 is turned off, but its arithmetic then truncates. The check is static under `jit`. A warning would fire once, at trace time, and then be lost.

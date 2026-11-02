@@ -15,6 +15,7 @@ then runs ``pix_to_native -> apply that matrix -> native_to_pix`` in fp32
 (or fp64), never forming an absolute celestial vector.
 """
 
+import jax
 import jax.numpy as jnp
 from jax.tree_util import register_pytree_node_class
 
@@ -163,6 +164,14 @@ class Reprojector:
     def __init__(self, wcs_src, wcs_tgt, frame_rotation=None, matrix_precision="f32"):
         if matrix_precision not in SUPPORTED_MATRIX_PRECISIONS:
             raise ValueError(f"matrix_precision must be one of {SUPPORTED_MATRIX_PRECISIONS}, got {matrix_precision!r}")
+        if matrix_precision == "f64" and not jax.config.jax_enable_x64:
+            raise ValueError(
+                "Reprojector(matrix_precision='f64') requires float64: call "
+                "jax.config.update('jax_enable_x64', True). Without it the "
+                "composed rotation and the per-pixel legs are silently "
+                "float32, which measured 2.3e-2 px on a 2 deg separation at "
+                "0.05 arcsec/px instead of 1.6e-9 px."
+            )
 
         self.matrix_precision = matrix_precision
         self._dtype = jnp.float64 if matrix_precision == "f64" else jnp.float32
