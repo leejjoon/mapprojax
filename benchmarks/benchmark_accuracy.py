@@ -79,9 +79,15 @@ def measure():
             for metric, budget in (("forward", ar.FORWARD_MAS), ("inverse", ar.INVERSE_PX)):
                 stats = r[ar.METRIC_KEYS[metric][0]]
                 known = ar.known_failure(case, impl, metric)
-                within = stats["max"] < budget
+                # fp32 paths are guarded by measured caps, not fp64 budgets.
+                budget = ar.budget(impl, metric)
+                within = budget is not None and stats["max"] < budget
                 stats["budget"] = budget
-                stats["status"] = "pass" if within else ("known" if known else "FAIL")
+                if budget is None:
+                    stats["status"] = "cap"
+                    stats["cap"] = None  # filled in by check_caps
+                else:
+                    stats["status"] = "pass" if within else ("known" if known else "FAIL")
                 if known:
                     stats["known_failure"] = known
                 if stats["n_nonfinite"]:
@@ -123,6 +129,16 @@ def _known_rows(result):
                 yield metric, f"{r['case']}/{r['impl']}", r[field]
 
 
+def _fp32_rows(result):
+    """(metric, key, stats) for the fp32 path (``jax_mixed``), which is a
+    different precision contract rather than a defect and so is capped on its
+    own measured floor."""
+    for r in result["cases"]:
+        for metric, (field, _) in ar.METRIC_KEYS.items():
+            if r[field].get("status") == "cap":
+                yield metric, f"{r['case']}/{r['impl']}", r[field]
+
+
 def _capped_pairs(result):
     for p in result["pairs"]:
         if (p["direction"], p["precision"]) not in ar.PAIR_EXACT:
@@ -130,17 +146,19 @@ def _capped_pairs(result):
 
 
 def check_caps(result, baselines):
-    """Every known failure and every non-exact pair run must have a cap and
-    stay within it; a missing cap is itself a problem."""
+    """Every known failure, every fp32 row and every non-exact pair run must
+    have a cap and stay within it; a missing cap is itself a problem."""
     problems = []
-    for metric, key, stats in _known_rows(result):
-        entry = baselines["known_failures"].get(metric, {}).get(key)
-        if entry is None:
-            problems.append(f"no regression cap for known failure {key} ({metric})")
-            continue
-        stats["cap"] = entry["cap"]
-        if stats["max"] > entry["cap"]:
-            problems.append(f"{key} {metric} {stats['max']:.3e} > cap {entry['cap']} {entry['unit']}")
+    for rows, section in ((_known_rows(result), "known_failures"),
+                          (_fp32_rows(result), "fp32")):
+        for metric, key, stats in rows:
+            entry = baselines.get(section, {}).get(metric, {}).get(key)
+            if entry is None:
+                problems.append(f"no regression cap for {section} {key} ({metric})")
+                continue
+            stats["cap"] = entry["cap"]
+            if stats["max"] > entry["cap"]:
+                problems.append(f"{key} {metric} {stats['max']:.3e} > cap {entry['cap']} {entry['unit']}")
     for key, p in _capped_pairs(result):
         entry = baselines["pair"].get(key)
         if entry is None:
@@ -162,6 +180,9 @@ def baselines_from(result):
     known = {metric: {} for metric in ar.METRIC_KEYS}
     for metric, key, stats in _known_rows(result):
         known[metric][key] = entry(stats, ar.METRIC_KEYS[metric][1], grid)
+    fp32 = {metric: {} for metric in ar.METRIC_KEYS}
+    for metric, key, stats in _fp32_rows(result):
+        fp32[metric][key] = entry(stats, ar.METRIC_KEYS[metric][1], grid)
     pair = {key: entry(p["pixel_error_px"], "px", f"{grid} on the source, astropy-decided overlap",
                        n_overlap=p["n_overlap"])
             for key, p in _capped_pairs(result)}
@@ -171,13 +192,15 @@ def baselines_from(result):
             "generated_by": "benchmarks/benchmark_accuracy.py --write-baselines",
             "versions": env["versions"],
             "backend": env["backend"],
-            "dtype": "float64, except pair runs keyed f32 (Reprojector matrix_precision='f32')",
+            "dtype": ("float64, except the jax_mixed rows (fp32 pixels, crpix, cd and SIP; fp64 "
+                      "crval and rotation) and pair runs keyed f32 (Reprojector matrix_precision='f32')"),
             "margin": f"cap = measured max x {BASELINE_MARGIN}, rounded up to 2 significant figures",
-            "meaning": ("Regression caps on known Stage 2 defects and the fp32 Reprojector. Not "
-                        "accuracy claims; Stage 2 fixes replace them with the budgets in "
-                        "tests/accuracy_reference.py."),
+            "meaning": ("Regression caps on known Stage 2 defects, on the jax_mixed fp32 floor "
+                        "and on the fp32 Reprojector. Not accuracy claims; Stage 2 fixes replace "
+                        "the defect caps with the budgets in tests/accuracy_reference.py."),
         },
         "known_failures": known,
+        "fp32": fp32,
         "pair": pair,
     }
 
@@ -193,7 +216,10 @@ def _g(x):
 
 
 def _status(stats):
-    return f"known (cap {stats['cap']:g})" if "cap" in stats else stats["status"]
+    if stats.get("cap") is not None:
+        kind = "fp32 cap" if stats["status"] == "cap" else "known"
+        return f"{kind} (cap {stats['cap']:g})"
+    return stats["status"]
 
 
 def render_markdown(result, env):
@@ -217,6 +243,10 @@ def render_markdown(result, env):
         "  regression cap X from `tests/data/accuracy_baselines.json` (not an accuracy claim).",
         "- `numpy_absolute` is `unproj_absolute` / `proj_absolute`, measured on every case,",
         "  including the exact-pole `1904-66_*` fixtures (CRVAL2 = -90).",
+        "- `jax_mixed` is `TanJaxMixed` / `SinJaxMixed` fed f32 pixels: fp32 pixels, `crpix`,",
+        "  `cd` and SIP; fp64 `crval` and rotation. That is a different precision contract, so it is",
+        "  held to a measured cap per case and metric (`fp32 cap X`) from the `fp32` section of",
+        "  `tests/data/accuracy_baselines.json`, not to the fp64 budgets.",
         "- No timings: this is an accuracy benchmark.",
         "",
         "## Single WCS",

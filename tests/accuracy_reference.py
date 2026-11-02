@@ -19,6 +19,18 @@ Conventions
   masked.
 - Non-finite mapprojax output on a valid pixel is counted and reported,
   never dropped from the statistics.
+
+Implementations
+---------------
+``numpy`` (``Tan``/``Sin``), ``jax`` (``TanJax``/``SinJax``) and
+``numpy_absolute`` (the offset-form fp64 epilogue) are fp64 paths held to the
+budgets above. ``jax_mixed`` (``TanJaxMixed``/``SinJaxMixed``) is the
+mixed-precision path -- fp32 pixels, ``crpix``, ``cd`` and SIP; fp64 ``crval``
+and rotation -- so it is held to a measured cap per case and metric in
+``accuracy_baselines.json`` (``fp32`` section), not to the fp64 budgets. The
+harness feeds it f32 pixels and f32 SIP coefficients, as ``Reprojector`` does,
+so the caps measure the fp32 floor rather than fp64 arithmetic promoted
+through fp32 parameters.
 """
 
 from __future__ import annotations
@@ -55,6 +67,15 @@ SIP_INVERSE = "Stage 2 SIP inverse: single-pass AP/BP is not the converged inver
 
 METRIC_KEYS = {"forward": ("forward_mas", "mas"), "inverse": ("inverse_px", "px")}
 
+# Precision contracts. ``numpy``/``jax``/``numpy_absolute`` are fp64 paths and
+# are held to the fp64 budgets. ``jax_mixed`` is the mixed-precision class:
+# fp32 pixels, ``crpix``, ``cd`` and SIP; fp64 ``crval`` and rotation --
+# a different contract, not a defect, so its limits come from measured caps for
+# both metrics (see ``budget``).
+FP64_IMPL = ("numpy", "jax", "numpy_absolute")
+F32_IMPL = ("jax_mixed",)
+IMPLEMENTATIONS = FP64_IMPL + F32_IMPL
+
 # Real-pair runs. The fp64 reverse direction has no SIP inverse in its path and
 # is held to TARGET_PX; every other run is held to a measured regression cap.
 PAIR_RUNS = (("forward", "f64"), ("forward", "f32"), ("reverse", "f64"), ("reverse", "f32"))
@@ -63,11 +84,27 @@ PAIR_EXACT = (("reverse", "f64"),)
 
 def known_failure(case: "Case", impl: str, metric: str) -> str | None:
     """Reason string if (case, impl, metric) is a known Stage 2 defect."""
+    if impl == "jax_mixed":
+        return None
     if metric == "forward" and "near_pole" in case.name and impl in ("numpy", "jax"):
         return NEAR_POLE
     if metric == "inverse" and case.has_sip:
         return SIP_INVERSE
     return None
+
+
+def budget(impl: str, metric: str) -> float | None:
+    """fp64 accuracy budget for ``impl``, or ``None`` when the row is guarded
+    by a measured regression cap instead.
+
+    ``jax_mixed`` runs fp32 pixels, ``crpix``, ``cd`` and SIP with an fp64
+    ``crval`` rotation (its documented contract), so it is far over the fp64
+    budgets even on ordinary fields. Its fp32 limits come from measured caps,
+    as the plan requires.
+    """
+    if impl in F32_IMPL:
+        return None
+    return FORWARD_MAS if metric == "forward" else INVERSE_PX
 
 
 # --- headers and cases -------------------------------------------------------
@@ -200,33 +237,56 @@ def _params(header):
     return load_wcs_params_from_header(header)
 
 
+_CLASS_NAMES = {
+    ("numpy", "TAN"): "Tan", ("numpy", "SIN"): "Sin",
+    ("jax", "TAN"): "TanJax", ("jax", "SIN"): "SinJax",
+    ("jax_mixed", "TAN"): "TanJaxMixed", ("jax_mixed", "SIN"): "SinJaxMixed",
+}
+
+
+def _cast_sip(sip, dtype):
+    if sip is None:
+        return None
+    from mapprojax.sip import Sip
+
+    def c(arr):
+        return None if arr is None else np.asarray(arr, dtype=dtype)
+
+    return Sip(a=c(sip.a), b=c(sip.b), ap=c(sip.ap), bp=c(sip.bp))
+
+
 def build(case: Case, backend: str):
-    """``backend``: ``numpy`` (Tan/Sin) or ``jax`` (TanJax/SinJax, needs x64)."""
+    """``backend``: ``numpy`` (Tan/Sin), ``jax`` (TanJax/SinJax) or
+    ``jax_mixed`` (TanJaxMixed/SinJaxMixed). The two JAX backends need x64."""
     import mapprojax as mp
 
-    names = {("numpy", "TAN"): "Tan", ("numpy", "SIN"): "Sin",
-             ("jax", "TAN"): "TanJax", ("jax", "SIN"): "SinJax"}
     crpix, cd, crval, sip = _params(case.header)
-    return getattr(mp, names[backend, case.proj])(crpix, cd, crval, sip=sip)
+    if backend == "jax_mixed":
+        # The Mixed constructors keep the SIP object as given; cast it the way
+        # Reprojector does so the polynomial really runs in fp32.
+        sip = _cast_sip(sip, np.float32)
+    return getattr(mp, _CLASS_NAMES[backend, case.proj])(crpix, cd, crval, sip=sip)
 
-
-IMPLEMENTATIONS = ("numpy", "jax", "numpy_absolute")
 
 
 def implementations_for(case: Case) -> tuple[str, ...]:
     # Every implementation runs on every case, including the CRVAL2 = -90
     # 1904-66 fixtures: the offset/absolute APIs' cos(CRVAL2) scaling cancels
     # in the absolute round trip, and they agree with astropy there.
+    # ``jax_mixed`` is the mixed-precision class -- see ``budget``.
     return IMPLEMENTATIONS
 
 
 def run_impl(case: Case, impl: str, pix: np.ndarray, world_deg: np.ndarray):
     """Return (world_deg, pix) from mapprojax for the given impl."""
-    wcs = build(case, "jax" if impl == "jax" else "numpy")
+    backend = {"jax": "jax", "jax_mixed": "jax_mixed"}.get(impl, "numpy")
+    wcs = build(case, backend)
     ra_in, dec_in = np.radians(world_deg[:, 0]), np.radians(world_deg[:, 1])
+    if impl in F32_IMPL:
+        pix = pix.astype(np.float32)  # fp32 contract: pixels arrive as f32
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
-        if impl == "numpy_absolute":
+        if impl.endswith("_absolute"):
             ra, dec = wcs.unproj_absolute(pix[:, 0], pix[:, 1])
             x, y = wcs.proj_absolute(ra_in, dec_in)
         else:
@@ -389,6 +449,11 @@ def load_baselines() -> dict:
 def known_failure_cap(case: Case, impl: str, metric: str) -> float:
     """Regression cap for a known failure, in the metric's unit."""
     return load_baselines()["known_failures"][metric][f"{case.name}/{impl}"]["cap"]
+
+
+def fp32_cap(case: Case, impl: str, metric: str) -> float:
+    """Regression cap for an fp32-contract implementation, in the metric's unit."""
+    return load_baselines()["fp32"][metric][f"{case.name}/{impl}"]["cap"]
 
 
 def pair_cap(direction: str, precision: str) -> float:

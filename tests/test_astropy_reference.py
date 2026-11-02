@@ -37,10 +37,12 @@ def _x64_enabled():
 CASES = ar.cases()
 
 
-def _params(predicate_marks):
+def _params(predicate_marks, only=None):
     out = []
     for case in CASES:
         for impl in ar.implementations_for(case):
+            if only is not None and not only(impl):
+                continue
             marks = predicate_marks(case, impl)
             out.append(pytest.param(case, impl, id=f"{case.name}-{impl}", marks=marks))
     return out
@@ -49,7 +51,9 @@ def _params(predicate_marks):
 def _known(metric):
     def marks(case, impl):
         reason = ar.known_failure(case, impl, metric)
-        if reason is None:
+        if reason is None or ar.budget(impl, metric) is None:
+            # The fp32 path (``jax_mixed``) has no fp64 budget; its measured
+            # cap test owns it instead.
             return ()
         return pytest.mark.xfail(strict=True, raises=AssertionError, reason=reason)
     return marks
@@ -73,16 +77,33 @@ def test_outputs_are_finite_on_valid_pixels(case, impl):
     assert result["inverse_px"]["n_nonfinite"] == 0
 
 
-@pytest.mark.parametrize("case, impl", _params(_forward_marks))
+@pytest.mark.parametrize("case, impl", _params(_forward_marks, only=lambda i: ar.budget(i, "forward") is not None))
 def test_forward_matches_astropy(case, impl):
     stats = ar.evaluate(case, impl)["forward_mas"]
-    assert stats["max"] < FORWARD_MAS, f"{stats['max']:.3e} mas"
+    budget = ar.budget(impl, "forward")
+    assert stats["max"] < budget, f"{stats['max']:.3e} mas"
 
 
-@pytest.mark.parametrize("case, impl", _params(_inverse_marks))
+@pytest.mark.parametrize("case, impl", _params(_inverse_marks, only=lambda i: ar.budget(i, "inverse") is not None))
 def test_inverse_matches_astropy(case, impl):
     stats = ar.evaluate(case, impl)["inverse_px"]
-    assert stats["max"] < INVERSE_PX, f"{stats['max']:.3e} px"
+    budget = ar.budget(impl, "inverse")
+    assert stats["max"] < budget, f"{stats['max']:.3e} px"
+
+
+# fp32 contract: no fp64 budget, so the fp32 path (``jax_mixed``) is held to
+# its own measured floor from ``accuracy_baselines.json`` instead.
+FP32 = [pytest.param(c, i, id=f"{c.name}-{i}")
+        for c in CASES for i in ar.implementations_for(c) if ar.budget(i, "forward") is None]
+
+
+@pytest.mark.parametrize("case, impl", FP32)
+@pytest.mark.parametrize("metric", list(ar.METRIC_KEYS))
+def test_fp32_within_measured_cap(case, impl, metric):
+    key, unit = ar.METRIC_KEYS[metric]
+    cap = ar.fp32_cap(case, impl, metric)
+    stats = ar.evaluate(case, impl)[key]
+    assert stats["max"] <= cap, f"{stats['max']:.3e} {unit} > cap {cap} {unit}"
 
 
 KNOWN = [

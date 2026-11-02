@@ -7,9 +7,9 @@
       "astropy": "8.0.2"
     },
     "backend": "cpu",
-    "dtype": "float64, except pair runs keyed f32 (Reprojector matrix_precision='f32')",
+    "dtype": "float64, except the jax_mixed rows (fp32 pixels, crpix, cd and SIP; fp64 crval and rotation) and pair runs keyed f32 (Reprojector matrix_precision='f32')",
     "margin": "cap = measured max x 1.2, rounded up to 2 significant figures",
-    "meaning": "Regression caps on known Stage 2 defects and the fp32 Reprojector. Not accuracy claims; Stage 2 fixes replace them with the budgets in tests/accuracy_reference.py."
+    "meaning": "Regression caps on known Stage 2 defects, on the jax_mixed fp32 floor and on the fp32 Reprojector. Not accuracy claims; Stage 2 fixes replace the defect caps with the budgets in tests/accuracy_reference.py."
   },
   "known_failures": {
     "forward": {
@@ -91,6 +91,208 @@
         "measured_max": 0.029134960824923246,
         "measured_rms": 0.0042519836173652925,
         "cap": 0.035
+      }
+    }
+  },
+  "fp32": {
+    "forward": {
+      "1904-66_TAN/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 11.026062938742001,
+        "measured_rms": 3.569907848655837,
+        "cap": 14.0
+      },
+      "1904-66_SIN/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 13.939335207448453,
+        "measured_rms": 5.525415799050784,
+        "cap": 17.0
+      },
+      "spherex_l2/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 1.3356332851121255,
+        "measured_rms": 0.34090700312892697,
+        "cap": 1.7
+      },
+      "spherex_template/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.39465832355510705,
+        "measured_rms": 0.11944611182595008,
+        "cap": 0.48
+      },
+      "tan_ordinary/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.134975035506923,
+        "measured_rms": 0.04868082675828487,
+        "cap": 0.17
+      },
+      "tan_ra_wrap_hi/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.1349750584971797,
+        "measured_rms": 0.04868082339796826,
+        "cap": 0.17
+      },
+      "tan_ra_wrap_lo/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.13497498120164778,
+        "measured_rms": 0.04868082530722774,
+        "cap": 0.17
+      },
+      "tan_near_pole_n/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.1349759011389266,
+        "measured_rms": 0.0486810769601076,
+        "cap": 0.17
+      },
+      "tan_near_pole_s/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.1349759014301573,
+        "measured_rms": 0.04868107647473504,
+        "cap": 0.17
+      },
+      "sin_ordinary/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.1486813989169209,
+        "measured_rms": 0.04110215836641061,
+        "cap": 0.18
+      },
+      "sin_ra_wrap_hi/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.14868135297083573,
+        "measured_rms": 0.04110215718319074,
+        "cap": 0.18
+      },
+      "sin_ra_wrap_lo/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.1486813337142197,
+        "measured_rms": 0.0411021569904912,
+        "cap": 0.18
+      },
+      "sin_near_pole_n/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.14868685295383124,
+        "measured_rms": 0.04110235576861544,
+        "cap": 0.18
+      },
+      "sin_near_pole_s/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "mas",
+        "measured_max": 0.1486868053745009,
+        "measured_rms": 0.041102357186291114,
+        "cap": 0.18
+      }
+    },
+    "inverse": {
+      "1904-66_TAN/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 6.151014517439689e-05,
+        "measured_rms": 2.1059132485546127e-05,
+        "cap": 7.4e-05
+      },
+      "1904-66_SIN/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 3.411968959808029e-05,
+        "measured_rms": 2.3885928147215296e-05,
+        "cap": 4.1e-05
+      },
+      "spherex_l2/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 0.02908887138396124,
+        "measured_rms": 0.00425039580636508,
+        "cap": 0.035
+      },
+      "spherex_template/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 8.631674575031098e-05,
+        "measured_rms": 1.867097070844252e-05,
+        "cap": 0.00011
+      },
+      "tan_ordinary/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 3.411968959808029e-05,
+        "measured_rms": 9.501330219482339e-06,
+        "cap": 4.1e-05
+      },
+      "tan_ra_wrap_hi/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 3.411968959808029e-05,
+        "measured_rms": 9.501330219482339e-06,
+        "cap": 4.1e-05
+      },
+      "tan_ra_wrap_lo/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 3.411968959808029e-05,
+        "measured_rms": 9.501330219482339e-06,
+        "cap": 4.1e-05
+      },
+      "tan_near_pole_n/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 3.411968959808029e-05,
+        "measured_rms": 9.501330219482339e-06,
+        "cap": 4.1e-05
+      },
+      "tan_near_pole_s/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 3.411968959808029e-05,
+        "measured_rms": 9.501330219482339e-06,
+        "cap": 4.1e-05
+      },
+      "sin_ordinary/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 3.411968959808029e-05,
+        "measured_rms": 9.569932772601225e-06,
+        "cap": 4.1e-05
+      },
+      "sin_ra_wrap_hi/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 3.411968959808029e-05,
+        "measured_rms": 9.569932772601225e-06,
+        "cap": 4.1e-05
+      },
+      "sin_ra_wrap_lo/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 3.411968959808029e-05,
+        "measured_rms": 9.569932772601225e-06,
+        "cap": 4.1e-05
+      },
+      "sin_near_pole_n/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 3.411968959808029e-05,
+        "measured_rms": 9.569932772601225e-06,
+        "cap": 4.1e-05
+      },
+      "sin_near_pole_s/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "unit": "px",
+        "measured_max": 3.411968959808029e-05,
+        "measured_rms": 9.569932772601225e-06,
+        "cap": 4.1e-05
       }
     }
   },
