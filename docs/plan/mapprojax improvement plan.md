@@ -13,7 +13,7 @@ The Oct 31 draft overstated two things and missed several bugs:
 
 ## Decisions
 
-1. **mapprojax is JAX-first.** One class per projection, registered as a JAX PyTree. NumPy stays only where fp64 must live on the host: `crval` and the composition of the celestial↔native rotation. The NumPy `Tan`/`Sin` classes, the `*Array` variants (replaced by `vmap`), the `*Mixed` variants (precision becomes a static field) and the private per-projection reprojection legs all go. There is no PyPI release and the only downstream is reprojax, so the API break is cheapest now; no backward-compatibility aliases.
+1. **mapprojax is JAX-first.** One class per projection, registered as a JAX PyTree. NumPy stays only where fp64 must live on the host: `crval` and the composition of the celestial↔native rotation. The NumPy `Tan`/`Sin` classes, the `*Array` variants (replaced by `vmap`), the `*Mixed` variants (precision becomes a static field, a required keyword) and the private per-projection reprojection legs all go. There is no PyPI release and the only downstream is reprojax, so the API break is cheapest now; no backward-compatibility aliases.
 2. **mapprojax is the coordinate kernel; reprojax is the image tool.** mapprojax owns projections, distortions, rotations, precision policy and the source-pixel map with its validity mask. reprojax owns interpolation, flux handling, tiling and coadds. The Oct 31 draft's Phase 4 moves to reprojax.
 3. **Compete on the precision design, not on projection count.** jax-galsim `GSFitsWCS` already covers TAN/TPV/TNX/SIP/STG/ZEA/ARC with iterative inversion. mapprojax's distinct contribution is the measured fp32/fp64 envelope, the offset form, and the fp64-free `Reprojector`. Add projections when real data asks for them.
 4. **State numbers that survive scrutiny.** Lead with realistic-size errors (~2e-3 px at fp32, ~1e-11 px at fp64) and the plate-scale envelope, not the round-trip figure. Drop "fp64-grade".
@@ -225,8 +225,8 @@ Commit these before the restructure so they do not wait on it. Each item is one 
     Extending the last one to SIP needed the mixed-precision path to stop
     routing through a NumPy default; see item 7's `_backend` note.
   - Also fixed while here: the `Sip` PyTree dropped `inverse_steps` on
-    unflatten (it is aux data now, so a step-count change does not force a
-    recompile).
+    unflatten. It is aux data now, so it survives flatten/unflatten; a
+    step-count change does recompile, and the cache keeps both.
   - Stage 2 is complete: `406 passed, 1 skipped, 0 xfailed` (the skip is an
     astropy-only case); `benchmark_accuracy.py` exits 0; the
     `known_failures` section is empty and only the 14+14 `jax_mixed` fp32
@@ -248,13 +248,73 @@ Done when:
 
 ### Stage 3: JAX-first restructure
 
-Timebox this stage. If it overruns, ship v0.3.0 with a small internal factory that generates the existing classes from each mixin, keep the public names, and mark the API unstable before 1.0.
+Revised by the Stage 3 committee review (appended below). Stage 2's numerical pipeline (`_PipelineBase`, the masked-gradient rule, the CD checks, the SIP inverse) is kept as it is; Stage 3 changes construction, precision policy, dispatch and the public surface around it.
 
-- [ ] One class per projection, using `jax.tree_util.register_dataclass` (no equinox/flax dependency). Precision mode is a static field; per-pixel work runs in fp32 or fp64 accordingly.
-- [ ] Keep `crval` and rotation composition as an explicit host-side fp64 step (NumPy), separate from the device kernel, for the reprojection and offset paths. Also keep a traced rotation path built from `crval` inside JAX, so the `crval` gradients that work today in fp64 `TanJax` survive for fitting. Replace `unproj_absolute`'s NumPy-only restriction with a free function such as `absolute_from_offset(offset, crval_f64)`.
-- [ ] Replace `*Array` classes with documented `vmap` usage; let `Reprojector` take any projection without a private leg subclass.
-- [ ] Serialization: keep `to_dict`/`from_dict` (JSON, tested). Remove the ASDF converter until it handles SIP and the new classes; it currently drops SIP, registers only NumPy classes and has no tests.
-- [ ] Update reprojax to the new API in the same pass. Once mapprojax's SIP inverse is exact (Stage 2 item 7), turn off reprojax's own refinement (`refine_pixel_estimate` in `compose_transform` / `compose_transform_fp32`, `transform.py:148`, `:209`): set `sip_inverse_refine_steps` to 0 by default or delete `_sip_refine.py`, with integration tests, so each pixel is not inverted twice.
+Timebox this stage, with a checkpoint after the harness switch (commit 4 below). If it overruns, ship v0.3.0 with the Stage 2 classes as they are and mark the API unstable before 1.0. Do not build a factory that generates the old classes.
+
+- [ ] **1. One class per projection.** `Tan` and `Sin`, registered with explicit `tree_flatten`/`tree_unflatten` that rebuild through `__new__`, as Stage 2 does. Not `jax.tree_util.register_dataclass`: its unflatten calls the constructor, and a casting constructor breaks `eval_shape` and undoes `tree_map` casts (both measured on JAX 0.11.1).
+  - Leaves: `crpix`, `cd`, `crval`, SIP coefficients. Aux data: `precision`, SIP `inverse_steps`. `r_matrix` stays derived; no `cd_inv` leaf.
+  - Construction converts Python sequences, checks the precision mode against x64, casts the per-pixel leaves and validates a concrete CD after the cast. Reconstruction casts, validates and computes nothing; it preserves leaves exactly.
+  - Changing precision goes through an explicit conversion method that casts the leaves and rechecks the cast CD. A `tree_map` cast is not a precision API.
+- [ ] **2. Precision modes.** `precision` is a required keyword with no default in 0.3.0; a default can be added later with usage evidence. The library never changes `jax_enable_x64`.
+
+  | Input or work | `f32` | `mixed` | `f64` |
+  | --- | --- | --- | --- |
+  | Pixels, `crpix`, CD, SIP coefficients | f32 | f32 | f64 |
+  | Absolute sky / Cartesian inputs and the celestial rotation | rejected | f64, never cast down | f64 |
+  | Offset inputs and reference trigonometry | f32 | f64 (today's Mixed behaviour, preserved) | f64 |
+  | Crossing into the native pipeline | — | cast to f32 | — |
+  | Crossing back into the celestial rotation | — | cast to f64 | — |
+  | x64 required | no | yes, raise at construction | yes, raise at construction |
+
+  - Sky inputs are never cast to f32: at 0.05″/px that alone costs 0.726 px (measured). `mixed` overrides both rotation hooks, as `_MixedRotation` does today (`jax_base.py:129`), not only `_rotation()`.
+  - Inputs are cast to the mode so a strong fp64 input cannot promote an f32 kernel.
+  - The effective-precision guard stays for `mixed` and `f64` objects used after x64 is switched off.
+- [ ] **3. Host `crval`.** `crval` is stored as given and never cast at construction. A NumPy fp64 leaf comes back float32 after a `jit` round trip with x64 off (measured), and upcasting does not restore it.
+  - The host composition reads `crval` as fp64 and raises on a tracer or a non-float64 reference. This replaces today's `xp is np` guard (`utils.py:160`). Callers who build after a JAX transformation keep and supply the original host values.
+  - A changed `crval` requires rebuilding the composed matrix.
+  - The traced rotation built from `crval` inside JAX stays, so fitting keeps its `crval` gradients.
+- [ ] **4. Offset helpers.** `absolute_from_offset` and `offset_from_absolute` replace `unproj_absolute`/`proj_absolute`.
+  - Contract: `crval` in degrees, offsets and absolute sky in radians, offsets are `(Δlon·cos lat₀, Δlat)`, absolute output is NumPy fp64 with longitude wrapped to `[0, 2π)`, the inverse wraps the longitude difference before casting down, NaN stays invalid. Host transfer, outside `jit` and autodiff.
+  - Divide by the scale the producer actually multiplied by, in the producer's dtype, not an independently recomputed fp64 cosine. With the recomputed cosine, f32 offsets give 501 mas at +89.9999° and 833,326 mas at −90°; with the producer's cosine, 0.4–0.5 and 15–18 mas (both reviewers measured). At a genuinely zero scale the longitude is absent and is not fabricated.
+  - Tests at ordinary, near-pole and exact-pole references. State the f32 envelope as measured values, not a universal bound, and not as the fp64 `numpy_absolute` figures.
+- [ ] **5. `Reprojector` takes any conforming projection.** "Conforming" means it implements the validity-aware pipeline (`_pix_to_native_valid`, `_native_to_pix_valid`), not any object with `proj`/`unproj`. The private leg classes and `_LEG_CLS_FOR_MIXIN` go; the legs are precision-converted copies of the projections, with `inverse_steps` preserved.
+  - Two constructors: the eager host fp64 composition (item 3's checks), and one taking a caller-supplied relative rotation matrix, which may be traced. The matrix is a dynamic leaf, cast to the kernel precision, with no host conversion.
+  - Both compose the internals, carry accumulated validity, substitute regular stand-ins at every stage and insert NaN only at the output (`reproject.py:216`). The traced constructor is the seam reprojax's fitting path needs; differentiating the host composition stays deferred.
+- [ ] **6. `vmap` replaces the `*Array` classes.** Document three uses: one WCS over a pixel grid (broadcasting), paired WCS and pixel samples, many WCSes over one shared grid. Array outputs are `(pixels, centres)` and stacked objects give `(centres, pixels)`, so state the `out_axes`. A batch shares projection type, precision, PyTree structure, SIP shapes and `inverse_steps`. Keep reprojax's batched PyTree construction working. Measured: `vmap` matches `TanJaxArray` bit for bit and runs as fast (2.21 vs 2.44 ms, 256 centres × 4096 px, CPU, `jit`). The Array-against-astropy test (`test_astropy_reference.py:129`) is rewritten with `vmap`, not dropped.
+- [ ] **7. Serialization.** Keep `to_dict`/`from_dict`, and test them: today no test round-trips a WCS (`test_wcs_json.py` checks a reference fixture; only `Sip` round-trips, `test_sip.py:243`), and `from_dict` ignores the saved type (`base.py:480`). Round trips for both projections, every mode, absent AP/BP and nondefault `inverse_steps`; serialize `precision`; reject or explicitly dispatch a mismatched or old `type`. Remove ASDF together: the converter, both entry points and the `serialization` extra in `pyproject.toml`, and `resources/`. It drops SIP, registers only NumPy classes and has no tests.
+- [ ] **8. reprojax.** Two parts.
+  - Early, against the Stage 2 API: set `sip_inverse_refine_steps` to 0 by default; rewrite the three tests that assert mapprojax's old inaccurate inverse (`test_real_sip_inversion_quality_quantified`, `test_sip_reverse_path_needs_newton_refinement`, `test_grad_sip_reverse_coeffs_vanishes_under_refinement_but_not_without_it`) as tests of the new behaviour; make the domain test match SIN (`xn >= 0`, not `xn > 0`, `transform.py:130`); fix `_sip_fingerprint` crashing on A/B-only headers (`transform.py:59`); investigate the forward-SIP finite-difference mismatch (3.6e-4 relative), not delete it. These are already broken by Stage 2, not by Stage 3.
+  - At the cutover: move to the new API (reprojax uses `r_matrix`, `unproj_xyz`, `native_to_pix`, `pix_to_native`, `tgt_leg`, `pix_to_native_tgt` and the `Tan`/`Sin`/`TanJax`/`SinJax` names, and builds a NumPy WCS only to satisfy the `Reprojector` guard). Fix the NaN `crval` gradients in the traced path (it multiplies public NaN output of `unproj_xyz` by a rotation) through item 5's traced constructor. Delegate the fp32 path to `Reprojector.pix_to_pix`. Then delete `_sip_refine.py` with its imports, defaults, batched wrapper, cache keys, tests and docs.
+  - Gate: both directions of the real SPHEREx pair, fp32 and fp64, A/B-only and AP/BP-seeded headers, convergence failures, mixed-validity and exact-symmetry gradients, batching, interpolation footprints, adaptive resampling and Jacobians. Check finiteness and overlap counts, not just `nanmax`. Budgets are per precision: fp64 1e-4 px; fp32 at the measured pair caps (refinement 0 measured 2.55e-4 px against 3.20e-4 px with 2 steps), with reprojax's 0.05/0.01 px bounds tightened to that order.
+- [ ] **9. Release coordination.** Stage 3 is the 0.3.0 API break, with a migration table: old names and import paths, precision replacements, Array-to-`vmap` recipes with axes, both absolute replacements, host-reference construction, changed return types and x64 requirements. Test a specific mapprojax/reprojax revision pair and declare a compatible range; a lower bound alone is not enough. The all-NumPy high-accuracy path with x64 off is retired on purpose (absolute output stays available through item 4's helpers); `tests/test_x64_policy.py`'s NumPy-with-x64-off test is retired deliberately. Raise the JAX floor only for a named API requirement.
+
+Commit order. Each commit carries its tests.
+
+1. Record the contracts and add characterization tests: reconstruction, serialization, the offset round trip at the poles, reprojax integration.
+2. reprojax repairs against the Stage 2 API (item 8, first part).
+3. Add `Tan`/`Sin` alongside the existing classes, with the offset helpers' cosine rule.
+4. Switch the accuracy harness: `jax` and `jax_mixed` rows built from `precision="f64"`/`"mixed"`. These rows must be byte-identical.
+5. `Reprojector` on conforming projections, both constructors. Pair rows and `fp32` caps byte-identical; the no-f64 jaxpr test and the x64-off subprocess tests pass.
+6. Offset helpers and the `vmap` replacements, with pole tests.
+7. reprojax migration and its gate (item 8, second part).
+8. Retire the NumPy, Array and Mixed classes, ASDF and stale packaging; migrate the report once. The `numpy` rows go and `numpy_absolute` is renamed. The diff is reviewed; caps are not regenerated to accommodate the restructure. Update DEVELOPER.md and AGENT.md, which still describe the old reconstruction.
+
+Whole-report byte identity across commit 8 is impossible: the `numpy` and `jax` rows differ in 13 printed cells because they are different arithmetic. Row-level identity through commits 3–7 is the proof that the new class is the same arithmetic.
+
+Regression net, unchanged in substance through commits 3–7: `test_astropy_reference.py`, `test_reproject_astropy.py`, `test_reproject_relative.py`, the masked-gradient, stand-in and CD sections of `test_wcs_regressions.py`, `test_wcs_gradients.py`, the float32 cases of `test_offset_projection.py`, `test_sip.py` (residuals, static steps, inverse `check_grads`), `test_wcs_utils.py` and the fresh-process `test_x64_policy.py`. In commit 8, class parametrizations become mode parametrizations, Array tests become `vmap` tests, NumPy-only rejection tests become host-reference tests, and absolute-method tests become helper compositions. Never replace an astropy check with a self-round-trip.
+
+Done when:
+
+- Behavioural coverage of astropy agreement, masked gradients, CD checks, SIP and the x64 policy is preserved and passes on CPU and ROCm, with no new skips, `xfail`s or relaxed budgets. Test counts before and after are recorded; collapsing the class matrix may lower them.
+- `eval_shape`, `jit`, `vmap`, `tree_map` and `grad` with respect to every leaf work on the new classes, for abstract, batched and gradient objects. `crval` gradients are finite and non-zero, and an invalid neighbour does not change a valid sample's gradient.
+- `check_grads` passes per mode with recorded, scale-aware tolerances (an absolute floor near zero). The `mixed`-versus-`f64` gradient difference is reported, not gated: today it is 4–7e-8 normwise, several 1e-6 in some components.
+- The f32 reprojection jaxpr has no f64 operations, including nested SIP, with x64 on and off.
+- The host `crval` survives the documented workflow; the host composition matches today's `compose_relative_rotation` bit for bit; the offset helpers pass wrap, pole, dtype and invalid-input tests.
+- JSON round trips preserve the numerical state, `precision` and `inverse_steps`.
+- `benchmark_accuracy.py` exits 0, with only the reviewed migration of commit 8.
+- The pinned reprojax revision passes item 8's gate.
+- Warmed runtime and compile time for SIP, reprojection and batched workloads on CPU and ROCm meet thresholds fixed before implementation starts.
 
 ### Stage 4: the kernel's public surface
 
@@ -290,7 +350,7 @@ Timebox this stage. If it overruns, ship v0.3.0 with a small internal factory th
 
 - **Image resampling in mapprojax** (`reproject_interp`, flux-conserving variant, tiling, coadd): belongs in reprojax. When it is built there, note that JAX `map_coordinates` supports only order 0 and 1, and that Jacobian-scaled interpolation is not flux-conserving under downsampling (use adaptive anti-aliasing or drizzle).
 - **Array-API backend inference and PyTorch/CuPy support**: works against the host-fp64 / device-fp32 split; dfreproject already serves PyTorch users.
-- **equinox / flax**: `register_dataclass` covers the need without a dependency.
+- **equinox / flax**: explicit PyTree registration covers the need without a dependency.
 - **CAR, AIT, MOL**: needed only for all-sky maps, an audience not targeted yet.
 - **Non-default LONPOLE**: the default is already encoded for zenithal projections and is what the SPHEREx template uses (`LONPOLE` 180 at δ₀ = 0.48°). Until then, refuse any effective `LONPOLE` other than 180 (Stage 2); `LATPOLE` has no effect for zenithal projections and is accepted. General support must reproduce WCSLIB's defaults and ambiguity rules, not just a three-angle rotation.
 - **`-TAB`, D2IM lookup distortions**: defer unless a user asks.
@@ -298,7 +358,7 @@ Timebox this stage. If it overruns, ship v0.3.0 with a small internal factory th
 ## Risks
 
 - **Bus factor of one.** Let the SPHEREx workload through reprojax set priorities rather than hypothetical users.
-- **The restructure can stall the release.** Mitigated by the timebox and the factory fallback in Stage 3.
+- **The restructure can stall the release.** Mitigated by the timebox in Stage 3: on expiry, ship the Stage 2 classes as they are.
 - **Precision claims are the trust signal.** Every number in the README must trace to a script in `benchmarks/` that a reader can rerun. Timing claims must name the backend and say whether they were measured under `jit`.
 
 ---
@@ -667,3 +727,18 @@ Fable (`claude-fable-5-1`) and Astra (`gpt-6-astra`) reviewed the eight item com
   - Each regression test fails on the commit before its fix.
   - Sweeps found no non-finite masked gradients: Astra ran 32 `Reprojector` cases and 40 method/class combinations; Fable ran 2,440 single-WCS cases and 48 `Reprojector` cases. The only non-finite values in Fable's sweep came from its own harness squaring a horizon pixel near 1e21 in f32; the library's outputs there are finite.
 - **Accepted as is.** The fix that keeps `inverse_steps` through PyTree flattening landed in the item 8 commit rather than item 7. The history is left unchanged.
+
+### Stage 3 committee review — Nov 3 2026
+
+A fresh committee, Fable (`claude-fable-5-1`) and Astra (`gpt-6-astra`), reviewed the Stage 3 plan at `98c2168` over three rounds. Both approved with changes, now folded into Stage 3. Both confirmed the baseline first: 500 tests pass (Astra on CPU and ROCm), and `benchmark_accuracy.py` exits 0 and regenerates its table byte for byte.
+
+- **Reconstruction.** Both measured that `register_dataclass` re-enters the constructor on unflatten. Fable offered a passive-constructor variant or the Stage 2 `__new__` rebuild; both settled on the latter.
+- **Precision modes.** Fable first proposed two values, with `f32` meaning Mixed when x64 is on and pure f32 when it is off. It accepted Astra's three explicit modes, because that ambiguity is what Stage 2 item 8 removed. Astra measured the 0.726 px cost of casting sky inputs to f32 and the need to cast at both rotation boundaries.
+- **Default precision.** Fable proposed `f64`, Astra `f32`; Astra then accepted `f64`, and Fable in its final round proposed no default. The user decided: `precision` is a required keyword in 0.3.0.
+- **Host `crval`.** Astra measured that a NumPy fp64 leaf comes back f32 after `jit` with x64 off and first wanted the reference held outside the device object. It accepted Fable's simpler rule: store as given, compose eagerly, reject tracers and truncated references.
+- **Offsets at the poles.** Astra found the blow-up of the naive f32-offset plus fp64-epilogue composition. Fable traced it to the mismatched cosines; both reproduced the fix.
+- **`Reprojector` seam.** Fable proposed the constructor taking a caller-supplied rotation, so reprojax's fitting path can carry validity; Astra accepted it, scoped to a dynamic-leaf matrix with no host conversion.
+- **reprojax.** Fable found the three tests that encode the old inverse and listed the call sites; Astra found the NaN `crval` gradient, the SIN domain mismatch, the A/B-only fingerprint crash and the unexplained finite-difference mismatch (its subset ran 28 passed, 4 failed). Fable had reprojax last; Astra's early repair against the Stage 2 API was adopted, with deletion of `_sip_refine.py` after the gate.
+- **Tolerances and counts.** Fable's 1e-8 `mixed`-versus-`f64` gradient gate and "500 or more tests" were dropped for Astra's measured tolerances and behavioural coverage. A universal 1e-4 px fp32 gate was dropped for per-precision budgets.
+- **Benchmark.** Both: row-level byte identity through the structural commits, one reviewed report migration, no cap regeneration for the restructure.
+- **Also found.** Astra: "JSON, tested" was false for WCS round trips. Both: the stale claim that a step change does not recompile (corrected in Stage 2's record). Fable: the ASDF entry points, extra and resources must go with the converter.
