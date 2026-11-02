@@ -1,3 +1,5 @@
+import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 from mapprojax.projections import Tan
@@ -156,3 +158,101 @@ def test_no_sip():
     # X = -0.01 deg -> RA = 180 - 0.01 = 179.99
     assert ra == pytest.approx(179.99)
 
+
+
+# --- inverse: Newton's method against the forward polynomial ---------------
+
+def _realistic_sip(seed=0):
+    """Order-3 A/B plus approximate AP/BP, as in a real SIP header."""
+    rng = np.random.default_rng(seed)
+    a = np.zeros((4, 4))
+    b = np.zeros((4, 4))
+    a[2, 0], a[0, 2], a[1, 1], a[3, 0] = 1.5e-5, 2.5e-5, 1.0e-5, 2.0e-7
+    b[0, 2], b[2, 0], b[1, 1] = -1.8e-5, 1.2e-5, 0.7e-5
+    return Sip(a=a, b=b)
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_inverse_round_trip_through_forward(seed):
+    """pix -> foc -> pix recovers the pixel for the synthetic case."""
+    sip = _realistic_sip(seed)
+    pix = np.array([0.0, 5.0, -20.0, 40.0, -45.0, 33.0])
+    v = np.array([0.0, -3.0, 12.0, -30.0, 25.0, -41.0])
+    U, V = sip.pix_to_foc(pix, v)
+    x, y = sip.foc_to_pix(U, V)
+    np.testing.assert_allclose(x, pix, rtol=0, atol=1e-9)
+    np.testing.assert_allclose(y, v, rtol=0, atol=1e-9)
+
+
+def test_ab_only_inverse_has_no_ap_bp_to_fall_back_on():
+    """With A/B and no AP/BP the identity seed must still converge.
+
+    Before the Newton solve this returned the input unchanged, a 1e-3 px
+    error on a synthetic case and 1.6 px on a real one.
+    """
+    sip = _realistic_sip()
+    pix = np.array([30.0, -25.0, 12.0])
+    v = np.array([-18.0, 33.0, -7.0])
+    U, V = sip.pix_to_foc(pix, v)
+    x, y = sip.foc_to_pix(U, V)  # sip.ap is None
+    np.testing.assert_allclose(x, pix, rtol=0, atol=1e-9)
+    np.testing.assert_allclose(y, v, rtol=0, atol=1e-9)
+
+
+def test_two_steps_already_reach_the_fp64_floor():
+    """A solver that drops the Jacobian fails this; the plan's test.
+
+    The field is sized so that convergence is comfortably inside the
+    residual tolerance at step 2; the point is the quadratic rate, not the
+    extreme corner of a synthetic order-3 field.
+    """
+    sip = _realistic_sip()
+    pix = np.linspace(0.0, 50.0, 25)
+    U, V = sip.pix_to_foc(pix, pix)
+    two = Sip(a=sip.a, b=sip.b, ap=sip.ap, bp=sip.bp, inverse_steps=2)
+    x, y = two.foc_to_pix(U, V)
+    assert np.isfinite(x).all()
+    assert np.abs(x - pix).max() < 1e-10
+    assert np.abs(y - pix).max() < 1e-10
+
+
+def test_inverse_residual_reports_convergence():
+    sip = _realistic_sip()
+    pix = np.array([25.0, -30.0, 8.0])
+    v = np.array([-12.0, 27.0, -20.0])
+    U, V = sip.pix_to_foc(pix, v)
+    x, y = sip.foc_to_pix(U, V)
+    r_u, r_v = sip.inverse_residual(x, y, U, V)
+    assert np.abs(r_u).max() < 1e-12
+    assert np.abs(r_v).max() < 1e-12
+
+
+def test_non_convergent_points_return_nan():
+    """A deliberately starved solver reports NaN instead of a wrong pixel."""
+    sip = _realistic_sip()
+    pix = np.array([60.0, -55.0])
+    U, V = sip.pix_to_foc(pix, pix)
+    starved = Sip(a=sip.a, b=sip.b, ap=sip.ap, bp=sip.bp, inverse_steps=0)
+    x, y = starved.foc_to_pix(U, V)
+    assert np.isnan(x).all() and np.isnan(y).all()
+
+
+def test_inverse_steps_survive_serialization():
+    sip = _realistic_sip()
+    sip = Sip(a=sip.a, b=sip.b, ap=sip.ap, bp=sip.bp, inverse_steps=5)
+    back = Sip.from_dict(sip.to_dict())
+    assert back.inverse_steps == 5
+
+
+def test_inverse_is_jittable_and_differentiable():
+    sip = _realistic_sip()
+    pix = np.array([20.0, -15.0, 5.0])
+    U, V = sip.pix_to_foc(pix, pix)
+
+    def f(a):
+        return Sip(a=a, b=sip.b, ap=sip.ap, bp=sip.bp).foc_to_pix(U, V)[0].sum()
+
+    jitted = jax.jit(lambda a: Sip(a=a, b=sip.b, ap=sip.ap, bp=sip.bp).foc_to_pix(U, V)[0].sum())
+    assert np.allclose(float(jitted(jnp.asarray(sip.a))), float(f(jnp.asarray(sip.a))))
+    grad = jax.grad(f)(jnp.asarray(sip.a))
+    assert np.all(np.isfinite(np.asarray(grad)))

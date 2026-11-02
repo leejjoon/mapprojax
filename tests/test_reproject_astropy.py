@@ -19,7 +19,6 @@ import pytest
 import accuracy_reference as ar
 
 TARGET_PX = ar.TARGET_PX  # Stage 2 acceptance for the converged SIP inverse (fp64)
-SIP_INVERSE = ar.SIP_INVERSE
 
 
 @pytest.fixture(autouse=True)
@@ -73,7 +72,6 @@ def test_within_regression_cap(direction, precision):
     assert stats["max"] <= cap, f"{stats['max']:.3e} px > cap {cap} px"
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason=SIP_INVERSE)
 def test_forward_f64_reaches_stage2_target():
     stats = ar.evaluate_pair("f64", "forward")["pixel_error_px"]
     assert stats["max"] < TARGET_PX, f"{stats['max']:.3e} px"

@@ -56,10 +56,6 @@ FORWARD_MAS = 1e-4
 INVERSE_PX = 1e-6
 TARGET_PX = 1e-6
 
-# Known Stage 2 defects, shared by the tests (strict xfail) and the report.
-# Each one also has a regression cap in accuracy_baselines.json, asserted by an
-# ordinary test, so it cannot get worse while its target is xfailed.
-SIP_INVERSE = "Stage 2 SIP inverse: single-pass AP/BP is not the converged inverse"
 
 METRIC_KEYS = {"forward": ("forward_mas", "mas"), "inverse": ("inverse_px", "px")}
 
@@ -75,16 +71,7 @@ IMPLEMENTATIONS = FP64_IMPL + F32_IMPL
 # Real-pair runs. The fp64 reverse direction has no SIP inverse in its path and
 # is held to TARGET_PX; every other run is held to a measured regression cap.
 PAIR_RUNS = (("forward", "f64"), ("forward", "f32"), ("reverse", "f64"), ("reverse", "f32"))
-PAIR_EXACT = (("reverse", "f64"),)
-
-
-def known_failure(case: "Case", impl: str, metric: str) -> str | None:
-    """Reason string if (case, impl, metric) is a known Stage 2 defect."""
-    if impl == "jax_mixed":
-        return None
-    if metric == "inverse" and case.has_sip:
-        return SIP_INVERSE
-    return None
+PAIR_EXACT = (("forward", "f64"), ("reverse", "f64"))
 
 
 def budget(impl: str, metric: str) -> float | None:
@@ -440,8 +427,18 @@ def load_baselines() -> dict:
     return json.loads(BASELINES_PATH.read_text())
 
 
+def known_failure_cap_or_none(case: Case, impl: str, metric: str) -> float | None:
+    """Regression cap for a formerly-known defect, or ``None`` once it is fixed.
+
+    Stage 2 fixed every entry; the caps stay as ordinary regression guards so
+    a later change cannot silently reintroduce the error.
+    """
+    entry = load_baselines().get("known_failures", {}).get(metric, {}).get(f"{case.name}/{impl}")
+    return None if entry is None else entry["cap"]
+
+
 def known_failure_cap(case: Case, impl: str, metric: str) -> float:
-    """Regression cap for a known failure, in the metric's unit."""
+    """Regression cap for a formerly-known defect, in the metric's unit."""
     return load_baselines()["known_failures"][metric][f"{case.name}/{impl}"]["cap"]
 
 

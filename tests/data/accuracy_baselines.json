@@ -13,29 +13,7 @@
   },
   "known_failures": {
     "forward": {},
-    "inverse": {
-      "spherex_l2/numpy": {
-        "sample": "33x33 grid + CRPIX",
-        "unit": "px",
-        "measured_max": 0.029134960821150545,
-        "measured_rms": 0.004251983617287678,
-        "cap": 0.035
-      },
-      "spherex_l2/jax": {
-        "sample": "33x33 grid + CRPIX",
-        "unit": "px",
-        "measured_max": 0.02913496082131088,
-        "measured_rms": 0.004251983617285783,
-        "cap": 0.035
-      },
-      "spherex_l2/numpy_absolute": {
-        "sample": "33x33 grid + CRPIX",
-        "unit": "px",
-        "measured_max": 0.0291349608247638,
-        "measured_rms": 0.004251983617359291,
-        "cap": 0.035
-      }
-    }
+    "inverse": {}
   },
   "fp32": {
     "forward": {
@@ -57,7 +35,7 @@
         "sample": "33x33 grid + CRPIX",
         "unit": "mas",
         "measured_max": 1.3356332851121255,
-        "measured_rms": 0.3409070024519281,
+        "measured_rms": 0.34080398398248357,
         "cap": 1.7
       },
       "spherex_template/jax_mixed": {
@@ -156,9 +134,9 @@
       "spherex_l2/jax_mixed": {
         "sample": "33x33 grid + CRPIX",
         "unit": "px",
-        "measured_max": 0.02908887138396124,
-        "measured_rms": 0.004250838132940834,
-        "cap": 0.035
+        "measured_max": 0.0002516543960948279,
+        "measured_rms": 4.83056206131438e-05,
+        "cap": 0.00031
       },
       "spherex_template/jax_mixed": {
         "sample": "33x33 grid + CRPIX",
@@ -240,28 +218,20 @@
     }
   },
   "pair": {
-    "forward/f64": {
-      "sample": "33x33 grid + CRPIX on the source, astropy-decided overlap",
-      "n_overlap": 1009,
-      "unit": "px",
-      "measured_max": 0.006214276789194481,
-      "measured_rms": 0.0036205811087347754,
-      "cap": 0.0075
-    },
     "forward/f32": {
       "sample": "33x33 grid + CRPIX on the source, astropy-decided overlap",
       "n_overlap": 1009,
       "unit": "px",
-      "measured_max": 0.006294257111206525,
-      "measured_rms": 0.003634524432521179,
-      "cap": 0.0076
+      "measured_max": 0.00024940885539109276,
+      "measured_rms": 7.429252995581635e-05,
+      "cap": 0.0003
     },
     "reverse/f32": {
       "sample": "33x33 grid + CRPIX on the source, astropy-decided overlap",
       "n_overlap": 320,
       "unit": "px",
       "measured_max": 0.00020338573195588774,
-      "measured_rms": 7.04536836063724e-05,
+      "measured_rms": 7.064386509476464e-05,
       "cap": 0.00025
     }
   }

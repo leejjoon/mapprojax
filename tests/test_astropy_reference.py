@@ -48,19 +48,6 @@ def _params(predicate_marks, only=None):
     return out
 
 
-def _known(metric):
-    def marks(case, impl):
-        reason = ar.known_failure(case, impl, metric)
-        if reason is None or ar.budget(impl, metric) is None:
-            # The fp32 path (``jax_mixed``) has no fp64 budget; its measured
-            # cap test owns it instead.
-            return ()
-        return pytest.mark.xfail(strict=True, raises=AssertionError, reason=reason)
-    return marks
-
-
-_forward_marks = _known("forward")
-_inverse_marks = _known("inverse")
 
 
 @pytest.mark.parametrize("case", [pytest.param(c, id=c.name) for c in CASES])
@@ -77,14 +64,14 @@ def test_outputs_are_finite_on_valid_pixels(case, impl):
     assert result["inverse_px"]["n_nonfinite"] == 0
 
 
-@pytest.mark.parametrize("case, impl", _params(_forward_marks, only=lambda i: ar.budget(i, "forward") is not None))
+@pytest.mark.parametrize("case, impl", _params(lambda c, i: (), only=lambda i: ar.budget(i, "forward") is not None))
 def test_forward_matches_astropy(case, impl):
     stats = ar.evaluate(case, impl)["forward_mas"]
     budget = ar.budget(impl, "forward")
     assert stats["max"] < budget, f"{stats['max']:.3e} mas"
 
 
-@pytest.mark.parametrize("case, impl", _params(_inverse_marks, only=lambda i: ar.budget(i, "inverse") is not None))
+@pytest.mark.parametrize("case, impl", _params(lambda c, i: (), only=lambda i: ar.budget(i, "inverse") is not None))
 def test_inverse_matches_astropy(case, impl):
     stats = ar.evaluate(case, impl)["inverse_px"]
     budget = ar.budget(impl, "inverse")
@@ -111,7 +98,8 @@ KNOWN = [
     for case in CASES
     for impl in ar.implementations_for(case)
     for metric in ar.METRIC_KEYS
-    if ar.known_failure(case, impl, metric)
+    if ar.budget(impl, metric) is not None
+    and ar.known_failure_cap_or_none(case, impl, metric) is not None
 ]
 
 

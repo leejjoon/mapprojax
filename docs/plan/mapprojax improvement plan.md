@@ -145,7 +145,37 @@ Commit these before the restructure so they do not wait on it. Each item is one 
     |u| <= 1018 for all four coefficient sets.
   - The suite is unchanged, which is the acceptance criterion for a pure
     refactor (`386 passed, 5 xfailed`).
-- [ ] **7. SIP inverse** (flips 5: `test_inverse_matches_astropy[spherex_l2-{numpy,jax,numpy_absolute}]`, `test_ab_only_inverse_matches_astropy`, `test_forward_f64_reaches_stage2_target`). With A/B and no AP/BP, `foc_to_pix` applies zero correction; with AP/BP present it applies only the approximate inverse (2.9e-2 px on the full L2 detector, 6.2e-3 px on the SPHEREx pair).
+- [x] **7. SIP inverse** (flips 5: `test_inverse_matches_astropy[spherex_l2-{numpy,jax,numpy_absolute}]`, `test_ab_only_inverse_matches_astropy`, `test_forward_f64_reaches_stage2_target`). With A/B and no AP/BP, `foc_to_pix` applies zero correction; with AP/BP present it applies only the approximate inverse (2.9e-2 px on the full L2 detector, 6.2e-3 px on the SPHEREx pair).
+  - Done, one commit. `Sip.foc_to_pix` solves `u + f = U`, `v + g = V` by
+    Newton in focal coordinates with the Jacobian `I + grad(f, g)`, seeded
+    from AP/BP when present and the identity otherwise, with
+    `inverse_steps` (default 3) as aux data. `Sip.inverse_residual` is
+    public and used internally, so non-finite or unconverged points return
+    NaN. `foc_to_pix` keeps its two-value return.
+  - The committee's convergence table reproduces exactly on this checkout:
+    AP/BP seed 7.30e-9 then 2.27e-13 px; identity seed 8.82e-3 then
+    4.52e-10 px on the full 2040² detector. (My earlier preflight order
+    2.0e-2 / 5.1e-4 / 1.3e-5 came from a Jacobian that used power tables
+    instead of the coefficient-derivative rows; the correct one converges
+    quadratically and confirms the default of 3.)
+  - Results: the L2 inverse is 3.1e-11 px for `numpy`, `jax` and
+    `numpy_absolute`; the fp64 pair is 4.7e-11 px forward and 4.1e-11
+    reverse, so `("forward", "f64")` joins `PAIR_EXACT`. The A/B-only case
+    converges from the identity seed.
+  - Two defects the new tests caught in my own edit, both now fixed:
+    `xp=np` as a default made `np.asarray(tracer)` fail inside `jax.jit`
+    (the backend now follows the arrays), and `from_dict`/`_cast_sip`
+    dropped `inverse_steps`.
+  - Cost, measured (`benchmark_sip.py` now includes the inverse):
+    1.99 ms at 2 steps, 2.96 ms at the default 3, on 2040².
+  - Bookkeeping done: `known_failure()` is gone (no defects left), the
+    defect caps are removed from the baselines, the forward/f64 "now meets
+    the target" check is removed from the benchmark, and
+    `test_wcs_json.py` is tightened from 5e-2 to 1e-6 px after fixing the
+    line-68 convention (the saved focal coordinates are 1 px below
+    mapprojax's, so the offset is added before inverting; the old
+    comparison left a 0.011 px residue).
+  - `397 passed, 1 skipped, 0 xfailed`.
   - Whenever A or B is present, solve against A/B. Use AP/BP directly only when A/B are absent.
   - Seed from AP/BP when present, otherwise from the identity. The one-step A/B linearisation `(U - f(U, V), V - g(U, V))` is an optional cheaper start, not a requirement.
   - Solve the 2×2 residual in focal coordinates inside `Sip.foc_to_pix`, so the NumPy classes are covered. The Jacobian is `I + ∇(f, g)`, built from derivative coefficient matrices evaluated by the item 6 Horner routine. Port the initialisation and fixed-step structure of reprojax's `_sip_refine.py`, not its JAX-only damped 3×2 normal equations.

@@ -107,6 +107,28 @@ def main():
                   f"(compile {compile_ms:5.0f} ms)")
         print(f"{'':32} {'horner is':10} {results['broadcast'] / results['horner']:8.1f}x\n")
 
+    # The inverse solve, on top of the same evaluator. Before the Newton
+    # solve this cost the same and was wrong by 2.9e-2 px on the L2 detector.
+    sip = sips[CASES[0][0]]
+    n = CASES[0][2]
+    axis = jnp.linspace(-n / 2, n / 2, n)
+    u, v = jnp.meshgrid(axis, axis)
+    from mapprojax.sip import Sip
+
+    def solve(steps):
+        def run(u, v):
+            s = Sip(a=jnp.asarray(sip.a), b=jnp.asarray(sip.b),
+                    ap=jnp.asarray(sip.ap), bp=jnp.asarray(sip.bp),
+                    inverse_steps=steps)
+            return s.foc_to_pix(u, v)[0]
+        return run
+
+    print("\nSIP inverse (Newton in focal coordinates), 2040x2040, order 3:")
+    for steps in (1, 2, 3, 5):
+        ms = _time(solve(steps), (u, v)) * 1e3
+        print(f"  inverse_steps={steps}: {ms:7.2f} ms")
+    print()
+
     # Agreement between the two forms on the real coefficients.
     sip = sips[CASES[0][0]]
     rng = np.random.default_rng(1)

@@ -89,7 +89,8 @@ def _cast_sip(sip, dtype):
     def c(arr):
         return None if arr is None else jnp.asarray(arr, dtype=dtype)
 
-    return Sip(a=c(sip.a), b=c(sip.b), ap=c(sip.ap), bp=c(sip.bp))
+    return Sip(a=c(sip.a), b=c(sip.b), ap=c(sip.ap), bp=c(sip.bp),
+               inverse_steps=sip.inverse_steps)
 
 
 def _leg(wcs, dtype):

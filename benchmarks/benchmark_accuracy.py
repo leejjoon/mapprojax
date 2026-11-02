@@ -78,7 +78,9 @@ def measure():
             r = ar.evaluate(case, impl)
             for metric, budget in (("forward", ar.FORWARD_MAS), ("inverse", ar.INVERSE_PX)):
                 stats = r[ar.METRIC_KEYS[metric][0]]
-                known = ar.known_failure(case, impl, metric)
+                # Every Stage 2 defect is fixed; the caps that guarded them
+                # remain as ordinary regression checks (see check_caps).
+                known = False
                 # fp32 paths are guarded by measured caps, not fp64 budgets.
                 budget = ar.budget(impl, metric)
                 within = budget is not None and stats["max"] < budget
@@ -107,8 +109,6 @@ def measure():
             problems.append(f"pair {direction}/{precision}: empty overlap or non-finite output")
         if (direction, precision) in ar.PAIR_EXACT and not s["max"] < ar.TARGET_PX:
             problems.append(f"pair {direction}/{precision}: {s['max']:.3e} > target {ar.TARGET_PX}")
-        if (direction, precision) == ("forward", "f64") and s["max"] < ar.TARGET_PX:
-            problems.append("pair forward/f64 now meets the Stage 2 target; remove its xfail")
         pairs.append(p)
 
     controls = {}

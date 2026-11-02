@@ -33,7 +33,6 @@ def _x64_enabled():
 CD = [[-1e-3, 0.0], [0.0, 1e-3]]
 
 SINGULAR = "Stage 2 singular or non-finite CD: reject concrete CD at construction"
-SIP_INVERSE = "Stage 2 SIP inverse: A/B without AP/BP skips the inverse correction"
 PYTREE = "Stage 2 PyTree reconstruction: tree_unflatten must not call __init__"
 
 
@@ -147,7 +146,6 @@ def test_ab_only_forward_matches_astropy():
     np.testing.assert_allclose(np.degrees(dec_m), dec, rtol=0, atol=1e-10)
 
 
-@_xfail(SIP_INVERSE)
 def test_ab_only_inverse_matches_astropy():
     h = _ab_only_header()
     crpix, cd, crval, sip = load_wcs_params_from_header(h)

@@ -47,8 +47,8 @@ def test_wcs_consistency_with_json():
     U_calc_m, V_calc_m = sip.pix_to_foc(u_mapproj, v_mapproj)
     u_back_m, v_back_m = sip.foc_to_pix(U_calc_m, V_calc_m)
     
-    np.testing.assert_allclose(u_back_m, u_mapproj, rtol=0, atol=5e-2, err_msg="SIP Round Trip u mismatch")
-    np.testing.assert_allclose(v_back_m, v_mapproj, rtol=0, atol=5e-2, err_msg="SIP Round Trip v mismatch")
+    np.testing.assert_allclose(u_back_m, u_mapproj, rtol=0, atol=1e-6, err_msg="SIP Round Trip u mismatch")
+    np.testing.assert_allclose(v_back_m, v_mapproj, rtol=0, atol=1e-6, err_msg="SIP Round Trip v mismatch")
     
     # 2. Match against JSON focal_plane_coordinates
     # Note: These values in the JSON are effectively (pix_0 - CRPIX_fits) + f(pix_0 - CRPIX_0),
@@ -61,11 +61,17 @@ def test_wcs_consistency_with_json():
     np.testing.assert_allclose(U_calc_f - 1.0, expected_foc[:, 0], rtol=0, atol=1e-7, err_msg="SIP Focal Plane U mismatch")
     np.testing.assert_allclose(V_calc_f - 1.0, expected_foc[:, 1], rtol=0, atol=1e-7, err_msg="SIP Focal Plane V mismatch")
 
-    # 3. Reverse from Focal Plane back to pixels
-    # focal_plane_coordinates (U_fits, V_fits) -> pixels
-    u_back_f, v_back_f = sip.foc_to_pix(expected_foc[:, 0], expected_foc[:, 1])
-    # Expectation: u_back_f should be u_fits = u_mapproj - 1.0
-    np.testing.assert_allclose(u_back_f, u_mapproj - 1.0, rtol=0, atol=5e-2, err_msg="SIP Reverse from Focal Plane mismatch")
+    # 3. Reverse from Focal Plane back to pixels.
+    #
+    # The saved focal coordinates are 1 px below mapprojax's 0-based focal
+    # plane (U - expected == 1 for every sample), so the offset is added back
+    # before the inversion. Comparing
+    # foc_to_pix(expected_foc) against u - 1 mixes that conversion into a
+    # nonlinear inverse and leaves a 0.011 px residue for order-3 SIP, which
+    # the old 5e-2 tolerance hid.
+    u_back_f, v_back_f = sip.foc_to_pix(expected_foc[:, 0] + 1.0, expected_foc[:, 1] + 1.0)
+    np.testing.assert_allclose(u_back_f, u_mapproj, rtol=0, atol=1e-6, err_msg="SIP Reverse from Focal Plane mismatch")
+    np.testing.assert_allclose(v_back_f, v_mapproj, rtol=0, atol=1e-6, err_msg="SIP Reverse from Focal Plane mismatch")
     
     print("SIP-only transformation (Focal Plane match & Round Trip) matched within tolerance.")
 
@@ -112,13 +118,13 @@ def test_wcs_consistency_with_json():
     # Compare with Input Pixels
     # This validates the Round Trip + Inverse Logic
     # Relaxed tolerance to 0.05 px because SIP inverse polynomials are often approximations.
-    np.testing.assert_allclose(x_out_np, x_in, rtol=0, atol=5e-2, err_msg="NumPy Inverse X mismatch")
-    np.testing.assert_allclose(y_out_np, y_in, rtol=0, atol=5e-2, err_msg="NumPy Inverse Y mismatch")
+    np.testing.assert_allclose(x_out_np, x_in, rtol=0, atol=1e-6, err_msg="NumPy Inverse X mismatch")
+    np.testing.assert_allclose(y_out_np, y_in, rtol=0, atol=1e-6, err_msg="NumPy Inverse Y mismatch")
     
-    np.testing.assert_allclose(x_out_jax, x_in, rtol=0, atol=5e-2, err_msg="JAX Inverse X mismatch")
-    np.testing.assert_allclose(y_out_jax, y_in, rtol=0, atol=5e-2, err_msg="JAX Inverse Y mismatch")
+    np.testing.assert_allclose(x_out_jax, x_in, rtol=0, atol=1e-6, err_msg="JAX Inverse X mismatch")
+    np.testing.assert_allclose(y_out_jax, y_in, rtol=0, atol=1e-6, err_msg="JAX Inverse Y mismatch")
     
-    print("Inverse Projection (World -> Pixel) matched within SIP approx tolerance (0.05 px).")
+    print("Inverse Projection (World -> Pixel) matched within 1e-6 px.")
 
 if __name__ == "__main__":
     # Allow running directly
