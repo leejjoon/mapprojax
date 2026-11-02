@@ -1,0 +1,121 @@
+"""SIP polynomial evaluation: broadcast vs Horner.
+
+`Sip._evaluate_poly` used to build `u[..., None] ** p_range` and reduce with
+`einsum`, which materialises order^2 full-frame temporaries. The Horner form
+is O(order) multiplies per point.
+
+Run with `python benchmarks/benchmark_sip.py`. JAX runs on CPU unless
+`JAX_PLATFORMS` says otherwise. Timings are warmed and synchronized under
+`jit`; compile time is reported separately because it is a one-off cost per
+shape, not per call.
+
+This measures the forward polynomial only. The SIP inverse (item 7) adds its
+own timing on top of the same evaluator.
+"""
+
+import os
+import sys
+from pathlib import Path
+
+os.environ.setdefault("JAX_PLATFORMS", "cpu")
+
+import jax  # noqa: E402
+
+jax.config.update("jax_enable_x64", True)
+
+import jax.numpy as jnp  # noqa: E402
+import numpy as np  # noqa: E402
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "tests"))
+import accuracy_reference as ar  # noqa: E402
+
+from mapprojax.sip import Sip  # noqa: E402
+from mapprojax.wcs_utils import load_wcs_params_from_header  # noqa: E402
+
+REPEATS = 5
+CASES = (("SPHEREx L2 (order 3, 2040x2040)", "spherex_l2.hdr", 2040),
+         ("order 4, 1201x1201", None, 1201))
+
+
+def _broadcast(c, xp):
+    """The pre-Horner form, kept here as the comparison baseline."""
+    def evaluate(u, v):
+        m, n = c.shape
+        u_pow = u[..., None] ** xp.arange(m, dtype=xp.int32)
+        v_pow = v[..., None] ** xp.arange(n, dtype=xp.int32)
+        return xp.einsum("pq,...p,...q->...", c, u_pow, v_pow)
+    return evaluate
+
+
+def _horner(c, xp):
+    def evaluate(u, v):
+        m, n = c.shape
+
+        def row(p):
+            acc = c[p, n - 1] * xp.ones_like(v)
+            for q in range(n - 2, -1, -1):
+                acc = acc * v + c[p, q]
+            return acc
+
+        acc = row(m - 1)
+        for p in range(m - 2, -1, -1):
+            acc = acc * u + row(p)
+        return acc
+    return evaluate
+
+
+def _sips():
+    _, _, _, l2 = load_wcs_params_from_header(ar.load_header("spherex_l2.hdr"))
+    rng = np.random.default_rng(0)
+    order4 = Sip(a=rng.uniform(-1e-9, 1e-9, (5, 5)),
+                 b=rng.uniform(-1e-9, 1e-9, (5, 5)))
+    return {CASES[0][0]: l2, CASES[1][0]: order4}
+
+
+def _time(fn, args):
+    jitted = jax.jit(fn)
+    jax.block_until_ready(jitted(*args))
+    times = []
+    for _ in range(REPEATS):
+        import time
+        t = time.perf_counter()
+        jax.block_until_ready(jitted(*args))
+        times.append(time.perf_counter() - t)
+    return min(times)
+
+
+def main():
+    sips = _sips()
+    print(f"JAX {jax.__version__}, backend {jax.default_backend()}, fp64 on\n")
+    print(f"{'case':32} {'form':10} {'ms':>8}  {'vs Horner':>10}")
+    for label, _, n in CASES:
+        sip = sips[label]
+        coeff = jnp.asarray(sip.a)
+        axis = jnp.linspace(-n / 2, n / 2, n)
+        u, v = jnp.meshgrid(axis, axis)
+
+        results = {}
+        for form, factory in (("broadcast", _broadcast), ("horner", _horner)):
+            fn = factory(coeff, jnp)
+            compile_start = __import__("time").perf_counter()
+            jax.block_until_ready(jax.jit(fn)(u, v))
+            compile_ms = (__import__("time").perf_counter() - compile_start) * 1e3
+            ms = _time(fn, (u, v)) * 1e3
+            results[form] = ms
+            print(f"{label if form == 'broadcast' else '':32} {form:10} {ms:8.2f}  "
+                  f"(compile {compile_ms:5.0f} ms)")
+        print(f"{'':32} {'horner is':10} {results['broadcast'] / results['horner']:8.1f}x\n")
+
+    # Agreement between the two forms on the real coefficients.
+    sip = sips[CASES[0][0]]
+    rng = np.random.default_rng(1)
+    u, v = rng.uniform(-1018, 1018, 20000), rng.uniform(-1018, 1018, 20000)
+    for name, c in (("A", sip.a), ("B", sip.b), ("AP", sip.ap), ("BP", sip.bp)):
+        ref = _broadcast(np.asarray(c), np)(u, v)
+        got = sip._evaluate_poly(u, v, c, np)
+        print(f"  {name}: max |broadcast - horner| = {np.abs(got - ref).max():.2e} px")
+
+
+if __name__ == "__main__":
+    main()

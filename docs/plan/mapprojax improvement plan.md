@@ -135,7 +135,16 @@ Commit these before the restructure so they do not wait on it. Each item is one 
   - Traced CD: compute the same test in the trace and mask outputs to NaN in both directions, at the same boundary as item 4.
   - Replace `linalg.inv` and the `try/except` with this guarded closed-form 2×2 inverse here. It is pulled forward from Stage 3, since the traced mask needs the determinant anyway. CD stays the only parameter leaf; no `cd_inv` leaf.
   - New tests: both diagonal extremes accepted, with the inverse correct to rtol 1e-6 in f32; an exactly singular matrix rejected; a matrix that loses rank when cast to f32; infinity; traced singular and non-finite CD masked in both directions.
-- [ ] **6. SIP evaluation by Horner's rule** (flips 0). `_evaluate_poly` builds `u[..., None] ** p_range` power arrays (`sip.py:54`). Rewrite it as nested Horner over `p` then `q`, preserving coefficient indexing, broadcasting, optional coefficients and dtype. Pure refactor: outputs agree with the broadcast form within 1e-13 px (measured 1.1e-14, not bitwise) and every test still passes. Commit `benchmarks/benchmark_sip.py` comparing broadcast and Horner on the order-3 SPHEREx case and the order-4 1201² case, warmed and synchronized under `jit`, compile time reported separately. This commit benchmarks the forward polynomial; item 7 adds the inverse timing. Earlier measurements (498 → 8.4 ms eager; 5.7 → 0.16 ms CPU, 0.8 → 0.11 ms GPU under `jit`) are evidence, not acceptance thresholds.
+- [x] **6. SIP evaluation by Horner's rule** (flips 0). `_evaluate_poly` builds `u[..., None] ** p_range` power arrays (`sip.py:54`). Rewrite it as nested Horner over `p` then `q`, preserving coefficient indexing, broadcasting, optional coefficients and dtype. Pure refactor: outputs agree with the broadcast form within 1e-13 px (measured 1.1e-14, not bitwise) and every test still passes. Commit `benchmarks/benchmark_sip.py` comparing broadcast and Horner on the order-3 SPHEREx case and the order-4 1201² case, warmed and synchronized under `jit`, compile time reported separately. This commit benchmarks the forward polynomial; item 7 adds the inverse timing. Earlier measurements (498 → 8.4 ms eager; 5.7 → 0.16 ms CPU, 0.8 → 0.11 ms GPU under `jit`) are evidence, not acceptance thresholds.
+  - Done, one commit, plus `benchmarks/benchmark_sip.py`. Measured on this
+    box (CPU, fp64, `jit`, warmed and synchronized, compile reported
+    separately): order-3 at 2040² 33.4 -> 0.84 ms (39.7x); order-4 at
+    1201² 14.9 -> 0.27 ms (54.9x). The plan's "7-35x under jit" is
+    conservative; the eager figure (498 -> 8.4 ms) also reproduces.
+  - Agreement: max |broadcast - Horner| is 1.4e-14 over 20 000 points at
+    |u| <= 1018 for all four coefficient sets.
+  - The suite is unchanged, which is the acceptance criterion for a pure
+    refactor (`386 passed, 5 xfailed`).
 - [ ] **7. SIP inverse** (flips 5: `test_inverse_matches_astropy[spherex_l2-{numpy,jax,numpy_absolute}]`, `test_ab_only_inverse_matches_astropy`, `test_forward_f64_reaches_stage2_target`). With A/B and no AP/BP, `foc_to_pix` applies zero correction; with AP/BP present it applies only the approximate inverse (2.9e-2 px on the full L2 detector, 6.2e-3 px on the SPHEREx pair).
   - Whenever A or B is present, solve against A/B. Use AP/BP directly only when A/B are absent.
   - Seed from AP/BP when present, otherwise from the identity. The one-step A/B linearisation `(U - f(U, V), V - g(U, V))` is an optional cheaper start, not a requirement.
