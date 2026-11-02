@@ -59,10 +59,6 @@ TARGET_PX = 1e-6
 # Known Stage 2 defects, shared by the tests (strict xfail) and the report.
 # Each one also has a regression cap in accuracy_baselines.json, asserted by an
 # ordinary test, so it cannot get worse while its target is xfailed.
-NEAR_POLE = (
-    "Stage 2 near-pole declination: utils.xyz_to_radec's dec = arcsin(z) loses "
-    "precision within ~0.1 deg of the pole (atan2(z, hypot(x, y)) is exact)"
-)
 SIP_INVERSE = "Stage 2 SIP inverse: single-pass AP/BP is not the converged inverse"
 
 METRIC_KEYS = {"forward": ("forward_mas", "mas"), "inverse": ("inverse_px", "px")}
@@ -86,8 +82,6 @@ def known_failure(case: "Case", impl: str, metric: str) -> str | None:
     """Reason string if (case, impl, metric) is a known Stage 2 defect."""
     if impl == "jax_mixed":
         return None
-    if metric == "forward" and "near_pole" in case.name and impl in ("numpy", "jax"):
-        return NEAR_POLE
     if metric == "inverse" and case.has_sip:
         return SIP_INVERSE
     return None

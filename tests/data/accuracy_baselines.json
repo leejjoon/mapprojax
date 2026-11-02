@@ -12,64 +12,7 @@
     "meaning": "Regression caps on known Stage 2 defects, on the jax_mixed fp32 floor and on the fp32 Reprojector. Not accuracy claims; Stage 2 fixes replace the defect caps with the budgets in tests/accuracy_reference.py."
   },
   "known_failures": {
-    "forward": {
-      "tan_near_pole_n/numpy": {
-        "sample": "33x33 grid + CRPIX",
-        "unit": "mas",
-        "measured_max": 0.000146193568301197,
-        "measured_rms": 7.483371050716025e-06,
-        "cap": 0.00018
-      },
-      "tan_near_pole_n/jax": {
-        "sample": "33x33 grid + CRPIX",
-        "unit": "mas",
-        "measured_max": 0.00014623936800986924,
-        "measured_rms": 7.484184617551119e-06,
-        "cap": 0.00018
-      },
-      "tan_near_pole_s/numpy": {
-        "sample": "33x33 grid + CRPIX",
-        "unit": "mas",
-        "measured_max": 0.00014619356024622254,
-        "measured_rms": 7.48460263316395e-06,
-        "cap": 0.00018
-      },
-      "tan_near_pole_s/jax": {
-        "sample": "33x33 grid + CRPIX",
-        "unit": "mas",
-        "measured_max": 0.00014623936274440718,
-        "measured_rms": 7.485410225431403e-06,
-        "cap": 0.00018
-      },
-      "sin_near_pole_n/numpy": {
-        "sample": "33x33 grid + CRPIX",
-        "unit": "mas",
-        "measured_max": 0.00020284814563890298,
-        "measured_rms": 8.57926832387521e-06,
-        "cap": 0.00025
-      },
-      "sin_near_pole_n/jax": {
-        "sample": "33x33 grid + CRPIX",
-        "unit": "mas",
-        "measured_max": 0.0002028481448011598,
-        "measured_rms": 8.579696847878592e-06,
-        "cap": 0.00025
-      },
-      "sin_near_pole_s/numpy": {
-        "sample": "33x33 grid + CRPIX",
-        "unit": "mas",
-        "measured_max": 0.00020284814975666634,
-        "measured_rms": 8.579998261168812e-06,
-        "cap": 0.00025
-      },
-      "sin_near_pole_s/jax": {
-        "sample": "33x33 grid + CRPIX",
-        "unit": "mas",
-        "measured_max": 0.00020284814975666634,
-        "measured_rms": 8.58043047174984e-06,
-        "cap": 0.00025
-      }
-    },
+    "forward": {},
     "inverse": {
       "spherex_l2/numpy": {
         "sample": "33x33 grid + CRPIX",
@@ -99,99 +42,99 @@
       "1904-66_TAN/jax_mixed": {
         "sample": "33x33 grid + CRPIX",
         "unit": "mas",
-        "measured_max": 11.026062938742001,
-        "measured_rms": 3.569907848655837,
+        "measured_max": 11.026062973692547,
+        "measured_rms": 3.5699078511584226,
         "cap": 14.0
       },
       "1904-66_SIN/jax_mixed": {
         "sample": "33x33 grid + CRPIX",
         "unit": "mas",
         "measured_max": 13.939335207448453,
-        "measured_rms": 5.525415799050784,
+        "measured_rms": 5.525415800637788,
         "cap": 17.0
       },
       "spherex_l2/jax_mixed": {
         "sample": "33x33 grid + CRPIX",
         "unit": "mas",
         "measured_max": 1.3356332851121255,
-        "measured_rms": 0.34090700312892697,
+        "measured_rms": 0.3409070024519281,
         "cap": 1.7
       },
       "spherex_template/jax_mixed": {
         "sample": "33x33 grid + CRPIX",
         "unit": "mas",
-        "measured_max": 0.39465832355510705,
-        "measured_rms": 0.11944611182595008,
+        "measured_max": 0.39465832406083695,
+        "measured_rms": 0.11944611181899685,
         "cap": 0.48
       },
       "tan_ordinary/jax_mixed": {
         "sample": "33x33 grid + CRPIX",
         "unit": "mas",
         "measured_max": 0.134975035506923,
-        "measured_rms": 0.04868082675828487,
+        "measured_rms": 0.04868082604450175,
         "cap": 0.17
       },
       "tan_ra_wrap_hi/jax_mixed": {
         "sample": "33x33 grid + CRPIX",
         "unit": "mas",
         "measured_max": 0.1349750584971797,
-        "measured_rms": 0.04868082339796826,
+        "measured_rms": 0.048680823450109385,
         "cap": 0.17
       },
       "tan_ra_wrap_lo/jax_mixed": {
         "sample": "33x33 grid + CRPIX",
         "unit": "mas",
         "measured_max": 0.13497498120164778,
-        "measured_rms": 0.04868082530722774,
+        "measured_rms": 0.048680825347047735,
         "cap": 0.17
       },
       "tan_near_pole_n/jax_mixed": {
         "sample": "33x33 grid + CRPIX",
         "unit": "mas",
-        "measured_max": 0.1349759011389266,
-        "measured_rms": 0.0486810769601076,
+        "measured_max": 0.13497498699222937,
+        "measured_rms": 0.048680823640069634,
         "cap": 0.17
       },
       "tan_near_pole_s/jax_mixed": {
         "sample": "33x33 grid + CRPIX",
         "unit": "mas",
-        "measured_max": 0.1349759014301573,
-        "measured_rms": 0.04868107647473504,
+        "measured_max": 0.134974987188777,
+        "measured_rms": 0.04868082320634608,
         "cap": 0.17
       },
       "sin_ordinary/jax_mixed": {
         "sample": "33x33 grid + CRPIX",
         "unit": "mas",
-        "measured_max": 0.1486813989169209,
-        "measured_rms": 0.04110215836641061,
+        "measured_max": 0.1486813876384257,
+        "measured_rms": 0.04110215849058268,
         "cap": 0.18
       },
       "sin_ra_wrap_hi/jax_mixed": {
         "sample": "33x33 grid + CRPIX",
         "unit": "mas",
         "measured_max": 0.14868135297083573,
-        "measured_rms": 0.04110215718319074,
+        "measured_rms": 0.041102157297371635,
         "cap": 0.18
       },
       "sin_ra_wrap_lo/jax_mixed": {
         "sample": "33x33 grid + CRPIX",
         "unit": "mas",
         "measured_max": 0.1486813337142197,
-        "measured_rms": 0.0411021569904912,
+        "measured_rms": 0.041102157097642214,
         "cap": 0.18
       },
       "sin_near_pole_n/jax_mixed": {
         "sample": "33x33 grid + CRPIX",
         "unit": "mas",
-        "measured_max": 0.14868685295383124,
-        "measured_rms": 0.04110235576861544,
+        "measured_max": 0.1486814439933771,
+        "measured_rms": 0.04110216057314018,
         "cap": 0.18
       },
       "sin_near_pole_s/jax_mixed": {
         "sample": "33x33 grid + CRPIX",
         "unit": "mas",
-        "measured_max": 0.1486868053745009,
-        "measured_rms": 0.041102357186291114,
+        "measured_max": 0.14868144468860015,
+        "measured_rms": 0.04110216198417744,
         "cap": 0.18
       }
     },

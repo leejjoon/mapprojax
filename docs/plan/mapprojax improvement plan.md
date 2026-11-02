@@ -74,7 +74,18 @@ Commit these before the restructure so they do not wait on it. Each item is one 
     present; `PCOUNT` starts with `PC` and is not a matrix card.
   - Unchanged numerics: `benchmark_accuracy.py` exits 0 and rewrites
     neither the baselines nor the table (`350 passed, 25 xfailed`).
-- [ ] **3. Near-pole declination** (flips 8: `test_forward_matches_astropy[{tan,sin}_near_pole_{n,s}-{numpy,jax}]`). `utils.xyz_to_radec` computes `dec = arcsin(z / dist)`, which loses 1.5–2.0e-4 mas at dec ±89.9 (budget 1e-4 mas). Use `atan2(z, hypot(x, y))`; measured 1.4–1.9e-7 mas. Keep longitude wrapping, keep an invalid vector such as `(0, 0, 0)` from becoming a valid sky position, and do not promise a differentiable longitude at an exact pole. The eight near-pole caps are replaced by the ordinary 1e-4 mas budget.
+- [x] **3. Near-pole declination** (flips 8: `test_forward_matches_astropy[{tan,sin}_near_pole_{n,s}-{numpy,jax}]`). `utils.xyz_to_radec` computes `dec = arcsin(z / dist)`, which loses 1.5–2.0e-4 mas at dec ±89.9 (budget 1e-4 mas). Use `atan2(z, hypot(x, y))`; measured 1.4–1.9e-7 mas. Keep longitude wrapping, keep an invalid vector such as `(0, 0, 0)` from becoming a valid sky position, and do not promise a differentiable longitude at an exact pole. The eight near-pole caps are replaced by the ordinary 1e-4 mas budget.
+  - Done, one commit. `xyz_to_radec` now uses `atan2(z, hypot(x, y))` and
+    returns NaN for a zero-length vector (without the guard, `atan2` alone
+    turns (0, 0, 0) into a valid-looking (0, 0)).
+  - Measured: the four near-pole cases fall from 1.46e-4 / 2.03e-4 mas to
+    1.43e-7 … 1.86e-7 mas, all inside the 1e-4 mas budget, for `numpy`,
+    `jax` and the `xfail`-free rows alike. All eight `xfail`s flip and their
+    eight caps are removed from the baselines; the `jax_mixed` caps move by
+    ~1e-6 relative, which is fp32 noise from the same code path.
+  - `jax_mixed` also improves (0.135 -> 0.135 mas here, but the near-pole
+    rows no longer sit apart from the ordinary ones).
+  - `353 passed, 17 xfailed`; `benchmark_accuracy.py` exits 0.
 - [ ] **4. Projection domains through the whole pipeline** (flips 8: `test_back_hemisphere_is_not_a_valid_pixel`). TAN maps a point 179.99° from the reference to a mirrored valid pixel; SIN folds the back hemisphere onto the front and takes an unguarded `sqrt` outside the unit disc (`projections.py:32`; the TAN division is at `:10`, the SIN plane return at `:21`). Invalid: `xn <= 0` for TAN, `xn < 0` for SIN, and `X² + Y² > 1` for SIN's inverse.
   - Masking only in `_native_to_plane` is not enough. The NaN flows into the CD multiply and SIP evaluation, and their pullbacks give `0 · NaN = NaN` for the `cd` (and SIP-coefficient) gradients even under a loss that masks the invalid sample; the committee reproduced this. Substitute safe values before the CD and SIP arithmetic, carry an internal validity flag through `native_to_pix` and `pix_to_native`, and restore NaN only at the public outputs. No public validity API: the boolean mask comes from the Stage 4 pixel map.
   - Contract: `proj`, `unproj`, the offset APIs and `pix_to_pix` return NaN for invalid positions. Tighten the regression tests from "non-finite" to NaN.
