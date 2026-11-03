@@ -1,0 +1,27 @@
+{
+  "environment": {
+    "python": "3.12.13 (main, Apr 14 2026, 14:29:00) [Clang 22.1.3 ]",
+    "backend": "rocm"
+  },
+  "measurement": {
+    "backend_requested": "rocm",
+    "mode": "smoke",
+    "size": 4096,
+    "warm_samples_seconds": [
+      [
+        0.00014497200027108192,
+        0.00023461924865841866,
+        7.478008046746254e-05
+      ]
+    ],
+    "warm_process_medians_seconds": [
+      0.00014497200027108192
+    ],
+    "warm_median_of_process_medians_seconds": 0.00014497200027108192,
+    "compile_samples_seconds": [
+      0.03738916385918856
+    ],
+    "compile_median_seconds": 0.03738916385918856,
+    "devices": "RocmDevice(id=0)"
+  }
+}

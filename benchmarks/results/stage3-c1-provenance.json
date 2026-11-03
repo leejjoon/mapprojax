@@ -1,0 +1,37 @@
+{
+  "revision": "5b1c95540c402e31c43195b9d8daef012d162459",
+  "python": "3.14.4",
+  "files": {
+    "src/mapprojax/__init__.py": "77f5a10c2395fe661e52ed55a6723bce02e7a291a06366ef8a57662bebde72b5",
+    "src/mapprojax/base.py": "6fc86b15489e313a14c3271378403957616d7fd999e07e42f38ed549220a4070",
+    "src/mapprojax/io/asdf/converters.py": "40462cf11ee676b05c79bb9ad198a7b81161282d4cc3d0491297ae39add51d31",
+    "src/mapprojax/io/asdf/extension.py": "093ea0a82edcb11fb9257e4a6addfe1ee4d62cd8975cc157fbbb28b14b193eb4",
+    "src/mapprojax/jax_base.py": "9c2bc832439a6d4ab40b6ef02a66c0f7f02c4357c183fad0acfb8afa20f6a1f8",
+    "src/mapprojax/jax_projections.py": "f60258a12729df59e846408e9c92f6821d840a7236a28822a6546875d488a3e3",
+    "src/mapprojax/projections.py": "f6d74d72941698fde2b47dc2ef17de5a21ffec1808fadd4b9a0e55f09097ca8e",
+    "src/mapprojax/reproject.py": "7d1dbb9700ff3a0d1459062fce2fc04354eb2e59c3b695bec1f5d2373c3a10a3",
+    "src/mapprojax/sip.py": "9e496a0b418528bd5f5821ec5e2e5be380a537814104f1387d69ba9c72b088b5",
+    "src/mapprojax/utils.py": "b50fed01c7876e049c0d37aa80a9c3d4681226f6b07ba051da46697ef2a12c9f",
+    "src/mapprojax/wcs_utils.py": "b1ed749f9b7ebce72fdd177f2cb997629c9868f1259e6178f7a598618bd875f5",
+    "tests/data/1904-66_SIN.hdr": "78b414160de8a49a196fa87c1145c6eb7218e74f8094a2e918c94b25fde4916c",
+    "tests/data/1904-66_TAN.hdr": "440f91c6795d233feddf35c9f5192fee9be9d0d71627e130be67515ffe263e6b",
+    "tests/data/accuracy_baselines.json": "aadd23e50b454395a58d34738120b8c366ab984651704aee24dba2c578511de6",
+    "tests/data/provenance.json": "5d519b740449f7f7f27229fa96ee342852dbb4607f54c0178bba042cb1c2bf33",
+    "tests/data/spherex_l2.hdr": "933cb99f727932de3dbf473045e70c56452fa16603690b556997b1378af9f2ae",
+    "tests/data/spherex_template.hdr": "bfc3cc478a8aaeb06dbfa1f6949c349bf12bb849e366516f543722c998c69a53",
+    "tests/data/wcs_test_data.json": "9de3198b1486f8ea9c74bd17c741c7adad2811a7053128413cc4b6d1d92590f9",
+    "docs/benchmarks/accuracy_results.md": "a6d3fbd9a19e0c6d6c9329ad4aaa219829c83ee87090643ccdcc97a11fab4a29",
+    "uv.lock": "6868b7b4902eb0b6c1855ecbb118e6055939dec8e21fc6cb19e5f1693a190e8d"
+  },
+  "cpu_tests": {
+    "passed": 500,
+    "seconds": 67.39
+  },
+  "collection": 500,
+  "timing_gates": {
+    "warm": "max(1.10 * B, B + 0.05 ms)",
+    "compile": "max(1.20 * B, B + 50 ms)",
+    "cold": "same compile budget",
+    "recompile": "none for changed numeric leaves of identical shape/static metadata"
+  }
+}
