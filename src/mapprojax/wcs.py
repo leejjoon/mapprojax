@@ -44,18 +44,30 @@ def _normalize_crval(crval):
     if _is_array_or_tracer(crval):
         result = crval
     elif isinstance(crval, Sequence) and not isinstance(crval, (str, bytes)):
-        float_dtypes = {
-            dtype.str for dtype in (_sequence_float_dtype(item) for item in crval)
-            if dtype is not None
-        }
-        if len(float_dtypes) > 1:
-            raise TypeError(
-                "crval sequence components must use one floating precision"
-            )
-        if any(isinstance(item, (jax.Array, jax.core.Tracer)) for item in crval):
-            result = jnp.stack(tuple(jnp.asarray(item) for item in crval))
+        items = tuple(crval)
+        on_device = any(isinstance(item, (jax.Array, jax.core.Tracer)) for item in items)
+        if on_device:
+            result = jnp.stack(tuple(jnp.asarray(item) for item in items))
         else:
-            result = np.asarray(crval)
+            result = np.asarray(items)
+        kind = np.dtype(result.dtype).kind
+        if kind in "biu":
+            # Integer degrees lose nothing in float64; an integer leaf would
+            # otherwise fail the reference checks with a misleading message.
+            result = (jnp if on_device else np).asarray(result, dtype=np.float64)
+        elif kind == "f":
+            # Reject assembly that changed any component's own floating
+            # dtype: [np.float32(x), 30] would otherwise become a float64
+            # reference that hides the truncated component.
+            assembled = np.dtype(result.dtype)
+            for item in items:
+                dtype = _sequence_float_dtype(item)
+                if dtype is not None and dtype != assembled:
+                    raise TypeError(
+                        "crval sequence components must use one floating "
+                        f"precision; a {dtype} component would be stored as "
+                        f"{assembled}"
+                    )
     else:
         result = np.asarray(crval)
 

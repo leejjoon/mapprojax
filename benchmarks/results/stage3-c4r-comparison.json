@@ -1,0 +1,440 @@
+{
+  "timing": [
+    {
+      "baseline": "benchmarks/results/stage3-c4r-legacy-cpu-batch.json",
+      "candidate": "benchmarks/results/stage3-c4r-new-cpu-batch.json",
+      "metadata": {
+        "backend_requested": "cpu",
+        "mode": "full",
+        "workload": "batch",
+        "call": "unproj_offset",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 3,
+        "batch_shape": [
+          256,
+          4096
+        ],
+        "pair_precision": null,
+        "devices": "CpuDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.004040552070364356,
+          "candidate": 0.004328208742663264,
+          "budget": 0.004444607277400792,
+          "passed": true
+        },
+        "lowering_median_seconds": {
+          "baseline": 0.03193647135049105,
+          "candidate": 0.03157712612301111,
+          "budget": 0.08193647135049105,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 0.06941354786977172,
+          "candidate": 0.06661268509924412,
+          "budget": 0.11941354786977172,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 0.10243170475587249,
+          "candidate": 0.10785818193107843,
+          "budget": 0.15243170475587248,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-c4r-legacy-cpu-sip4.json",
+      "candidate": "benchmarks/results/stage3-c4r-new-cpu-sip4.json",
+      "metadata": {
+        "backend_requested": "cpu",
+        "mode": "full",
+        "workload": "sip",
+        "call": "unproj_offset",
+        "size": 1201,
+        "order": 4,
+        "inverse_steps": 3,
+        "batch_shape": null,
+        "pair_precision": null,
+        "devices": "CpuDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.0066790340933948755,
+          "candidate": 0.006441833451390266,
+          "budget": 0.007346937502734363,
+          "passed": true
+        },
+        "lowering_median_seconds": {
+          "baseline": 0.026740933768451214,
+          "candidate": 0.02659205486997962,
+          "budget": 0.07674093376845122,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 0.09522406803444028,
+          "candidate": 0.0867099529132247,
+          "budget": 0.14522406803444027,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 0.12219612812623382,
+          "candidate": 0.12612069584429264,
+          "budget": 0.1721961281262338,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-c4r-legacy-cpu-spherex-s2.json",
+      "candidate": "benchmarks/results/stage3-c4r-new-cpu-spherex-s2.json",
+      "metadata": {
+        "backend_requested": "cpu",
+        "mode": "full",
+        "workload": "sip",
+        "call": "unproj_offset+proj_offset",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 2,
+        "batch_shape": null,
+        "pair_precision": null,
+        "devices": "CpuDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.07272266992367804,
+          "candidate": 0.06716322200372815,
+          "budget": 0.07999493691604585,
+          "passed": true
+        },
+        "lowering_median_seconds": {
+          "baseline": 0.0804046019911766,
+          "candidate": 0.0786278280429542,
+          "budget": 0.1304046019911766,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 0.2895738501101732,
+          "candidate": 0.26045606890693307,
+          "budget": 0.3474886201322079,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 0.4405843233689666,
+          "candidate": 0.4024774953722954,
+          "budget": 0.5287011880427599,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-c4r-legacy-cpu-spherex-s3.json",
+      "candidate": "benchmarks/results/stage3-c4r-new-cpu-spherex-s3.json",
+      "metadata": {
+        "backend_requested": "cpu",
+        "mode": "full",
+        "workload": "sip",
+        "call": "unproj_offset+proj_offset",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 3,
+        "batch_shape": null,
+        "pair_precision": null,
+        "devices": "CpuDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.0864855709951371,
+          "candidate": 0.08029632247053087,
+          "budget": 0.09513412809465081,
+          "passed": true
+        },
+        "lowering_median_seconds": {
+          "baseline": 0.09210103517398238,
+          "candidate": 0.08891336666420102,
+          "budget": 0.14210103517398237,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 0.3379190373234451,
+          "candidate": 0.3046762254089117,
+          "budget": 0.4055028447881341,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 0.5155073599889874,
+          "candidate": 0.4646409279666841,
+          "budget": 0.618608831986785,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-c4r-legacy-cpu-spherex-s5.json",
+      "candidate": "benchmarks/results/stage3-c4r-new-cpu-spherex-s5.json",
+      "metadata": {
+        "backend_requested": "cpu",
+        "mode": "full",
+        "workload": "sip",
+        "call": "unproj_offset+proj_offset",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 5,
+        "batch_shape": null,
+        "pair_precision": null,
+        "devices": "CpuDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.1145120298024267,
+          "candidate": 0.10366007802076638,
+          "budget": 0.12596323278266938,
+          "passed": true
+        },
+        "lowering_median_seconds": {
+          "baseline": 0.16195325506851077,
+          "candidate": 0.11012289905920625,
+          "budget": 0.21195325506851076,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 0.4184903744608164,
+          "candidate": 0.3767055100761354,
+          "budget": 0.5021884493529797,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 0.7078952849842608,
+          "candidate": 0.5870054131373763,
+          "budget": 0.8494743419811129,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-c4r-legacy-rocm-batch.json",
+      "candidate": "benchmarks/results/stage3-c4r-new-rocm-batch.json",
+      "metadata": {
+        "backend_requested": "rocm",
+        "mode": "full",
+        "workload": "batch",
+        "call": "unproj_offset",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 3,
+        "batch_shape": [
+          256,
+          4096
+        ],
+        "pair_precision": null,
+        "devices": "RocmDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.0006592243444174528,
+          "candidate": 0.000636962940916419,
+          "budget": 0.0007251467788591981,
+          "passed": true
+        },
+        "lowering_median_seconds": {
+          "baseline": 0.03261071117594838,
+          "candidate": 0.031941983848810196,
+          "budget": 0.08261071117594838,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 0.09738014498725533,
+          "candidate": 0.09896322572603822,
+          "budget": 0.14738014498725532,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 0.1332762991078198,
+          "candidate": 0.13422087812796235,
+          "budget": 0.18327629910781978,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-c4r-legacy-rocm-sip4.json",
+      "candidate": "benchmarks/results/stage3-c4r-new-rocm-sip4.json",
+      "metadata": {
+        "backend_requested": "rocm",
+        "mode": "full",
+        "workload": "sip",
+        "call": "unproj_offset",
+        "size": 1201,
+        "order": 4,
+        "inverse_steps": 3,
+        "batch_shape": null,
+        "pair_precision": null,
+        "devices": "RocmDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.0008503890130668879,
+          "candidate": 0.0008656429126858711,
+          "budget": 0.0009354279143735767,
+          "passed": true
+        },
+        "lowering_median_seconds": {
+          "baseline": 0.027246953919529915,
+          "candidate": 0.026707639917731285,
+          "budget": 0.07724695391952992,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 0.16418927488848567,
+          "candidate": 0.15769295115023851,
+          "budget": 0.21418927488848566,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 0.20720866275951266,
+          "candidate": 0.20338819408789277,
+          "budget": 0.25720866275951265,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-c4r-legacy-rocm-spherex-s2.json",
+      "candidate": "benchmarks/results/stage3-c4r-new-rocm-spherex-s2.json",
+      "metadata": {
+        "backend_requested": "rocm",
+        "mode": "full",
+        "workload": "sip",
+        "call": "unproj_offset+proj_offset",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 2,
+        "batch_shape": null,
+        "pair_precision": null,
+        "devices": "RocmDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.016055062413215637,
+          "candidate": 0.006281526992097497,
+          "budget": 0.017660568654537204,
+          "passed": true
+        },
+        "lowering_median_seconds": {
+          "baseline": 0.08086398104205728,
+          "candidate": 0.08023713622242212,
+          "budget": 0.13086398104205726,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 1.0174155528657138,
+          "candidate": 0.9173914310522377,
+          "budget": 1.2208986634388566,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 1.0951054762117565,
+          "candidate": 0.9955735448747873,
+          "budget": 1.3141265714541077,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-c4r-legacy-rocm-spherex-s3.json",
+      "candidate": "benchmarks/results/stage3-c4r-new-rocm-spherex-s3.json",
+      "metadata": {
+        "backend_requested": "rocm",
+        "mode": "full",
+        "workload": "sip",
+        "call": "unproj_offset+proj_offset",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 3,
+        "batch_shape": null,
+        "pair_precision": null,
+        "devices": "RocmDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.01886282698251307,
+          "candidate": 0.006352961994707584,
+          "budget": 0.020749109680764377,
+          "passed": true
+        },
+        "lowering_median_seconds": {
+          "baseline": 0.09531775303184986,
+          "candidate": 0.0908145378343761,
+          "budget": 0.14531775303184985,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 1.1633876166306436,
+          "candidate": 1.094816108699888,
+          "budget": 1.3960651399567723,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 1.2856427230872214,
+          "candidate": 1.2148668952286243,
+          "budget": 1.5427712677046657,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-c4r-legacy-rocm-spherex-s5.json",
+      "candidate": "benchmarks/results/stage3-c4r-new-rocm-spherex-s5.json",
+      "metadata": {
+        "backend_requested": "rocm",
+        "mode": "full",
+        "workload": "sip",
+        "call": "unproj_offset+proj_offset",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 5,
+        "batch_shape": null,
+        "pair_precision": null,
+        "devices": "RocmDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.02453547134064138,
+          "candidate": 0.006504934513941407,
+          "budget": 0.026989018474705518,
+          "passed": true
+        },
+        "lowering_median_seconds": {
+          "baseline": 0.16330694407224655,
+          "candidate": 0.11370074981823564,
+          "budget": 0.21330694407224654,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 1.5199731648899615,
+          "candidate": 1.3985476680099964,
+          "budget": 1.8239677978679536,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 1.6991871851496398,
+          "candidate": 1.5327608459629118,
+          "budget": 2.039024622179568,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    }
+  ]
+}

@@ -55,10 +55,17 @@ def _worker(kind: str, repeats: int, warmups: int, size: int,
             from mapprojax.wcs import Tan
             wcs = Tan(crpix, cd, jnp.asarray(crval, dtype=jnp.float64),
                       sip=sip, precision="mixed")
-        fn = jax.jit(lambda obj, px, py: (
-            obj.unproj_offset(px, py),
-            obj.proj_offset(*obj.unproj_offset(px, py)),
-        ))
+        if order == 3:
+            # Real SPHEREx header: forward evaluation plus the SIP inverse.
+            fn = jax.jit(lambda obj, px, py: (
+                obj.unproj_offset(px, py),
+                obj.proj_offset(*obj.unproj_offset(px, py)),
+            ))
+        else:
+            # Synthetic higher-order coefficients: evaluation only. Their
+            # inverse does not converge over the grid, so timing it would
+            # measure work on samples that end up invalid.
+            fn = jax.jit(lambda obj, px, py: obj.unproj_offset(px, py))
         args = (wcs, x, y)
     elif workload == "batch":
         x = jnp.linspace(0.0, 4095.0, 4096, dtype=jnp.float32)
@@ -101,11 +108,14 @@ def _worker(kind: str, repeats: int, warmups: int, size: int,
         raise ValueError(f"unknown workload {workload!r}")
 
     if kind == "compile":
+        start = time.perf_counter()
         lowered = fn.lower(*args)
+        lowering_seconds = time.perf_counter() - start
         start = time.perf_counter()
         lowered.compile()
         compile_seconds = time.perf_counter() - start
-        print(json.dumps({"compile_seconds": compile_seconds,
+        print(json.dumps({"lowering_seconds": lowering_seconds,
+                          "compile_seconds": compile_seconds,
                           "backend": jax.default_backend(),
                           "devices": device_text}))
         return
@@ -135,7 +145,8 @@ def _run_process(backend: str, kind: str, repeats: int, warmups: int,
     env = os.environ.copy()
     env["JAX_PLATFORMS"] = backend
     env["JAX_ENABLE_COMPILATION_CACHE"] = "false"
-    env["JAX_COMPILATION_CACHE_DIR"] = tempfile.mkdtemp(prefix="mapprojax-stage3-")
+    cache_dir = tempfile.TemporaryDirectory(prefix="mapprojax-stage3-")
+    env["JAX_COMPILATION_CACHE_DIR"] = cache_dir.name
     if backend == "rocm":
         env["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
     command = [sys.executable, str(Path(__file__).resolve()), "--worker", kind,
@@ -145,7 +156,8 @@ def _run_process(backend: str, kind: str, repeats: int, warmups: int,
     command += ["--steps", str(steps)]
     command += ["--implementation", implementation]
     command += ["--pair-precision", pair_precision]
-    result = subprocess.run(command, env=env, text=True, capture_output=True)
+    with cache_dir:
+        result = subprocess.run(command, env=env, text=True, capture_output=True)
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip())
     return json.loads(result.stdout)
@@ -177,6 +189,12 @@ def measure(backend: str, mode: str, size: int, workload: str,
         "warm_samples_seconds": [item["samples"] for item in warm],
         "warm_process_medians_seconds": medians,
         "warm_median_of_process_medians_seconds": statistics.median(medians),
+        "call": ("unproj_offset" if workload == "sip" and order != 3 else
+                 "unproj_offset+proj_offset" if workload == "sip" else
+                 "unproj_offset" if workload == "batch" else "pix_to_pix"),
+        "lowering_samples_seconds": [item["lowering_seconds"] for item in compile_records],
+        "lowering_median_seconds": statistics.median(
+            item["lowering_seconds"] for item in compile_records),
         "compile_samples_seconds": [item["compile_seconds"] for item in compile_records],
         "compile_median_seconds": statistics.median(
             item["compile_seconds"] for item in compile_records),
