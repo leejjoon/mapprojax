@@ -239,9 +239,17 @@ def _cast_sip(sip, dtype):
 def build(case: Case, backend: str):
     """``backend``: ``numpy`` (Tan/Sin), ``jax`` (TanJax/SinJax) or
     ``jax_mixed`` (TanJaxMixed/SinJaxMixed). The two JAX backends need x64."""
-    import mapprojax as mp
-
     crpix, cd, crval, sip = _params(case.header)
+    if backend in ("jax", "jax_mixed"):
+        from mapprojax import wcs as mp
+        cls = getattr(mp, case.proj.title())
+        precision = "f64" if backend == "jax" else "mixed"
+        if backend == "jax_mixed":
+            sip = _cast_sip(sip, np.float32)
+        return cls(crpix, cd, np.asarray(crval, dtype=np.float64),
+                   sip=sip, precision=precision)
+
+    import mapprojax as mp
     if backend == "jax_mixed":
         # The Mixed constructors keep the SIP object as given; cast it the way
         # Reprojector does so the polynomial really runs in fp32.

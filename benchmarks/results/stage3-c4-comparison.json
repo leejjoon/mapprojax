@@ -1,0 +1,384 @@
+{
+  "timing": [
+    {
+      "baseline": "benchmarks/results/stage3-legacy-full-cpu-batch.json",
+      "candidate": "benchmarks/results/stage3-new-full-cpu-batch.json",
+      "metadata": {
+        "backend_requested": "cpu",
+        "mode": "full",
+        "workload": "batch",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 3,
+        "batch_shape": [
+          256,
+          4096
+        ],
+        "pair_precision": null,
+        "devices": "CpuDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.003996794577687979,
+          "candidate": 0.00426388019695878,
+          "budget": 0.004396474035456777,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 0.07295884424820542,
+          "candidate": 0.06821933668106794,
+          "budget": 0.12295884424820543,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 0.108287847135216,
+          "candidate": 0.10740842996165156,
+          "budget": 0.158287847135216,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-legacy-full-cpu-sip4.json",
+      "candidate": "benchmarks/results/stage3-new-full-cpu-sip4.json",
+      "metadata": {
+        "backend_requested": "cpu",
+        "mode": "full",
+        "workload": "sip",
+        "size": 1201,
+        "order": 4,
+        "inverse_steps": 3,
+        "batch_shape": null,
+        "pair_precision": null,
+        "devices": "CpuDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.03492388897575438,
+          "candidate": 0.030624406412243843,
+          "budget": 0.038416277873329824,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 0.39833472575992346,
+          "candidate": 0.37203577999025583,
+          "budget": 0.47800167091190815,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 0.6028447751887143,
+          "candidate": 0.5695204669609666,
+          "budget": 0.723413730226457,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-legacy-full-cpu-spherex-s2.json",
+      "candidate": "benchmarks/results/stage3-new-full-cpu-spherex-s2.json",
+      "metadata": {
+        "backend_requested": "cpu",
+        "mode": "full",
+        "workload": "sip",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 2,
+        "batch_shape": null,
+        "pair_precision": null,
+        "devices": "CpuDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.07155150664038956,
+          "candidate": 0.06713793519884348,
+          "budget": 0.07870665730442852,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 0.2920357398688793,
+          "candidate": 0.25774592719972134,
+          "budget": 0.35044288784265515,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 0.44310121331363916,
+          "candidate": 0.4128818940371275,
+          "budget": 0.531721455976367,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-legacy-full-cpu-spherex-s3.json",
+      "candidate": "benchmarks/results/stage3-new-full-cpu-spherex-s3.json",
+      "metadata": {
+        "backend_requested": "cpu",
+        "mode": "full",
+        "workload": "sip",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 3,
+        "batch_shape": null,
+        "pair_precision": null,
+        "devices": "CpuDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.08462589257396758,
+          "candidate": 0.0830552070401609,
+          "budget": 0.09308848183136434,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 0.3460654099471867,
+          "candidate": 0.3025823780335486,
+          "budget": 0.41527849193662403,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 0.5094269132241607,
+          "candidate": 0.4649164159782231,
+          "budget": 0.6113122958689928,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-legacy-full-cpu-spherex-s5.json",
+      "candidate": "benchmarks/results/stage3-new-full-cpu-spherex-s5.json",
+      "metadata": {
+        "backend_requested": "cpu",
+        "mode": "full",
+        "workload": "sip",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 5,
+        "batch_shape": null,
+        "pair_precision": null,
+        "devices": "CpuDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.11742118303664029,
+          "candidate": 0.10620276140980422,
+          "budget": 0.12916330134030432,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 0.4273220677860081,
+          "candidate": 0.3835021653212607,
+          "budget": 0.5127864813432097,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 0.7209784807637334,
+          "candidate": 0.6071804082021117,
+          "budget": 0.86517417691648,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-legacy-full-rocm-batch.json",
+      "candidate": "benchmarks/results/stage3-new-full-rocm-batch.json",
+      "metadata": {
+        "backend_requested": "rocm",
+        "mode": "full",
+        "workload": "batch",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 3,
+        "batch_shape": [
+          256,
+          4096
+        ],
+        "pair_precision": null,
+        "devices": "RocmDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.0006425310857594013,
+          "candidate": 0.0006403699517250061,
+          "budget": 0.0007067841943353416,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 0.09825898194685578,
+          "candidate": 0.09751289710402489,
+          "budget": 0.14825898194685577,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 0.13215131917968392,
+          "candidate": 0.13489231932908297,
+          "budget": 0.1821513191796839,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-legacy-full-rocm-sip4.json",
+      "candidate": "benchmarks/results/stage3-new-full-rocm-sip4.json",
+      "metadata": {
+        "backend_requested": "rocm",
+        "mode": "full",
+        "workload": "sip",
+        "size": 1201,
+        "order": 4,
+        "inverse_steps": 3,
+        "batch_shape": null,
+        "pair_precision": null,
+        "devices": "RocmDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.008326300652697682,
+          "candidate": 0.0024031081702560186,
+          "budget": 0.009158930717967452,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 1.3711365479975939,
+          "candidate": 1.2661154149100184,
+          "budget": 1.6453638575971126,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 1.5372143788263202,
+          "candidate": 1.4412667229771614,
+          "budget": 1.844657254591584,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-legacy-full-rocm-spherex-s2.json",
+      "candidate": "benchmarks/results/stage3-new-full-rocm-spherex-s2.json",
+      "metadata": {
+        "backend_requested": "rocm",
+        "mode": "full",
+        "workload": "sip",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 2,
+        "batch_shape": null,
+        "pair_precision": null,
+        "devices": "RocmDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.016016028821468353,
+          "candidate": 0.006282745627686381,
+          "budget": 0.01761763170361519,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 1.0176828047260642,
+          "candidate": 0.9324871278367937,
+          "budget": 1.221219365671277,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 1.0966626768931746,
+          "candidate": 1.0143530531786382,
+          "budget": 1.3159952122718095,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-legacy-full-rocm-spherex-s3.json",
+      "candidate": "benchmarks/results/stage3-new-full-rocm-spherex-s3.json",
+      "metadata": {
+        "backend_requested": "rocm",
+        "mode": "full",
+        "workload": "sip",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 3,
+        "batch_shape": null,
+        "pair_precision": null,
+        "devices": "RocmDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.018853153800591826,
+          "candidate": 0.006357710342854261,
+          "budget": 0.02073846918065101,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 1.1810536114498973,
+          "candidate": 1.1156268860213459,
+          "budget": 1.4172643337398767,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 1.2954214778728783,
+          "candidate": 1.2069034823216498,
+          "budget": 1.5545057734474539,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    },
+    {
+      "baseline": "benchmarks/results/stage3-legacy-full-rocm-spherex-s5.json",
+      "candidate": "benchmarks/results/stage3-new-full-rocm-spherex-s5.json",
+      "metadata": {
+        "backend_requested": "rocm",
+        "mode": "full",
+        "workload": "sip",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 5,
+        "batch_shape": null,
+        "pair_precision": null,
+        "devices": "RocmDevice(id=0)"
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.02456806949339807,
+          "candidate": 0.0065049175173044205,
+          "budget": 0.02702487644273788,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 1.6641948050819337,
+          "candidate": 1.4175962284207344,
+          "budget": 1.9970337660983204,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 1.8618209473788738,
+          "candidate": 1.5401129447855055,
+          "budget": 2.2341851368546486,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    }
+  ],
+  "accuracy_row_identity": [
+    {
+      "implementation": "jax",
+      "old_rows": 14,
+      "new_rows": 14,
+      "differences": []
+    },
+    {
+      "implementation": "jax_mixed",
+      "old_rows": 14,
+      "new_rows": 14,
+      "differences": []
+    }
+  ]
+}

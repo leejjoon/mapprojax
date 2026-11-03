@@ -1,0 +1,31 @@
+{
+  "environment": {
+    "python": "3.12.13 (main, Apr 14 2026, 14:29:00) [Clang 22.1.3 ]",
+    "backend": "cpu"
+  },
+  "measurement": {
+    "backend_requested": "cpu",
+    "mode": "smoke",
+    "workload": "sip",
+    "size": 32,
+    "order": 4,
+    "inverse_steps": 3,
+    "implementation": "new",
+    "warm_samples_seconds": [
+      [
+        0.00029961904510855675,
+        0.0003152778372168541,
+        0.00020574405789375305
+      ]
+    ],
+    "warm_process_medians_seconds": [
+      0.00029961904510855675
+    ],
+    "warm_median_of_process_medians_seconds": 0.00029961904510855675,
+    "compile_samples_seconds": [
+      0.5037149316631258
+    ],
+    "compile_median_seconds": 0.5037149316631258,
+    "devices": "CpuDevice(id=0)"
+  }
+}

@@ -1,0 +1,25 @@
+AI SLOP CLEANUP REPORT
+======================
+
+Scope: pyproject.toml, benchmarks/benchmark_stage3.py, benchmarks/compare_stage3.py, src/mapprojax/wcs.py, tests/accuracy_reference.py, tests/test_wcs_new.py, benchmark evidence artifacts
+Mode: read-only detector/report; no edits performed
+Blocking Findings: none
+Advisory Findings: historical smoke/full-named artifacts remain in benchmarks/results but are excluded from the strict matched comparison artifact; retained as provenance.
+Fallback Findings: none
+UI/Design Findings: N/A
+Missing Test Findings: none blocking; structural jaxpr stability is covered, measured JIT cache reuse remains outside C4.
+Recursion Guard: confirmed no nested workflows spawned by cleanup
+Changed Files Reviewed:
+- pyproject.toml - reviewed
+- benchmarks/benchmark_stage3.py - reviewed
+- benchmarks/compare_stage3.py - reviewed
+- src/mapprojax/wcs.py - reviewed
+- tests/accuracy_reference.py - reviewed
+- tests/test_wcs_new.py - reviewed
+- benchmarks/results/stage3-c4-comparison.json - reviewed
+
+Gate Result: PASS
+Leader Action:
+- PASS: continue to verification, architect review, and executor red-team QA.
+Remaining Risks:
+- C4 is an explicit operator checkpoint; this report does not authorize C5.

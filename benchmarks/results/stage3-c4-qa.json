@@ -1,0 +1,21 @@
+{
+  "kind": "algorithm-test-report",
+  "sourceHash": "sha256:0974e31b20cc974a22e2e0686a21df6f3ba4e20902ccd25127bde997e2f89136",
+  "status": "passed",
+  "e2eStatus": "passed",
+  "redTeamStatus": "passed",
+  "evidence": "Current-snapshot QA: 28 focused WCS tests passed; f32 r_matrix guard passed; comparator negative mutations for implementation role, order, batch shape, device, mode and runtime environment were rejected; current 10-pair comparison artifact recomputed exactly with all rules passing; source hash matched runtime receipt.",
+  "contractCoverage": [
+    {"id":"wcs-contracts","contractRef":"C3/C4 new WCS contract","obligation":"precision/tree/JSON/gradient/offset/guard behavior","status":"covered","surfaceEvidenceRefs":["wcs-tests"],"adversarialCaseRefs":["r-matrix-guard","metadata-mutations"]},
+    {"id":"timing-contract","contractRef":"C4 reduced timing protocol","obligation":"matched warm/compile/cold artifacts and strict metadata comparison","status":"covered","surfaceEvidenceRefs":["comparison"],"adversarialCaseRefs":["metadata-mutations"]}
+  ],
+  "surfaceEvidence": [
+    {"id":"wcs-tests","contractRef":"C3/C4 math surface","surface":"math","invocation":"uv run pytest -q tests/test_wcs_new.py","verdict":"passed","artifactRefs":["tests/test_wcs_new.py"]},
+    {"id":"comparison","contractRef":"C4 timing/accuracy evidence","surface":"algorithm","invocation":"python3 benchmarks/compare_stage3.py over ten matched pairs","verdict":"passed","artifactRefs":["benchmarks/results/stage3-c4-comparison.json"]}
+  ],
+  "adversarialCases": [
+    {"id":"r-matrix-guard","contractRef":"f32 rotation guard","scenario":"Direct public r_matrix access in f32 mode","expectedBehavior":"TypeError","verdict":"passed","artifactRefs":["tests/test_wcs_new.py"]},
+    {"id":"metadata-mutations","contractRef":"matched comparator metadata","scenario":"Mutate role/order/batch/device/mode/environment","expectedBehavior":"ValueError","verdict":"passed","artifactRefs":["benchmarks/compare_stage3.py"]}
+  ],
+  "blockers": []
+}
