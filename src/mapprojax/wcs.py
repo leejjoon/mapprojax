@@ -2,6 +2,25 @@
 
 These classes share the established pixel/native/celestial pipeline while
 keeping their numerical precision policy and PyTree reconstruction explicit.
+
+Compose offsets into absolute host coordinates with
+``absolute_from_offset(wcs.unproj_offset(x, y), crval=wcs.crval,
+offset_scale=wcs.offset_scale())``;
+convert absolute host coordinates back with
+``offset_from_absolute((lon, lat), crval=wcs.crval,
+offset_scale=wcs.offset_scale())``. These
+helpers are host-only and require the producer's typed scale.
+
+Batch these homogeneous WCS PyTrees with ``jax.vmap`` instead of constructing
+per-centre ``*Array`` classes. A single WCS can process a pixel grid directly
+through broadcasting, or with ``jax.vmap(lambda x, y: wcs.unproj(x, y))``.
+For paired WCSes and pixel samples, stack compatible WCS PyTrees and use
+``jax.vmap(lambda w, x, y: w.unproj(x, y), in_axes=(0, 0, 0), out_axes=0)``.
+For many WCSes over one shared pixel grid, use
+``jax.vmap(lambda w: w.unproj(x, y), in_axes=0, out_axes=1)`` to get
+``(pixels, centres)`` outputs; the default ``out_axes=0`` gives
+``(centres, pixels)``. The batch must share projection type, precision,
+PyTree structure, SIP coefficient shapes, and ``inverse_steps``.
 """
 
 from collections.abc import Sequence
@@ -11,7 +30,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax.tree_util import register_pytree_node_class
 
-from .base import WCSBase, _check_cd
+from .base import _PipelineBase, _check_cd
 from .jax_base import _effective_f64, _require_x64
 from .projections import SinMixin, TanMixin
 from .sip import Sip
@@ -71,8 +90,10 @@ def _normalize_crval(crval):
     else:
         result = np.asarray(crval)
 
-    if getattr(result, "shape", None) != (2,):
-        raise ValueError(f"crval must have shape (2,), got {getattr(result, 'shape', None)}")
+    if getattr(result, "ndim", 0) < 1 or result.shape[-1] != 2:
+        raise ValueError(
+            f"crval must end in shape (2,), got {getattr(result, 'shape', None)}"
+        )
     return result
 
 
@@ -90,7 +111,7 @@ def _cast_sip(sip, dtype):
     )
 
 
-class _PrecisionWCSBase(WCSBase):
+class _PrecisionWCSBase(_PipelineBase):
     """Shared implementation for the two precision-explicit projections."""
 
     xp = jnp
@@ -107,11 +128,13 @@ class _PrecisionWCSBase(WCSBase):
         dtype = self._pipeline_dtype
         self.crpix = self.xp.asarray(crpix, dtype=dtype)
         self.cd = self.xp.asarray(cd, dtype=dtype)
-        if self.crpix.shape != (2,):
-            raise ValueError(f"crpix must have shape (2,), got {self.crpix.shape}")
-        if self.cd.shape != (2, 2):
-            raise ValueError(f"cd must have shape (2, 2), got {self.cd.shape}")
+        if self.crpix.ndim < 1 or self.crpix.shape[-1] != 2:
+            raise ValueError(f"crpix must end in shape (2,), got {self.crpix.shape}")
+        if self.cd.ndim < 2 or self.cd.shape[-2:] != (2, 2):
+            raise ValueError(f"cd must end in shape (2, 2), got {self.cd.shape}")
         self.crval = _normalize_crval(crval)
+        if self.crval.ndim < 1 or self.crval.shape[-1] != 2:
+            raise ValueError(f"crval must end in shape (2,), got {self.crval.shape}")
         self.sip = _cast_sip(sip, dtype)
         # Validate the stored, post-cast matrix. _check_cd deliberately skips
         # tracers, whose validity is carried through the pipeline at runtime.
@@ -166,12 +189,13 @@ class _PrecisionWCSBase(WCSBase):
 
     @property
     def r_matrix(self):
+        """Celestial -> native rotation, derived from ``crval`` on access.
+
+        Never stored, so it follows the ``crval`` leaf through PyTree
+        reconstruction. Only the mixed and f64 modes have one; f32 raises.
+        """
         self._check_rotation_precision()
-        if self.precision == "f32":
-            reference = self.xp.asarray(self.crval, dtype=jnp.float32)
-        else:
-            self._require_reference_f64("celestial rotation")
-            reference = self.xp.asarray(self.crval, dtype=jnp.float64)
+        reference = self.xp.asarray(self.crval, dtype=jnp.float64)
         return rotation_matrix(
             self.xp.radians(reference[0]),
             self.xp.radians(reference[1]),
@@ -221,7 +245,12 @@ class _PrecisionWCSBase(WCSBase):
         return self.xp.cos(p), self.xp.sin(p)
 
     def offset_scale(self):
-        """Return the longitude scale used by the offset methods."""
+        """Return the typed longitude scale used by ``unproj_offset``.
+
+        Pass this value, without recomputing its cosine on the host, to
+        ``absolute_from_offset`` or ``offset_from_absolute``. Its backend,
+        dtype, and expression match the one used for the produced offset.
+        """
         cos_p, _ = self._reference_trig()
         return cos_p
 
@@ -278,13 +307,13 @@ class _PrecisionWCSBase(WCSBase):
         )
 
     def tree_flatten(self):
+        # Sip is itself a PyTree node whose aux data carries inverse_steps.
         children = (self.crpix, self.cd, self.crval, self.sip)
-        sip_steps = None if self.sip is None else self.sip.inverse_steps
-        return children, (self.precision, sip_steps)
+        return children, (self.precision,)
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):
-        precision, _sip_steps = aux_data
+        (precision,) = aux_data
         obj = cls.__new__(cls)
         obj.crpix, obj.cd, obj.crval, obj.sip = children
         obj.precision = precision

@@ -4,10 +4,10 @@ import numpy as np
 import jax
 # Ensure JAX 64-bit is enabled BEFORE importing mapprojax to avoid warning
 jax.config.update("jax_enable_x64", True)
-import jax.numpy as jnp
+import pytest
 
-from mapprojax.projections import Tan
-from mapprojax.jax_projections import TanJax
+import mapprojax
+from mapprojax.wcs import Sin, Tan
 from mapprojax.sip import Sip
 from mapprojax.wcs_utils import load_wcs_params_from_header
 
@@ -24,9 +24,8 @@ def test_wcs_consistency_with_json():
     # Use the utility to parse parameters from the header dictionary
     crpix, cd, crval, sip = load_wcs_params_from_header(data['header_keywords'])
     
-    # Instantiate WCS objects
-    wcs_np = Tan(crpix, cd, crval, sip=sip)
-    wcs_jax = TanJax(crpix, cd, crval, sip=sip)
+    # The precision-explicit class is a JAX PyTree.
+    wcs_f64 = Tan(crpix, cd, crval, sip=sip, precision="f64")
     
     # Prepare Data
     input_pixels = np.array(data['input_pixel_coordinates'])
@@ -77,28 +76,16 @@ def test_wcs_consistency_with_json():
 
     # --- Test Forward Projection (Pixel -> World) ---
     
-    # NumPy
-    ra_np_rad, dec_np_rad = wcs_np.unproj(x_in, y_in)
-    ra_np = np.degrees(ra_np_rad)
-    dec_np = np.degrees(dec_np_rad)
-    
-    # JAX
-    ra_jax_rad, dec_jax_rad = wcs_jax.unproj(jnp.array(x_in), jnp.array(y_in))
-    ra_jax = np.degrees(np.array(ra_jax_rad))
-    dec_jax = np.degrees(np.array(dec_jax_rad))
+    ra_f64_rad, dec_f64_rad = wcs_f64.unproj(x_in, y_in)
+    ra_f64, dec_f64 = np.degrees(ra_f64_rad), np.degrees(dec_f64_rad)
     
     # Compare with Expected
     # Using slightly loose tolerance as the JSON source might have subtle differences 
     # (e.g., astropy version differences, float precision in JSON)
     # But usually 1e-6 degrees is good enough for headers.
     
-    # Check NumPy vs Expected
-    np.testing.assert_allclose(ra_np, expected_world[:, 0], rtol=0, atol=1e-6, err_msg="NumPy RA mismatch")
-    np.testing.assert_allclose(dec_np, expected_world[:, 1], rtol=0, atol=1e-6, err_msg="NumPy Dec mismatch")
-    
-    # Check JAX vs Expected
-    np.testing.assert_allclose(ra_jax, expected_world[:, 0], rtol=0, atol=1e-6, err_msg="JAX RA mismatch")
-    np.testing.assert_allclose(dec_jax, expected_world[:, 1], rtol=0, atol=1e-6, err_msg="JAX Dec mismatch")
+    np.testing.assert_allclose(ra_f64, expected_world[:, 0], rtol=0, atol=1e-6, err_msg="f64 RA mismatch")
+    np.testing.assert_allclose(dec_f64, expected_world[:, 1], rtol=0, atol=1e-6, err_msg="f64 Dec mismatch")
     
     print("Forward Projection (Pixel -> World) matched expected values.")
 
@@ -107,22 +94,13 @@ def test_wcs_consistency_with_json():
     ra_in_rad = np.radians(expected_world[:, 0])
     dec_in_rad = np.radians(expected_world[:, 1])
     
-    # NumPy
-    x_out_np, y_out_np = wcs_np.proj(ra_in_rad, dec_in_rad)
-    
-    # JAX
-    x_out_jax, y_out_jax = wcs_jax.proj(jnp.array(ra_in_rad), jnp.array(dec_in_rad))
-    x_out_jax = np.array(x_out_jax)
-    y_out_jax = np.array(y_out_jax)
+    x_out_f64, y_out_f64 = wcs_f64.proj(ra_in_rad, dec_in_rad)
     
     # Compare with Input Pixels
     # This validates the Round Trip + Inverse Logic
-    # Relaxed tolerance to 0.05 px because SIP inverse polynomials are often approximations.
-    np.testing.assert_allclose(x_out_np, x_in, rtol=0, atol=1e-6, err_msg="NumPy Inverse X mismatch")
-    np.testing.assert_allclose(y_out_np, y_in, rtol=0, atol=1e-6, err_msg="NumPy Inverse Y mismatch")
-    
-    np.testing.assert_allclose(x_out_jax, x_in, rtol=0, atol=1e-6, err_msg="JAX Inverse X mismatch")
-    np.testing.assert_allclose(y_out_jax, y_in, rtol=0, atol=1e-6, err_msg="JAX Inverse Y mismatch")
+    # Keep the independent fixture's existing 1e-6 px inversion tolerance.
+    np.testing.assert_allclose(x_out_f64, x_in, rtol=0, atol=1e-6, err_msg="f64 Inverse X mismatch")
+    np.testing.assert_allclose(y_out_f64, y_in, rtol=0, atol=1e-6, err_msg="f64 Inverse Y mismatch")
     
     print("Inverse Projection (World -> Pixel) matched within 1e-6 px.")
 
@@ -135,3 +113,61 @@ if __name__ == "__main__":
         print(f"Test failed: {e}")
         import traceback
         traceback.print_exc()
+
+
+def test_root_exports_precision_wcs_without_legacy_aliases():
+    assert mapprojax.Tan is Tan
+    assert mapprojax.Sin is Sin
+    for obsolete in (
+        "TanArray", "SinArray", "TanJax", "SinJax", "TanJaxArray",
+        "SinJaxArray", "TanJaxMixed", "SinJaxMixed", "TanJaxArrayMixed",
+        "SinJaxArrayMixed", "WCSBase", "WCSArrayBase",
+    ):
+        assert not hasattr(mapprojax, obsolete), obsolete
+
+
+@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda cls: cls.__name__)
+@pytest.mark.parametrize("precision", ["f32", "mixed", "f64"])
+@pytest.mark.parametrize("with_sip", [False, True], ids=["no-sip", "ab-only-sip"])
+def test_wcs_json_round_trip_preserves_precision_and_state(cls, precision, with_sip):
+    sip = None
+    if with_sip:
+        a = np.zeros((3, 3)); a[2, 0] = 1e-5
+        b = np.zeros((3, 3)); b[0, 2] = -2e-5
+        sip = Sip(a=a, b=b, inverse_steps=4)
+
+    wcs = cls([12.0, -7.0], [[-1e-3, 2e-6], [3e-6, 1e-3]],
+              [120.0, 35.0], sip=sip, precision=precision)
+    restored = cls.from_dict(json.loads(json.dumps(wcs.to_dict())))
+
+    assert restored.precision == precision
+    assert restored.crval_dtype == wcs.crval_dtype
+    for name in ("crpix", "cd", "crval"):
+        np.testing.assert_array_equal(np.asarray(getattr(restored, name)),
+                                      np.asarray(getattr(wcs, name)))
+    if with_sip:
+        assert restored.sip.ap is None and restored.sip.bp is None
+        assert restored.sip.inverse_steps == 4
+        np.testing.assert_array_equal(np.asarray(restored.sip.a), np.asarray(wcs.sip.a))
+        np.testing.assert_array_equal(np.asarray(restored.sip.b), np.asarray(wcs.sip.b))
+    else:
+        assert restored.sip is None
+
+    x = np.asarray([10.0, 15.0])
+    y = np.asarray([-2.0, 4.0])
+    method = "unproj_offset" if precision == "f32" else "unproj"
+    for actual, expected in zip(getattr(restored, method)(x, y),
+                                getattr(wcs, method)(x, y)):
+        np.testing.assert_array_equal(np.asarray(actual), np.asarray(expected))
+
+
+def test_wcs_json_rejects_mismatched_and_legacy_types():
+    data = Tan([0.0, 0.0], [[-1e-3, 0.0], [0.0, 1e-3]], [0.0, 0.0],
+               precision="f64").to_dict()
+    data["type"] = "Sin"
+    with pytest.raises(ValueError, match="expected WCS type"):
+        Tan.from_dict(data)
+
+    legacy = {key: data[key] for key in ("crpix", "cd", "crval", "sip")}
+    with pytest.raises(ValueError, match="precision-aware contract"):
+        Tan.from_dict(legacy)

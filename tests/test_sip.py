@@ -2,8 +2,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from mapprojax.projections import Tan
+from mapprojax.wcs import Tan
 from mapprojax.sip import Sip
+
+jax.config.update("jax_enable_x64", True)
 
 try:
     from astropy.wcs import WCS as AstroWCS
@@ -82,7 +84,7 @@ def test_sip_against_astropy():
     crpix = [header['CRPIX1'] - 1.0, header['CRPIX2'] - 1.0]
     crval = [header['CRVAL1'], header['CRVAL2']]
     
-    mwcs = Tan(crpix, cd, crval, sip=sip)
+    mwcs = Tan(crpix, cd, crval, sip=sip, precision="f64")
     
     # 4. Generate test points (pixels)
     # Avoid 0,0 to avoid singularities if any
@@ -144,7 +146,7 @@ def test_no_sip():
     cd = [[-0.001, 0.0], [0.0, 0.001]] 
     crval = [180.0, 0.0]
     
-    wcs = Tan(crpix, cd, crval, sip=None)
+    wcs = Tan(crpix, cd, crval, sip=None, precision="f64")
     
     # Just check it runs and produces expected linear result
     x = 60.0 # u = 10
@@ -323,7 +325,7 @@ def test_inverse_residual_follows_jax_inputs_under_jit():
 
 
 def test_non_default_steps_survive_pytree_and_cast():
-    from mapprojax import TanJax
+    from mapprojax.wcs import Tan
     from mapprojax.reproject import _cast_sip
 
     sip = _with(_realistic_sip(), inverse_steps=0)  # 0: every point unconverged
@@ -336,7 +338,7 @@ def test_non_default_steps_survive_pytree_and_cast():
     x, _ = jax.jit(lambda s: s.foc_to_pix(jnp.asarray(U), jnp.asarray(V)))(sip)
     assert np.isnan(np.asarray(x)).all()
 
-    wcs = TanJax(jnp.zeros(2), jnp.eye(2) * 1e-3, jnp.zeros(2), sip=sip)
+    wcs = Tan(jnp.zeros(2), jnp.eye(2) * 1e-3, jnp.zeros(2), sip=sip, precision="f64")
     back = jax.tree_util.tree_unflatten(*reversed(jax.tree_util.tree_flatten(wcs)))
     assert back.sip.inverse_steps == 0
 
@@ -375,7 +377,7 @@ def test_inverse_gradients_match_finite_differences(_x64, kind):
     suits all of them (CD is ~1e-3, the SIP coefficients ~1e-5).
     """
     from jax.test_util import check_grads
-    from mapprojax import TanJax
+    from mapprojax.wcs import Tan
     from mapprojax.utils import radec_to_xyz
 
     sip = _inverse_case(kind)
@@ -384,7 +386,7 @@ def test_inverse_gradients_match_finite_differences(_x64, kind):
 
     def pixels(crpix, cd_n, a_n, b_n):
         s = _with(sip, a=a_n * SIP_SCALE, b=b_n * SIP_SCALE)
-        w = TanJax(crpix, cd_n * CD0, jnp.zeros(2), sip=s)
+        w = Tan(crpix, cd_n * CD0, jnp.zeros(2), sip=s, precision="f64")
         x, y = w.native_to_pix(*native)
         return jnp.stack([x, y])
 

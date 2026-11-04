@@ -1,106 +1,33 @@
-"""
-Benchmark: Broad-scale Coordinate Transformation Efficiency
+"""Small precision-explicit WCS batching benchmark."""
 
-Tests:
-    Comparision of raw throughput for high-volume coordinate mapping (10 million total transformations)
-    between NumPy (f64), JAX Standard (f64), and JAX Mixed Precision.
-
-Workload:
-    Broadcasts 100,000 celestial points against 100 separate WCS definitions.
-"""
 import time
-import numpy as np
+
 import jax
 import jax.numpy as jnp
-from mapprojax import TanArray, TanJaxArray, TanJaxArrayMixed
+import numpy as np
 
-# Enable x64 for JAX
+from mapprojax.wcs import Tan
+
 jax.config.update("jax_enable_x64", True)
 
-def benchmark():
-    # Setup: Create a WCSArray with 100 separate WCS definitions
-    n_wcs = 100
-    crpix = [500, 500]
-    cd = [[-0.0002777, 0.0], [0.0, 0.0002777]]
-    
-    # Random centers for the WCSs
-    ra_centers = np.random.uniform(0, 360, n_wcs).reshape(-1, 1)
-    dec_centers = np.random.uniform(-90, 90, n_wcs).reshape(-1, 1)
-    
-    # Inputs: 100,000 points per WCS (Broadcasting: 100 WCS x 100,000 points = 10,000,000 calculations)
-    n_points = 100_000
-    ra_input_np = np.random.uniform(0, 360, n_points).reshape(1, -1)
-    dec_input_np = np.random.uniform(-90, 90, n_points).reshape(1, -1)
-    
-    print(f"{'Method':<20} | {'PROJ (ms)':<15} | {'UNPROJ (ms)':<15}")
-    print("-" * 55)
 
-    # --- NumPy ---
-    wcs_np = TanArray(crpix, cd, (ra_centers, dec_centers))
-    
-    start = time.time()
-    res_x, res_y = wcs_np.proj(ra_input_np, dec_input_np)
-    t_proj_np = (time.time() - start) * 1000
-    
-    start = time.time()
-    wcs_np.unproj(res_x, res_y)
-    t_unproj_np = (time.time() - start) * 1000
-    
-    print(f"{'NumPy (f64)':<20} | {t_proj_np:<15.2f} | {t_unproj_np:<15.2f}")
+def run_benchmark(n_centres=3, n_pixels=10000):
+    centres = jnp.asarray([[45.0, 30.0], [50.0, 30.0], [55.0, 30.0]])[:n_centres]
+    pixels = jnp.asarray(np.linspace(0.0, 200.0, n_pixels), dtype=jnp.float64)
 
-    # JAX inputs
-    ra_input_jax = jnp.array(ra_input_np)
-    dec_input_jax = jnp.array(dec_input_np)
+    def project(crval):
+        wcs = Tan([100.0, 100.0], [[-1e-3, 0.0], [0.0, 1e-3]], crval, precision="f64")
+        return wcs.unproj(pixels, pixels)
 
-    # --- JAX Standard (f64) ---
-    wcs_jax = TanJaxArray(crpix, cd, (ra_centers, dec_centers))
-    
-    # JIT wrap
-    proj_jit = jax.jit(wcs_jax.proj)
-    unproj_jit = jax.jit(wcs_jax.unproj)
-    
-    # Warmup
-    out_x, out_y = proj_jit(ra_input_jax, dec_input_jax)
-    out_x.block_until_ready()
-    out_ra, out_dec = unproj_jit(out_x, out_y)
-    out_ra.block_until_ready()
-    
-    start = time.time()
-    res_x, res_y = proj_jit(ra_input_jax, dec_input_jax)
-    res_x.block_until_ready()
-    t_proj_jax = (time.time() - start) * 1000
-    
-    start = time.time()
-    ra_out, dec_out = unproj_jit(res_x, res_y)
-    ra_out.block_until_ready()
-    t_unproj_jax = (time.time() - start) * 1000
-    
-    print(f"{'JAX Std (f64)':<20} | {t_proj_jax:<15.2f} | {t_unproj_jax:<15.2f}")
+    batched = jax.jit(jax.vmap(project))
+    batched(centres)[0].block_until_ready()
+    start = time.perf_counter()
+    ra, dec = batched(centres)
+    ra.block_until_ready()
+    elapsed = time.perf_counter() - start
+    print(f"{n_centres} WCS centres x {n_pixels} pixels: {elapsed * 1e3:.2f} ms")
+    return ra, dec
 
-    # --- JAX Mixed Precision ---
-    wcs_mix = TanJaxArrayMixed(crpix, cd, (ra_centers, dec_centers))
-    
-    # JIT wrap
-    proj_mix_jit = jax.jit(wcs_mix.proj)
-    unproj_mix_jit = jax.jit(wcs_mix.unproj)
-    
-    # Warmup
-    out_x, out_y = proj_mix_jit(ra_input_jax, dec_input_jax)
-    out_x.block_until_ready()
-    out_ra, out_dec = unproj_mix_jit(out_x, out_y)
-    out_ra.block_until_ready()
-    
-    start = time.time()
-    res_x, res_y = proj_mix_jit(ra_input_jax, dec_input_jax)
-    res_x.block_until_ready()
-    t_proj_mix = (time.time() - start) * 1000
-    
-    start = time.time()
-    ra_out, dec_out = unproj_mix_jit(res_x, res_y)
-    ra_out.block_until_ready()
-    t_unproj_mix = (time.time() - start) * 1000
-    
-    print(f"{'JAX Mixed':<20} | {t_proj_mix:<15.2f} | {t_unproj_mix:<15.2f}")
 
 if __name__ == "__main__":
-    benchmark()
+    run_benchmark()

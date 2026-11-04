@@ -22,9 +22,10 @@ Conventions
 
 Implementations
 ---------------
-``numpy`` (``Tan``/``Sin``), ``jax`` (``TanJax``/``SinJax``) and
-``numpy_absolute`` (the offset-form fp64 epilogue) are fp64 paths held to the
-budgets above. ``jax_mixed`` (``TanJaxMixed``/``SinJaxMixed``) is the
+``jax`` (``wcs.Tan``/``wcs.Sin`` with ``precision="f64"``) and
+``offset_host`` (f64 ``unproj_offset``/``proj_offset`` composed on the host
+with ``absolute_from_offset``/``offset_from_absolute``) are fp64 paths held
+to the budgets above. ``jax_mixed`` is the
 mixed-precision path -- fp32 pixels, ``crpix``, ``cd`` and SIP; fp64 ``crval``
 and rotation -- so it is held to a measured cap per case and metric in
 ``accuracy_baselines.json`` (``fp32`` section), not to the fp64 budgets. The
@@ -59,12 +60,12 @@ TARGET_PX = 1e-6
 
 METRIC_KEYS = {"forward": ("forward_mas", "mas"), "inverse": ("inverse_px", "px")}
 
-# Precision contracts. ``numpy``/``jax``/``numpy_absolute`` are fp64 paths and
+# Precision contracts. ``numpy``/``jax``/``offset_host`` are fp64 paths and
 # are held to the fp64 budgets. ``jax_mixed`` is the mixed-precision class:
 # fp32 pixels, ``crpix``, ``cd`` and SIP; fp64 ``crval`` and rotation --
 # a different contract, not a defect, so its limits come from measured caps for
 # both metrics (see ``budget``).
-FP64_IMPL = ("numpy", "jax", "numpy_absolute")
+FP64_IMPL = ("jax", "offset_host")
 F32_IMPL = ("jax_mixed",)
 IMPLEMENTATIONS = FP64_IMPL + F32_IMPL
 
@@ -218,13 +219,6 @@ def _params(header):
     return load_wcs_params_from_header(header)
 
 
-_CLASS_NAMES = {
-    ("numpy", "TAN"): "Tan", ("numpy", "SIN"): "Sin",
-    ("jax", "TAN"): "TanJax", ("jax", "SIN"): "SinJax",
-    ("jax_mixed", "TAN"): "TanJaxMixed", ("jax_mixed", "SIN"): "SinJaxMixed",
-}
-
-
 def _cast_sip(sip, dtype):
     if sip is None:
         return None
@@ -237,24 +231,15 @@ def _cast_sip(sip, dtype):
 
 
 def build(case: Case, backend: str):
-    """``backend``: ``numpy`` (Tan/Sin), ``jax`` (TanJax/SinJax) or
-    ``jax_mixed`` (TanJaxMixed/SinJaxMixed). The two JAX backends need x64."""
+    """Build an explicit-precision mapprojax.wcs projection."""
     crpix, cd, crval, sip = _params(case.header)
-    if backend in ("jax", "jax_mixed"):
-        from mapprojax import wcs as mp
-        cls = getattr(mp, case.proj.title())
-        precision = "f64" if backend == "jax" else "mixed"
-        if backend == "jax_mixed":
-            sip = _cast_sip(sip, np.float32)
-        return cls(crpix, cd, np.asarray(crval, dtype=np.float64),
-                   sip=sip, precision=precision)
-
-    import mapprojax as mp
+    from mapprojax import wcs as mp
+    cls = getattr(mp, case.proj.title())
+    precision = "f64" if backend in ("numpy", "jax") else "mixed"
     if backend == "jax_mixed":
-        # The Mixed constructors keep the SIP object as given; cast it the way
-        # Reprojector does so the polynomial really runs in fp32.
         sip = _cast_sip(sip, np.float32)
-    return getattr(mp, _CLASS_NAMES[backend, case.proj])(crpix, cd, crval, sip=sip)
+    return cls(crpix, cd, np.asarray(crval, dtype=np.float64),
+               sip=sip, precision=precision)
 
 
 
@@ -275,9 +260,16 @@ def run_impl(case: Case, impl: str, pix: np.ndarray, world_deg: np.ndarray):
         pix = pix.astype(np.float32)  # fp32 contract: pixels arrive as f32
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
-        if impl.endswith("_absolute"):
-            ra, dec = wcs.unproj_absolute(pix[:, 0], pix[:, 1])
-            x, y = wcs.proj_absolute(ra_in, dec_in)
+        if impl == "offset_host":
+            from mapprojax import absolute_from_offset, offset_from_absolute
+            offset = wcs.unproj_offset(pix[:, 0], pix[:, 1])
+            ra, dec = absolute_from_offset(
+                offset, crval=wcs.crval, offset_scale=wcs.offset_scale()
+            )
+            inverse_offset = offset_from_absolute(
+                (ra_in, dec_in), crval=wcs.crval, offset_scale=wcs.offset_scale()
+            )
+            x, y = wcs.proj_offset(*inverse_offset)
         else:
             ra, dec = wcs.unproj(pix[:, 0], pix[:, 1])
             x, y = wcs.proj(ra_in, dec_in)
@@ -363,7 +355,7 @@ def pair_reference(direction: str = "forward", n: int = GRID_N) -> dict:
 
 
 def reprojector(precision: str, direction: str = "forward", frame_rotation=None):
-    """``Reprojector`` for ``direction`` built from NumPy WCS legs. The
+    """``Reprojector`` for ``direction`` built from precision-aware WCSes. The
     default rotation is the astropy-derived one; pass ``frame_rotation`` to
     override (e.g. the transposed matrix as a negative control)."""
     from mapprojax import Reprojector
@@ -372,8 +364,8 @@ def reprojector(precision: str, direction: str = "forward", frame_rotation=None)
     if frame_rotation is None:
         m = galactic_to_icrs_matrix()
         frame_rotation = m.T if transpose else m
-    w_src = build(Case(src, load_header(f"{src}.hdr")), "numpy")
-    w_dst = build(Case(dst, load_header(f"{dst}.hdr")), "numpy")
+    w_src = build(Case(src, load_header(f"{src}.hdr")), "jax")
+    w_dst = build(Case(dst, load_header(f"{dst}.hdr")), "jax")
     return Reprojector(w_src, w_dst, frame_rotation=frame_rotation, matrix_precision=precision)
 
 

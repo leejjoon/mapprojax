@@ -16,11 +16,10 @@ import pytest
 from astropy.io import fits
 from astropy.wcs import WCS
 
-from mapprojax import (Reprojector, Sin, SinJax, SinJaxArray, SinJaxArrayMixed,
-                        SinJaxMixed, Tan, TanJax, TanJaxArray, TanJaxArrayMixed,
-                        TanJaxMixed)
+from mapprojax import Reprojector
 from mapprojax.sip import Sip
 from mapprojax.wcs_utils import load_wcs_params_from_header
+from mapprojax.wcs import Sin, Tan
 
 
 @pytest.fixture(autouse=True)
@@ -41,21 +40,25 @@ def _xfail(reason, raises=AssertionError):
     return pytest.mark.xfail(strict=True, raises=raises, reason=reason)
 
 
+def _precision_wcs(cls, crpix, cd, crval, sip=None, precision="f64"):
+    return cls(crpix, cd, crval, sip=sip, precision=precision)
+
+
 # --- projection domains -----------------------------------------------------
 
-@pytest.mark.parametrize("cls", [Tan, TanJax, Sin, SinJax], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
 @pytest.mark.parametrize("sep_deg", [135.0, 179.99])
 def test_back_hemisphere_is_not_a_valid_pixel(cls, sep_deg):
     """Outside the domain the contract is NaN, not merely "not finite"."""
-    wcs = cls([0.0, 0.0], CD, [0.0, 0.0])
+    wcs = _precision_wcs(cls, [0.0, 0.0], CD, [0.0, 0.0])
     x, y = wcs.proj(np.radians(sep_deg), 0.0)
     assert np.isnan(x) and np.isnan(y), (x, y)
 
 
-@pytest.mark.parametrize("cls", [Tan, TanJax, Sin, SinJax], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
 def test_mixed_valid_invalid_batch(cls):
     """Validity is per sample: masking one pixel must not spoil the others."""
-    wcs = cls([0.0, 0.0], CD, [0.0, 0.0])
+    wcs = _precision_wcs(cls, [0.0, 0.0], CD, [0.0, 0.0])
     sep = np.array([10.0, 135.0, 20.0, 179.99, 5.0])
     x, y = wcs.proj(np.radians(sep), np.zeros_like(sep))
     good = np.array([True, False, True, False, True])
@@ -64,22 +67,22 @@ def test_mixed_valid_invalid_batch(cls):
     assert np.all(np.isnan(y[~good])), y
 
 
-@pytest.mark.parametrize("cls", [Tan, TanJax, Sin, SinJax], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
 def test_front_hemisphere_is_finite(cls):
-    wcs = cls([0.0, 0.0], CD, [0.0, 0.0])
+    wcs = _precision_wcs(cls, [0.0, 0.0], CD, [0.0, 0.0])
     x, y = wcs.proj(np.radians(10.0), np.radians(-5.0))
     assert np.isfinite(x) and np.isfinite(y)
 
 
 def test_tan_native_horizon_is_nan():
     # xn == 0 exactly: the tangent plane is at infinity.
-    wcs = Tan([0.0, 0.0], CD, [0.0, 0.0])
+    wcs = _precision_wcs(Tan, [0.0, 0.0], CD, [0.0, 0.0])
     x, y = wcs.native_to_pix(np.array(0.0), np.array(1.0), np.array(0.0))
     assert np.isnan(x) and np.isnan(y)
 
 
 def test_sin_plane_outside_unit_disc_is_nan_and_boundary_is_valid():
-    wcs = Sin([0.0, 0.0], CD, [0.0, 0.0])
+    wcs = _precision_wcs(Sin, [0.0, 0.0], CD, [0.0, 0.0])
     r_px = np.degrees(1.0) / CD[1][1]  # plane radius 1 in pixels
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
@@ -97,11 +100,11 @@ BAD_CD = {
 }
 
 
-@pytest.mark.parametrize("cls", [Tan, TanJax], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", [Tan], ids=lambda c: c.__name__)
 @pytest.mark.parametrize("kind", list(BAD_CD))
 def test_concrete_bad_cd_is_rejected_at_construction(cls, kind):
     try:
-        cls([0.0, 0.0], BAD_CD[kind], [0.0, 0.0])
+        _precision_wcs(cls, [0.0, 0.0], BAD_CD[kind], [0.0, 0.0])
     except ValueError:
         rejected = True
     else:
@@ -115,7 +118,8 @@ def test_traced_bad_cd_yields_nan(kind):
     # valid finite pair. How far NaN spreads is backend-dependent (a NaN CD
     # poisons both coordinates on ROCm but only x on CPU), so only require
     # that the pair is invalid.
-    f = jax.jit(lambda cd: TanJax(jnp.zeros(2), cd, jnp.zeros(2)).proj(1e-3, 1e-3))
+    f = jax.jit(lambda cd: _precision_wcs(Tan, jnp.zeros(2), cd,
+                                          jnp.zeros(2)).proj(1e-3, 1e-3))
     x, y = f(jnp.asarray(BAD_CD[kind]))
     assert not (np.isfinite(x) and np.isfinite(y))
 
@@ -142,7 +146,7 @@ def test_ab_only_forward_matches_astropy():
     crpix, cd, crval, sip = load_wcs_params_from_header(h)
     assert sip.ap is None and sip.bp is None
     ra, dec = WCS(h).all_pix2world(PIX, 0).T
-    ra_m, dec_m = Tan(crpix, cd, crval, sip=sip).unproj(PIX[:, 0], PIX[:, 1])
+    ra_m, dec_m = _precision_wcs(Tan, crpix, cd, crval, sip=sip).unproj(PIX[:, 0], PIX[:, 1])
     np.testing.assert_allclose(np.degrees(ra_m), ra, rtol=0, atol=1e-10)
     np.testing.assert_allclose(np.degrees(dec_m), dec, rtol=0, atol=1e-10)
 
@@ -151,15 +155,15 @@ def test_ab_only_inverse_matches_astropy():
     h = _ab_only_header()
     crpix, cd, crval, sip = load_wcs_params_from_header(h)
     ra, dec = WCS(h).all_pix2world(PIX, 0).T
-    x, y = Tan(crpix, cd, crval, sip=sip).proj(np.radians(ra), np.radians(dec))
+    x, y = _precision_wcs(Tan, crpix, cd, crval, sip=sip).proj(np.radians(ra), np.radians(dec))
     np.testing.assert_allclose(np.column_stack([x, y]), PIX, rtol=0, atol=1e-6)
 
 
 # --- PyTree reconstruction ---------------------------------------------------
 
-@pytest.mark.parametrize("cls", [TanJax, SinJax], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
 def test_eval_shape_on_jax_wcs(cls):
-    wcs = cls([0.0, 0.0], CD, [0.0, 0.0])
+    wcs = _precision_wcs(cls, [0.0, 0.0], CD, [0.0, 0.0])
     out = jax.eval_shape(lambda w: w, wcs)
     assert out.crpix.shape == (2,)
     assert out.crval.shape == (2,)
@@ -168,10 +172,10 @@ def test_eval_shape_on_jax_wcs(cls):
 def test_unflatten_preserves_leaf_dtypes():
     """No re-cast on reconstruction: leaves come back exactly as they went in.
 
-    Construction itself promotes to f64 (``WCSBase.__init__`` uses
-    ``dtype=float``), so the invariant is round-trip stability, not f32.
+    The f64 mode stores its native pipeline and reference values in float64;
+    the invariant is round-trip stability without reconstruction casts.
     """
-    wcs = TanJax([0.0, 0.0], CD, [180.0, 0.0])
+    wcs = _precision_wcs(Tan, [0.0, 0.0], CD, [180.0, 0.0])
     leaves, treedef = jax.tree_util.tree_flatten(wcs)
     back = jax.tree_util.tree_unflatten(treedef, leaves)
     for name in ("crpix", "cd", "crval"):
@@ -187,8 +191,9 @@ def test_unflatten_does_not_promote_f32_leaves():
     the unflatten path in isolation.
     """
     f32 = lambda a: jnp.asarray(a, dtype=jnp.float32)
-    wcs = TanJax.__new__(TanJax)
+    wcs = Tan.__new__(Tan)
     wcs.crpix, wcs.cd, wcs.crval, wcs.sip = f32([0.0, 0.0]), f32(CD), f32([180.0, 0.0]), None
+    wcs.precision = "f64"
     leaves, treedef = jax.tree_util.tree_flatten(wcs)
     back = jax.tree_util.tree_unflatten(treedef, leaves)
     for name in ("crpix", "cd", "crval"):
@@ -197,7 +202,7 @@ def test_unflatten_does_not_promote_f32_leaves():
 
 def test_tree_map_cast_moves_every_leaf():
     """A pytree-level cast reaches crpix, cd and crval alike."""
-    wcs = TanJax([0.0, 0.0], CD, [180.0, 0.0])
+    wcs = _precision_wcs(Tan, [0.0, 0.0], CD, [180.0, 0.0])
     cast = jax.tree_util.tree_map(lambda a: jnp.asarray(a, dtype=jnp.float32), wcs)
     for name in ("crpix", "cd", "crval"):
         assert getattr(cast, name).dtype == jnp.float32, name
@@ -206,7 +211,7 @@ def test_tree_map_cast_moves_every_leaf():
 def test_crval_gradient_survives_the_pytree():
     """r_matrix is derived, not a stored leaf, so crval stays differentiable."""
     def f(crval):
-        wcs = TanJax([0.0, 0.0], CD, crval)
+        wcs = _precision_wcs(Tan, [0.0, 0.0], CD, crval)
         ra, _ = wcs.unproj(jnp.array(10.0), jnp.array(10.0))
         return ra
 
@@ -215,10 +220,10 @@ def test_crval_gradient_survives_the_pytree():
     assert np.any(np.abs(grad) > 1e-9), f"crval gradient was zeroed: {grad}"
 
 
-@pytest.mark.parametrize("cls", [TanJax, SinJax], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
 def test_jit_and_vmap_over_parameters(cls):
     def state(crpix):
-        wcs = cls(crpix, CD, [180.0, 0.0])
+        wcs = _precision_wcs(cls, crpix, CD, [180.0, 0.0])
         ra, dec = wcs.unproj(jnp.array(10.0), jnp.array(10.0))
         return ra, dec
 
@@ -228,9 +233,9 @@ def test_jit_and_vmap_over_parameters(cls):
     assert np.asarray(vmapped[0]).shape == (3,)
 
 
-@pytest.mark.parametrize("cls", [TanJaxMixed, SinJaxMixed], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
 def test_mixed_unflatten_keeps_the_precision_split(cls):
-    wcs = cls([0.0, 0.0], CD, [180.0, 0.0])
+    wcs = _precision_wcs(cls, [0.0, 0.0], CD, [180.0, 0.0], precision="mixed")
     leaves, treedef = jax.tree_util.tree_flatten(wcs)
     back = jax.tree_util.tree_unflatten(treedef, leaves)
     assert back.crpix.dtype == jnp.float32
@@ -238,21 +243,25 @@ def test_mixed_unflatten_keeps_the_precision_split(cls):
     assert back.crval.dtype == jnp.float64
 
 
-def test_array_unflatten_preserves_dtypes():
-    crvals = (jnp.asarray([180.0, 181.0]), jnp.asarray([0.0, 1.0]))
-    wcs = TanJaxArray(jnp.asarray([0.0, 0.0]), jnp.asarray(CD), crvals)
-    leaves, treedef = jax.tree_util.tree_flatten(wcs)
-    back = jax.tree_util.tree_unflatten(treedef, leaves)
-    for name in ("crpix", "cd"):
-        assert getattr(back, name).dtype == getattr(wcs, name).dtype, name
-    for got, want in zip(back.crvals, wcs.crvals):
-        assert got.dtype == want.dtype
+def test_vmap_over_stacked_wcs_replaces_array_classes():
+    wcses = [
+        _precision_wcs(Tan, [0.0, 0.0], CD, [180.0, 0.0]),
+        _precision_wcs(Tan, [0.0, 0.0], CD, [181.0, 1.0]),
+    ]
+    stacked = jax.tree_util.tree_map(lambda *values: jnp.stack(values), *wcses)
+    pixels = (jnp.asarray([5.0, 20.0, 30.0]), jnp.asarray([10.0, 15.0, 25.0]))
+    got = jax.vmap(lambda w: w.unproj(*pixels), in_axes=0, out_axes=1)(stacked)
+    assert np.asarray(got[0]).shape == (3, 2)
+    for index, wcs in enumerate(wcses):
+        expected = wcs.unproj(*pixels)
+        for actual, value in zip(got, expected):
+            np.testing.assert_array_equal(np.asarray(actual[:, index]), np.asarray(value))
 
 
 def test_sip_survives_unflatten():
     a = np.zeros((3, 3)); a[2, 0] = 1e-5
     sip = Sip(a=a)
-    wcs = TanJax([0.0, 0.0], CD, [180.0, 0.0], sip=sip)
+    wcs = _precision_wcs(Tan, [0.0, 0.0], CD, [180.0, 0.0], sip=sip)
     leaves, treedef = jax.tree_util.tree_flatten(wcs)
     back = jax.tree_util.tree_unflatten(treedef, leaves)
     np.testing.assert_array_equal(np.asarray(back.sip.a), a)
@@ -264,7 +273,7 @@ def test_sip_survives_unflatten():
 MIXED_SEP = np.radians(np.array([10.0, 135.0, 20.0, 179.99, 5.0]))
 
 
-@pytest.mark.parametrize("cls", [TanJax, SinJax], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
 def test_masked_loss_keeps_parameter_gradients_finite(cls):
     """A NaN reaching the CD multiply poisons its pullback (0 * NaN = NaN).
 
@@ -274,12 +283,12 @@ def test_masked_loss_keeps_parameter_gradients_finite(cls):
     cd = jnp.asarray(CD)
 
     def loss_cd(cd_):
-        wcs = cls(jnp.zeros(2), cd_, jnp.zeros(2))
+        wcs = _precision_wcs(cls, jnp.zeros(2), cd_, jnp.zeros(2))
         x, y = wcs.proj(MIXED_SEP, jnp.zeros_like(MIXED_SEP))
         return jnp.nansum(x) + jnp.nansum(y)
 
     def loss_crval(crval_):
-        wcs = cls(jnp.zeros(2), cd, crval_)
+        wcs = _precision_wcs(cls, jnp.zeros(2), cd, crval_)
         x, _ = wcs.proj(MIXED_SEP, jnp.zeros_like(MIXED_SEP))
         return jnp.nansum(x)
 
@@ -292,7 +301,7 @@ def test_masked_loss_keeps_sip_gradients_finite():
     a = jnp.zeros((3, 3)).at[2, 0].set(1e-5)
 
     def loss(a_):
-        wcs = TanJax(jnp.zeros(2), jnp.asarray(CD), jnp.zeros(2), sip=Sip(a=a_))
+        wcs = _precision_wcs(Tan, jnp.zeros(2), jnp.asarray(CD), jnp.zeros(2), sip=Sip(a=a_))
         x, _ = wcs.proj(MIXED_SEP, jnp.zeros_like(MIXED_SEP))
         return jnp.nansum(x)
 
@@ -304,7 +313,7 @@ def test_gradients_are_finite_inside_the_domain():
     sep = np.radians(np.array([1.0, 5.0, 10.0]))
 
     def loss(a_):
-        wcs = TanJax(jnp.zeros(2), jnp.asarray(CD), jnp.zeros(2), sip=Sip(a=a_))
+        wcs = _precision_wcs(Tan, jnp.zeros(2), jnp.asarray(CD), jnp.zeros(2), sip=Sip(a=a_))
         x, y = wcs.proj(sep, np.zeros_like(sep))
         return jnp.sum(x ** 2 + y ** 2)
 
@@ -314,7 +323,7 @@ def test_gradients_are_finite_inside_the_domain():
 
 def test_sin_inverse_domain_is_nan_outside_the_unit_disc():
     """SIN's inverse is bounded (X^2 + Y^2 <= 1); TAN's is not."""
-    wcs = SinJax(jnp.zeros(2), jnp.asarray(CD), jnp.zeros(2))
+    wcs = _precision_wcs(Sin, jnp.zeros(2), jnp.asarray(CD), jnp.zeros(2))
     r_px = np.degrees(2.0) / CD[1][1]  # 2 rad > 1 rad limb
     ra, dec = wcs.unproj(jnp.asarray([r_px, 0.0]), jnp.asarray([0.0, 0.0]))
     assert np.isnan(np.asarray(ra)[0]) and np.isnan(np.asarray(dec)[0])
@@ -324,14 +333,14 @@ def test_sin_inverse_domain_is_nan_outside_the_unit_disc():
 def test_tan_inverse_has_no_radius_limit():
     """TAN's inverse is finite for every finite pixel, so a "far" pixel is
     still valid there -- unlike SIN."""
-    wcs = TanJax(jnp.zeros(2), jnp.asarray(CD), jnp.zeros(2))
+    wcs = _precision_wcs(Tan, jnp.zeros(2), jnp.asarray(CD), jnp.zeros(2))
     r_px = np.degrees(2.0) / CD[1][1]
     ra, dec = wcs.unproj(jnp.asarray(r_px), jnp.asarray(0.0))
     assert np.isfinite(np.asarray(ra)) and np.isfinite(np.asarray(dec))
 
 
 def test_offset_apis_are_nan_outside_the_domain():
-    wcs = Tan([0.0, 0.0], CD, [0.0, 0.0])
+    wcs = _precision_wcs(Tan, [0.0, 0.0], CD, [0.0, 0.0])
     ra_bad = np.radians(135.0)
     dalpha, ddelta = wcs.unproj_offset(np.array([np.degrees(1.0) / CD[1][1]]), np.array([0.0]))
     assert np.all(np.isfinite(dalpha))
@@ -348,8 +357,8 @@ def test_reprojector_masks_invalid_source_pixels():
     """
     from mapprojax import Reprojector
 
-    src = Sin(np.zeros(2), CD, [0.0, 0.0])
-    tgt = Sin(np.zeros(2), CD, [0.0, 0.0])
+    src = _precision_wcs(Sin, np.zeros(2), CD, [0.0, 0.0])
+    tgt = _precision_wcs(Sin, np.zeros(2), CD, [0.0, 0.0])
     rp = Reprojector(src, tgt)
     r_px = np.degrees(1.0) / CD[1][1]  # the unit disc in pixels
     x, y = rp.pix_to_pix(np.array([0.0, r_px * 1.01, r_px * 0.5]), np.zeros(3))
@@ -401,13 +410,13 @@ METHODS = ["proj", "proj_xyz", "proj_offset", "native_to_pix",
 
 @pytest.mark.parametrize("with_sip", [False, True], ids=["nosip", "sip"])
 @pytest.mark.parametrize("method", METHODS)
-@pytest.mark.parametrize("cls", [TanJax, SinJax], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
 def test_masked_loss_gradients_are_finite_everywhere(cls, method, with_sip):
     crval = jnp.asarray([10.0, 20.0])
 
     def build(params):
         sip = Sip(a=params["a"], b=params["b"]) if with_sip else None
-        return cls(params["crpix"], params["cd"], params["crval"], sip=sip)
+        return _precision_wcs(cls, params["crpix"], params["cd"], params["crval"], sip=sip)
 
     params = {"crpix": jnp.asarray([3.0, -2.0]), "cd": jnp.asarray(CD), "crval": crval,
               "a": jnp.asarray(SIP_A), "b": jnp.asarray(SIP_B)}
@@ -420,9 +429,9 @@ def test_masked_loss_gradients_are_finite_everywhere(cls, method, with_sip):
         assert np.all(np.isfinite(np.asarray(g))), f"{cls.__name__}.{method} d/d{name}: {g}"
 
 
-@pytest.mark.parametrize("cls", [TanJax, SinJax], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
 def test_masked_loss_pixel_gradients_are_finite(cls):
-    w = cls(jnp.zeros(2), jnp.asarray(CD), jnp.asarray([10.0, 20.0]),
+    w = _precision_wcs(cls, jnp.zeros(2), jnp.asarray(CD), jnp.asarray([10.0, 20.0]),
             sip=Sip(a=jnp.asarray(SIP_A), b=jnp.asarray(SIP_B)))
     gx, gy = jax.grad(lambda x, y: _masked(w.unproj(x, y)), argnums=(0, 1))(
         jnp.asarray(PIX_X), jnp.asarray(PIX_Y))
@@ -433,7 +442,7 @@ def test_masked_gradient_of_a_valid_sample_ignores_its_invalid_neighbours():
     """Masking must not just make gradients finite but leave the valid
     samples' contribution exactly as if the invalid ones were absent."""
     def loss(cd, xs, ys):
-        w = SinJax(jnp.zeros(2), cd, jnp.asarray([10.0, 20.0]))
+        w = _precision_wcs(Sin, jnp.zeros(2), cd, jnp.asarray([10.0, 20.0]))
         return _masked(w.unproj(xs, ys))
 
     ok = np.isfinite(PIX_X) & (np.abs(PIX_X) < R_PX)
@@ -456,7 +465,8 @@ def test_invalid_standin_never_hits_a_spherical_singularity(method, crval, bad_p
     ys = jnp.asarray([10.0, bad_pixel[1]])
 
     def loss(c, x, y):
-        return _masked(getattr(SinJax(jnp.zeros(2), jnp.eye(2) * 1e-3, c), method)(x, y))
+        wcs = _precision_wcs(Sin, jnp.zeros(2), jnp.eye(2) * 1e-3, c)
+        return _masked(getattr(wcs, method)(x, y))
 
     c = jnp.asarray(crval)
     mixed = jax.grad(loss)(c, xs, ys)
@@ -486,7 +496,8 @@ def test_nan_pixel_standin_cannot_land_on_the_sin_limb():
     xs, ys = jnp.asarray([10.0, np.nan]), jnp.asarray([R + 10.0, 0.0])
 
     def loss(p, x, y):
-        return _masked(SinJax(p["crpix"], p["cd"], jnp.zeros(2)).unproj(x, y))
+        wcs = _precision_wcs(Sin, p["crpix"], p["cd"], jnp.zeros(2))
+        return _masked(wcs.unproj(x, y))
 
     params = {"crpix": jnp.asarray([0.0, R]), "cd": jnp.eye(2)}
     _assert_mixed_equals_alone(loss, params, (xs, ys), (xs[:1], ys[:1]))
@@ -500,8 +511,8 @@ def test_invalid_source_sample_never_reaches_target_arithmetic(precision):
     a = np.zeros((4, 4)); a[2, 0] = 1e-7; a[0, 3] = 1e-10
     b = np.zeros((4, 4)); b[0, 2] = 1e-7; b[3, 0] = 1e-10
     cd = np.eye(2) * 1e-3
-    src = Sin(np.zeros(2), cd, [0.0, 0.0])
-    tgt = Tan(np.zeros(2), cd, [0.0, 0.02], sip=Sip(a=a, b=b))
+    src = _precision_wcs(Sin, np.zeros(2), cd, [0.0, 0.0])
+    tgt = _precision_wcs(Tan, np.zeros(2), cd, [0.0, 0.02], sip=Sip(a=a, b=b))
     rp = Reprojector(src, tgt, matrix_precision=precision)
     bad = 1.5 * np.degrees(1.0) / 1e-3
     xs, ys = jnp.asarray([10.0, 0.0]), jnp.asarray([10.0, bad])
@@ -530,8 +541,8 @@ def test_reprojector_masked_gradients_for_both_legs(proj_cls, precision):
     """The source leg's invalid output is the target leg's input; it must
     reach the target leg as a flag, not as NaN."""
     sip = Sip(a=SIP_A, b=SIP_B)
-    src = proj_cls([3.0, -2.0], CD, [10.0, 20.0], sip=sip)
-    tgt = proj_cls([-4.0, 6.0], CD, [10.05, 20.02], sip=sip)
+    src = _precision_wcs(proj_cls, [3.0, -2.0], CD, [10.0, 20.0], sip=sip)
+    tgt = _precision_wcs(proj_cls, [-4.0, 6.0], CD, [10.05, 20.02], sip=sip)
     rp = Reprojector(src, tgt, matrix_precision=precision)
     xs, ys = jnp.asarray(PIX_X), jnp.asarray(PIX_Y)
 
@@ -578,7 +589,7 @@ def test_singular_cd_is_rejected_at_construction():
     # Exactly singular in fp64 already: the ordinary rejection.
     cd = [[1e-3, 0.0], [1e-3 + 1e-12, 0.0]]
     with pytest.raises(ValueError):
-        Tan(np.zeros(2), cd, np.zeros(2))
+        Tan(np.zeros(2), cd, np.zeros(2), precision="f64")
 
 
 # Invertible in fp64 (det ~ 1e-14), singular once cast to f32 (1 + 1e-8 == 1).
@@ -587,24 +598,20 @@ CAST_LOSS_CD = [[1e-3, 1e-3], [1e-3, 1e-3 * (1 + 1e-8)]]
 
 def test_matrix_that_loses_rank_when_cast_to_f32_is_rejected():
     """The check runs on the stored (cast) matrix, wherever the cast happens."""
-    from mapprojax import Reprojector
-
-    fp64 = Tan(np.zeros(2), CAST_LOSS_CD, np.zeros(2))  # valid in fp64
+    fp64 = Tan(np.zeros(2), CAST_LOSS_CD, np.zeros(2), precision="f64")
     Reprojector(fp64, fp64, matrix_precision="f64")      # and in an f64 leg
     with pytest.raises(ValueError):
         Reprojector(fp64, fp64, matrix_precision="f32")
     with pytest.raises(ValueError):
-        TanJaxMixed(np.zeros(2), CAST_LOSS_CD, np.zeros(2))
+        Tan(np.zeros(2), CAST_LOSS_CD, np.zeros(2), precision="mixed")
 
 
-@pytest.mark.parametrize("cls", [TanJaxMixed, SinJaxMixed, TanJaxArrayMixed, SinJaxArrayMixed],
-                         ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
 @pytest.mark.parametrize("kind", ["singular", "nan"])
 def test_mixed_constructors_reject_bad_cd(cls, kind):
     cd = BAD_CD[kind]
-    crval = (np.zeros(1), np.zeros(1)) if "Array" in cls.__name__ else np.zeros(2)
     with pytest.raises(ValueError):
-        cls(np.zeros(2), cd, crval)
+        _precision_wcs(cls, np.zeros(2), cd, np.zeros(2), precision="mixed")
 
 
 def test_cd_inverse_is_finite_on_the_invalid_branch():
@@ -619,7 +626,7 @@ def test_cd_inverse_is_finite_on_the_invalid_branch():
 @pytest.mark.parametrize("cd", [[[np.inf, 0.0], [0.0, 1e-3]], BAD_CD["nan"]], ids=["inf", "nan"])
 def test_masked_gradient_wrt_non_finite_cd_is_finite(impl, cd):
     def loss(cd):
-        w = TanJax(jnp.zeros(2), cd, jnp.zeros(2))
+        w = _precision_wcs(Tan, jnp.zeros(2), cd, jnp.zeros(2))
         out = (w.proj(jnp.array([1e-3]), jnp.array([1e-3])) if impl == "proj"
                else w.unproj(jnp.array([10.0]), jnp.array([20.0])))
         return sum(jnp.sum(jnp.where(jnp.isfinite(o), o, 0.0)) for o in out)
@@ -635,8 +642,10 @@ def test_traced_bad_cd_is_nan_in_both_directions(impl, kind):
     inverts, so it needs its own validity test -- otherwise a singular CD
     yields a finite, meaningless native vector."""
     if impl == "proj":
-        f = jax.jit(lambda cd: TanJax(jnp.zeros(2), cd, jnp.zeros(2)).proj(1e-3, 1e-3))
+        f = jax.jit(lambda cd: _precision_wcs(Tan, jnp.zeros(2), cd,
+                                              jnp.zeros(2)).proj(1e-3, 1e-3))
     else:
-        f = jax.jit(lambda cd: TanJax(jnp.zeros(2), cd, jnp.zeros(2)).unproj(10.0, 20.0))
+        f = jax.jit(lambda cd: _precision_wcs(Tan, jnp.zeros(2), cd,
+                                              jnp.zeros(2)).unproj(10.0, 20.0))
     out = f(jnp.asarray(BAD_CD[kind]))
     assert all(np.isnan(np.asarray(v)) for v in out), out

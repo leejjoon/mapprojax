@@ -15,7 +15,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from jax.tree_util import register_pytree_node_class
-from mapprojax.jax_projections import TanJax, SinJax
+from mapprojax.wcs import Tan, Sin
 from mapprojax.utils import apply_rotation
 
 # Enable x64 globally for JAX
@@ -71,8 +71,8 @@ def run_benchmark():
         y_jax = jnp.array(y_np)
         
         # WCS Objects
-        wcs_src = SinJax(crpix_src, cd_src, crval_src)
-        wcs_tgt = TanJax(crpix_tgt, cd_tgt, crval_tgt)
+        wcs_src = Sin(crpix_src, cd_src, crval_src, precision="f64")
+        wcs_tgt = Tan(crpix_tgt, cd_tgt, crval_tgt, precision="f64")
         
         # Precompute Combined Rotation for Optimized Path
         # Note: In the example script, I mapped Output -> Input.

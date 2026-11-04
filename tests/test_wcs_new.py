@@ -217,6 +217,55 @@ def test_new_wcs_works_as_jit_argument_and_closed_over(x64_enabled):
         np.testing.assert_array_equal(left, right)
 
 
+@pytest.mark.parametrize("cls", [Tan, Sin])
+def test_vmap_pixel_grid_paired_samples_and_shared_grid_axes(cls, x64_enabled):
+    wcses = [
+        cls([0.0, 0.0], CD, centre, precision="f64")
+        for centre in ([180.0, 30.0], [40.0, -20.0])
+    ]
+    batched_wcs = jax.tree_util.tree_map(
+        lambda *leaves: jnp.stack(leaves), *wcses
+    )
+    px = jnp.asarray([1.0, 2.0, 3.0], dtype=jnp.float64)
+    py = jnp.asarray([-2.0, 0.0, 4.0], dtype=jnp.float64)
+
+    # One WCS over a pixel grid: normal broadcasting and explicit vmap agree.
+    broadcast = wcses[0].unproj(px, py)
+    one_wcs = jax.vmap(
+        lambda x, y: wcses[0].unproj(x, y), in_axes=(0, 0), out_axes=0
+    )(px, py)
+    for expected, got in zip(broadcast, one_wcs):
+        np.testing.assert_array_equal(expected, got)
+
+    # Paired WCSes and samples: one output per input pair, shape (samples,).
+    paired_x, paired_y = px[:2], py[:2]
+    paired = jax.vmap(
+        lambda w, x, y: w.unproj(x, y), in_axes=(0, 0, 0), out_axes=0
+    )(batched_wcs, paired_x, paired_y)
+    paired_expected = tuple(
+        jnp.stack([
+            wcs.unproj(x, y)[axis]
+            for wcs, x, y in zip(wcses, paired_x, paired_y)
+        ])
+        for axis in range(2)
+    )
+    for expected, got in zip(paired_expected, paired):
+        np.testing.assert_array_equal(expected, got)
+
+    # Many WCSes over one shared grid: out_axes=1 yields (pixels, centres);
+    # the default out_axes=0 yields (centres, pixels).
+    shared = jax.vmap(
+        lambda w: w.unproj(px, py), in_axes=0, out_axes=1
+    )(batched_wcs)
+    centres_first = jax.vmap(
+        lambda w: w.unproj(px, py), in_axes=0, out_axes=0
+    )(batched_wcs)
+    assert shared[0].shape == shared[1].shape == (px.size, len(wcses))
+    assert centres_first[0].shape == centres_first[1].shape == (len(wcses), px.size)
+    for pixels_by_centre, centres_by_pixel in zip(shared, centres_first):
+        np.testing.assert_array_equal(pixels_by_centre.T, centres_by_pixel)
+
+
 def test_numeric_leaf_changes_do_not_change_jit_structure(x64_enabled):
     wcs = Tan([0.0, 0.0], CD, [180.0, 30.0], precision="mixed")
     other = Tan([1.0, 1.0], CD, [180.0, 30.0], precision="mixed")

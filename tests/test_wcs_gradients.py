@@ -1,6 +1,6 @@
-"""Gradient smoke test: TanJax + SIP pixel->sky, differentiated with respect
+"""Gradient smoke test: `Tan(precision="f64")` + SIP pixel->sky, differentiated with respect
 to every WCS parameter (crpix, cd, crval, SIP a/b) and checked against finite
-differences in forward and reverse mode. The full gradient matrix is Stage 4.
+differences in forward and reverse mode. Per-mode checks are in test_gradients_modes.py.
 
 Each parameter is perturbed as ``base + scale * delta`` and the output is the
 sky offset from CRVAL in arcsec, so every Jacobian block is O(1-10) arcsec per
@@ -24,7 +24,7 @@ import numpy as np
 import pytest
 from jax.test_util import check_grads
 
-from mapprojax import TanJax
+from mapprojax.wcs import Tan
 from mapprojax.sip import Sip
 
 
@@ -55,10 +55,10 @@ def _problem():
     scale = dict(crpix=1.0, cd=1e-3, crval=1e-3, a=sip_scale, b=sip_scale)
 
     def sky_offset_arcsec(d):
-        wcs = TanJax(
+        wcs = Tan(
             crpix + scale["crpix"] * d["crpix"],
             cd * (1.0 + scale["cd"] * d["cd"]),
-            crval + scale["crval"] * d["crval"],
+            crval + scale["crval"] * d["crval"], precision="f64",
             sip=Sip(a=a + scale["a"] * d["a"], b=b + scale["b"] * d["b"]),
         )
         ra, dec = wcs.unproj(pix[:, 0], pix[:, 1])

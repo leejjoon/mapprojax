@@ -2,8 +2,10 @@ from abc import ABC, abstractmethod
 
 import jax
 import numpy as np
-from .utils import radec_to_xyz, xyz_to_radec, rotation_matrix, apply_rotation, apply_rotation_transpose
-from .sip import Sip
+from .utils import (
+    radec_to_xyz, xyz_to_radec, apply_rotation, apply_rotation_transpose,
+    _check_sequence_components,
+)
 
 
 def _check_cd(cd):
@@ -84,9 +86,158 @@ def _cd_inverse(cd, xp=np):
     return cd_inv, valid
 
 
+def _host_array(value, name):
+    """Transfer a concrete value to NumPy, rejecting traced host work."""
+    if isinstance(value, jax.core.Tracer):
+        raise TypeError(f"{name} is host-only and cannot be used with a JAX tracer")
+    try:
+        return np.asarray(value)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(f"{name} must be a concrete host value") from exc
+
+
+def _host_crval(crval):
+    _check_sequence_components(crval, "crval")
+    crval = _host_array(crval, "crval")
+    if crval.shape != (2,):
+        raise ValueError(f"crval must have shape (2,), got {crval.shape}")
+    if crval.dtype != np.dtype(np.float64):
+        raise TypeError(f"crval must be float64, got {crval.dtype}")
+    return crval
+
+
+def _host_offset_scale(offset_scale):
+    offset_scale = _host_array(offset_scale, "offset_scale")
+    if offset_scale.shape != ():
+        raise ValueError(
+            f"offset_scale must be a scalar, got shape {offset_scale.shape}"
+        )
+    if offset_scale.dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
+        raise TypeError(
+            "offset_scale must have float32 or float64 dtype, "
+            f"got {offset_scale.dtype}"
+        )
+    return offset_scale
+
+
+def _host_pair(values, name):
+    try:
+        first, second = values
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must contain two components") from exc
+    return first, second
+
+
+def _host_offset_component(value, name, dtype):
+    value = _host_array(value, name)
+    if value.dtype != dtype:
+        raise TypeError(
+            f"{name} dtype {value.dtype} does not match offset_scale dtype {dtype}"
+        )
+    return value
+
+
+def _host_sky_component(value, name):
+    value = _host_array(value, name)
+    if value.dtype.kind not in "fiu":
+        raise TypeError(f"{name} must contain real numeric coordinates")
+    return value.astype(np.float64, copy=False)
+
+
+def absolute_from_offset(offset, *, crval, offset_scale):
+    """Compose a producer-typed sky offset into absolute host coordinates.
+
+    ``offset`` is the ``(Delta_lon * cos(lat0), Delta_lat)`` pair in radians
+    returned by ``unproj_offset``. The keyword-only ``crval`` is a concrete
+    float64 ``(lon, lat)`` pair in degrees, and ``offset_scale`` is the
+    producer's ``offset_scale()``. Both offset components must have that
+    scale's float dtype. Passing the scale is important near the
+    poles: recomputing a float64 cosine would not undo the scaling actually
+    used by a float32 producer. Python float offsets are therefore accepted
+    only with a float64 scale.
+
+    The result is a pair of NumPy float64 arrays, with longitude wrapped to
+    ``[0, 2*pi)``. This host transfer is not JIT- or autodiff-compatible. At
+    an exactly zero scale, longitude is undefined and returned as NaN rather
+    than being fabricated; latitude remains available.
+    """
+    reference = _host_crval(crval)
+    scale = _host_offset_scale(offset_scale)
+    scale_dtype = scale.dtype
+    dlon_coslat, dlat = _host_pair(offset, "offset")
+    dlon_coslat = _host_offset_component(dlon_coslat, "longitude offset", scale_dtype)
+    dlat = _host_offset_component(dlat, "latitude offset", scale_dtype)
+    dlon_coslat, dlat = np.broadcast_arrays(dlon_coslat, dlat)
+
+    valid = (
+        np.isfinite(dlon_coslat)
+        & np.isfinite(dlat)
+        & np.isfinite(reference).all()
+        & np.isfinite(scale)
+    )
+    safe_dlon_coslat = np.where(valid, dlon_coslat, np.asarray(0, dtype=scale_dtype))
+    safe_dlat = np.where(valid, dlat, np.asarray(0, dtype=scale_dtype))
+    has_longitude_scale = bool(scale != 0)
+    safe_scale = scale if has_longitude_scale else np.asarray(1, dtype=scale_dtype)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        dlon = (
+            safe_dlon_coslat.astype(np.float64)
+            / np.asarray(safe_scale, dtype=np.float64)
+        )
+
+    lon0, lat0 = np.radians(reference)
+    lon = np.mod(lon0 + dlon.astype(np.float64), 2 * np.pi)
+    lat = lat0 + safe_dlat.astype(np.float64)
+    lon = np.where(valid & has_longitude_scale, lon, np.nan)
+    lat = np.where(valid, lat, np.nan)
+    return np.asarray(lon, dtype=np.float64), np.asarray(lat, dtype=np.float64)
+
+
+def offset_from_absolute(absolute, *, crval, offset_scale):
+    """Convert absolute host sky coordinates to producer-typed offsets.
+
+    ``absolute`` is the ``(lon, lat)`` pair in radians. The keyword-only
+    ``crval`` is a concrete float64 ``(lon, lat)`` pair in degrees, and
+    ``offset_scale`` is the consuming WCS's ``offset_scale()``. Longitude wrapping and
+    the subtraction from ``crval`` happen in float64 before the differences
+    are cast to ``offset_scale``'s dtype. This permits float64 absolute inputs
+    with a float32 producer scale while preserving the producer's actual
+    signed scale expression. The returned pair has the scale's dtype.
+
+    This host transfer is not JIT- or autodiff-compatible. Non-finite input
+    coordinates remain invalid in both output components.
+    """
+    reference = _host_crval(crval)
+    scale = _host_offset_scale(offset_scale)
+    lon, lat = _host_pair(absolute, "absolute")
+    lon = _host_sky_component(lon, "longitude")
+    lat = _host_sky_component(lat, "latitude")
+    lon, lat = np.broadcast_arrays(lon, lat)
+
+    valid = (
+        np.isfinite(lon)
+        & np.isfinite(lat)
+        & np.isfinite(reference).all()
+        & np.isfinite(scale)
+    )
+    lon0, lat0 = np.radians(reference)
+    safe_lon = np.where(valid, lon, lon0)
+    safe_lat = np.where(valid, lat, lat0)
+    dlon = np.mod(safe_lon - lon0 + np.pi, 2 * np.pi) - np.pi
+    dlat = safe_lat - lat0
+
+    scale_dtype = scale.dtype
+    dlon = dlon.astype(scale_dtype)
+    dlat = dlat.astype(scale_dtype)
+    dlon_coslat = dlon * scale
+    dlon_coslat = np.where(valid, dlon_coslat, np.asarray(np.nan, dtype=scale_dtype))
+    dlat = np.where(valid, dlat, np.asarray(np.nan, dtype=scale_dtype))
+    return dlon_coslat, dlat
+
+
 class _PipelineBase(ABC):
-    """Pixel <-> native <-> celestial pipeline shared by the scalar and the
-    array WCS bases (and the reprojection legs).
+    """Pixel <-> native <-> celestial pipeline shared by ``Tan``/``Sin``
+    (and the reprojection legs).
 
     Every stage has an internal ``_..._valid`` form that returns finite
     values plus a validity flag; invalid samples carry a safe substitute.
@@ -300,226 +451,3 @@ class _PipelineBase(ABC):
         xc, yc, zc = self._standin(valid, (xc, 1.0), (yc, 0.0), (zc, 0.0))
         ra_rad, dec_rad = xyz_to_radec(xc, yc, zc, xp=self.xp)
         return self._mask(ra_rad, dec_rad, valid)
-
-
-class WCSBase(_PipelineBase):
-    xp = np
-
-    def __init__(self, crpix, cd, crval, sip=None):
-        self.crpix = self.xp.array(crpix, dtype=float)
-        self.cd = self.xp.array(cd, dtype=float)
-        self.crval = self.xp.array(crval, dtype=float)
-        self.sip = sip
-        _check_cd(self.cd)
-
-    @property
-    def r_matrix(self):
-        """Celestial -> native rotation, derived from ``crval``.
-
-        Never stored: a cached matrix would stop following the ``crval`` leaf
-        across a pytree flatten/unflatten and silently zero the ``crval``
-        gradient. Recomputed on access, which is a 3x3 trig evaluation, not
-        per-pixel work.
-        """
-        return rotation_matrix(
-            self.xp.radians(self.crval[0]),
-            self.xp.radians(self.crval[1]),
-            xp=self.xp,
-        )
-
-    def _rotation(self):
-        return self.r_matrix
-
-    def unproj_offset(self, x, y):
-        """Inverse projection: pixel -> small sky offset from CRVAL,
-        ``(Delta_alpha * cos(dec0), Delta_delta)`` (radians).
-
-        Unlike :meth:`unproj`, this never forms an absolute (O(1)) RA/Dec
-        value: every intermediate quantity here is field-of-view-sized,
-        computed via spherical trig (``fo64_report_and_plan.md`` Phase 2,
-        dfreproject-style), so this is accurate in float32 regardless of
-        ``jax_enable_x64`` -- see :meth:`unproj_absolute` for the O(1)
-        epilogue that recovers true RA/Dec, and DEVELOPER.md's Precision
-        Strategy section for why ``unproj``/``unproj_xyz`` need float64
-        but this does not.
-
-        The ``cos(dec0)`` scaling is the standard astrometric convention
-        (RA offsets compress toward the pole); it degenerates as CRVAL's
-        declination approaches +/-90 deg, same as any RA-based offset.
-
-        Returns
-        -------
-        dalpha_cosdec, ddelta : same shape as x, y
-        """
-        xn, yn, zn, valid = self._pix_to_native_valid(x, y)
-        p = self.xp.radians(self.crval[1])
-        cos_p, sin_p = self.xp.cos(p), self.xp.sin(p)
-
-        # w, zc: the native vector rotated by CRVAL's declination alone
-        # (no dependence on CRVAL's RA) -- safe to compute in fp32 since
-        # xn is O(1) (near the native pole) and yn/zn are field-sized, so
-        # this is "large + small", never a difference of two O(1) terms.
-        w = cos_p * xn - sin_p * zn
-        zc = sin_p * xn + cos_p * zn
-        # Invalid samples get a stand-in before the atan2/hypot below.
-        yn, w, zc = self._standin(valid, (yn, 0.0), (w, 1.0), (zc, 0.0))
-
-        # Delta_alpha = atan2(yn, w) is *exact* (not an approximation):
-        # yn = cos(delta)*sin(Delta_alpha) and w = cos(delta)*cos(Delta_alpha)
-        # are themselves exact identities, so their ratio's atan2 recovers
-        # Delta_alpha exactly modulo ordinary fp32 rounding -- no
-        # cancellation, regardless of field-center separation.
-        dalpha = self.xp.arctan2(yn, w)
-
-        # Delta_delta via the sin/cos-difference formulas, with cos(delta)
-        # recovered safely as hypot(yn, w) (exact; no cancellation) rather
-        # than sqrt(1 - zc**2). A naive "arcsin(zc) - dec0" would subtract
-        # two O(1) angles (recreating the exact problem this function
-        # exists to avoid); computing sin(Delta_delta)/cos(Delta_delta)
-        # this way and wrapping with atan2 keeps the fp32 error at the
-        # ~1e-7 rad floor (ordinary fp32 rounding) across separations from
-        # sub-degree to >45 deg, instead of growing with separation
-        # (measured: atan2(zn, xn) alone -- the naive small-angle
-        # shortcut -- grows to ~0.08 rad error by 20 deg; this formula
-        # stays ~1e-7).
-        cos_delta = self.xp.hypot(yn, w)
-        sin_ddelta = zc * cos_p - cos_delta * sin_p
-        cos_ddelta = cos_delta * cos_p + zc * sin_p
-        ddelta = self.xp.arctan2(sin_ddelta, cos_ddelta)
-
-        return self._mask(dalpha * cos_p, ddelta, valid)
-
-    def unproj_absolute(self, x, y):
-        """Inverse projection: pixel -> true celestial (RA, Dec) in
-        radians, RA wrapped to ``[0, 2*pi)``.
-
-        The bulk math (:meth:`unproj_offset`) runs in whatever precision
-        ``self.xp`` gives it; only the final ``crval + offset`` add and
-        the ``% 2*pi`` wrap -- negligible cost -- need float64, which is
-        why this requires a NumPy-backed WCS (``Tan``/``Sin``): a JAX
-        WCS's own ``crval`` may already be truncated to float32 at
-        *construction* time if ``jax_enable_x64`` was off then, and this
-        method cannot recover precision that was already discarded.
-        """
-        if self.xp is not np:
-            raise TypeError(
-                "unproj_absolute requires a NumPy-backed WCS (e.g. Tan/Sin): "
-                "the float64 epilogue needs crval's true precision, and a JAX "
-                "WCS's crval may already be truncated to float32 (if "
-                "jax_enable_x64 was off when it was constructed) before this "
-                "method ever runs. Use unproj_offset directly if crval-scale "
-                "float64 doesn't matter for your use case."
-            )
-        dalpha_cosdec, ddelta = self.unproj_offset(x, y)
-        dec0 = np.radians(self.crval[1])
-        ra0 = np.radians(self.crval[0])
-        dalpha = dalpha_cosdec / np.cos(dec0)
-        ra = np.mod(ra0 + dalpha, 2 * np.pi)
-        dec = dec0 + ddelta
-        return ra, dec
-
-    def proj_offset(self, dalpha_cosdec, ddelta):
-        """Forward projection: a small sky offset from CRVAL,
-        ``(Delta_alpha * cos(dec0), Delta_delta)`` (radians) -> pixel
-        coordinates. Inverse of :meth:`unproj_offset`; see its docstring
-        for the accuracy/precision rationale.
-        """
-        dalpha_cosdec, ddelta, valid = self._finite_inputs(dalpha_cosdec, ddelta)
-        p = self.xp.radians(self.crval[1])
-        cos_p, sin_p = self.xp.cos(p), self.xp.sin(p)
-        dalpha = dalpha_cosdec / cos_p
-
-        cos_dd, sin_dd = self.xp.cos(ddelta), self.xp.sin(ddelta)
-        cos_da, sin_da = self.xp.cos(dalpha), self.xp.sin(dalpha)
-
-        # Inverse of unproj_offset's rotation-by-dec0 step: cos(delta) and
-        # sin(delta) recovered via the safe sum formulas (large + small,
-        # since Delta_delta is field-sized), then rotated back by -dec0.
-        cos_delta = cos_p * cos_dd - sin_p * sin_dd
-        zc = sin_p * cos_dd + cos_p * sin_dd
-        w = cos_delta * cos_da
-        yn = cos_delta * sin_da
-        xn = w * cos_p + zc * sin_p
-        zn = -w * sin_p + zc * cos_p
-
-        return self._mask(*self._native_to_pix_valid(xn, yn, zn, valid))
-
-    def proj_absolute(self, ra, dec):
-        """Forward projection: true celestial (RA, Dec) in radians ->
-        pixel coordinates.
-
-        Wraps ``ra - ra0`` to ``(-pi, pi]`` in float64 (cheap, exact for
-        any input range including RA near the 0/2*pi boundary) before
-        handing the now-small offset to :meth:`proj_offset`'s float32
-        bulk math. See :meth:`unproj_absolute` for why this requires a
-        NumPy-backed WCS.
-        """
-        if self.xp is not np:
-            raise TypeError(
-                "proj_absolute requires a NumPy-backed WCS (e.g. Tan/Sin) -- "
-                "see unproj_absolute's docstring for why."
-            )
-        ra0 = np.radians(self.crval[0])
-        dec0 = np.radians(self.crval[1])
-        dalpha = np.mod(np.asarray(ra) - ra0 + np.pi, 2 * np.pi) - np.pi
-        ddelta = np.asarray(dec) - dec0
-        dalpha_cosdec = dalpha * np.cos(dec0)
-        return self.proj_offset(dalpha_cosdec, ddelta)
-
-    def to_dict(self):
-        """Basic serialization helper."""
-        return {
-            'crpix': self.crpix.tolist(),
-            'cd': self.cd.tolist(),
-            'crval': self.crval.tolist(),
-            'sip': self.sip.to_dict() if self.sip else None,
-            'type': self.__class__.__name__
-        }
-    
-    @classmethod
-    def from_dict(cls, data):
-        sip_data = data.get('sip')
-        sip = Sip.from_dict(sip_data) if sip_data else None
-        return cls(data['crpix'], data['cd'], data['crval'], sip=sip)
-
-
-class WCSArrayBase(_PipelineBase):
-    xp = np
-
-    def __init__(self, crpix, cd, crvals, sip=None):
-        self.crpix = self.xp.array(crpix, dtype=float)
-        self.cd = self.xp.array(cd, dtype=float)
-        self.sip = sip
-        _check_cd(self.cd)
-        
-        # crvals is expected to be (ra_array, dec_array) or similar
-        # shape: (2, N) or tuple of arrays
-        ra_arr, dec_arr = self.xp.asarray(crvals[0]), self.xp.asarray(crvals[1])
-        if ra_arr.shape != dec_arr.shape:
-             raise ValueError("RA and Dec arrays in crvals must have same shape")
-             
-        self.crvals = (ra_arr, dec_arr)
-
-    @property
-    def r_matrices(self):
-        """Celestial -> native rotation per element, derived from ``crvals``.
-        See :attr:`WCSBase.r_matrix` for why this is not stored.
-        """
-        ra_arr, dec_arr = self.crvals
-        return rotation_matrix(
-            self.xp.radians(ra_arr),
-            self.xp.radians(dec_arr),
-            xp=self.xp,
-        )
-
-    def _rotation(self):
-        return self.r_matrices
-
-    def to_dict(self):
-        return {
-            'crpix': self.crpix.tolist(),
-            'cd': self.cd.tolist(),
-            'crvals': [self.xp.asarray(c).tolist() for c in self.crvals],
-            'sip': self.sip.to_dict() if self.sip else None,
-            'type': self.__class__.__name__
-        }

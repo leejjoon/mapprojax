@@ -19,16 +19,26 @@ import pytest
 import jax
 import jax.numpy as jnp
 
-from mapprojax.projections import Tan, Sin
+from mapprojax.wcs import Tan, Sin
 from mapprojax.reproject import Reprojector, SUPPORTED_MATRIX_PRECISIONS
 from mapprojax.sip import Sip
 from mapprojax.utils import compose_relative_rotation
-from mapprojax.jax_projections import TanJax
 
 
-def make_wcs(cls, crval_deg, plate_scale_deg, crpix_half=400.0, sip=None):
+def NumpyTan(*args, **kwargs):
+    return Tan(*args, precision="f64", **kwargs)
+
+
+def test_relative_rotation_requires_true_float64_reference():
+    source = Tan([0.0, 0.0], [[-1e-3, 0.0], [0.0, 1e-3]], np.asarray([180.0, 30.0], dtype=np.float32), precision="f32")
+    target = Tan([0.0, 0.0], [[-1e-3, 0.0], [0.0, 1e-3]], np.asarray([180.0, 30.0], dtype=np.float64), precision="f32")
+    with pytest.raises(TypeError, match="float64"):
+        compose_relative_rotation(source, target)
+
+
+def make_wcs(cls, crval_deg, plate_scale_deg, crpix_half=400.0, sip=None, precision="f64"):
     cd = [[-plate_scale_deg, 0.0], [0.0, plate_scale_deg]]
-    return cls([crpix_half, crpix_half], cd, crval_deg, sip=sip)
+    return cls([crpix_half, crpix_half], cd, crval_deg, sip=sip, precision=precision)
 
 
 def reference_pix_to_pix(wcs_src, wcs_tgt, x, y):
@@ -152,14 +162,15 @@ def test_works_without_jax_enable_x64():
     """Acceptance criterion from the plan: reprojection accuracy <= 1e-3 px
     vs the fp64 reference for overlapping fields, without jax_enable_x64.
     """
+    plate_deg = 3.6 / 3600.0
+    reference_src = NumpyTan([400.0, 400.0], [[-plate_deg, 0.0], [0.0, plate_deg]], [180.0, 30.0])
+    reference_tgt = NumpyTan([400.0, 400.0], [[-plate_deg, 0.0], [0.0, plate_deg]], [180.3, 30.0])
+    x, y = sample_points(400.0)
+    x_ref, y_ref = reference_pix_to_pix(reference_src, reference_tgt, x, y)
     jax.config.update("jax_enable_x64", False)
     try:
-        plate_deg = 3.6 / 3600.0
-        wcs_src = make_wcs(Tan, [180.0, 30.0], plate_deg, 400.0)
-        wcs_tgt = make_wcs(Tan, [180.3, 30.0], plate_deg, 400.0)
-        x, y = sample_points(400.0)
-        x_ref, y_ref = reference_pix_to_pix(wcs_src, wcs_tgt, x, y)
-
+        wcs_src = make_wcs(Tan, [180.0, 30.0], plate_deg, 400.0, precision="f32")
+        wcs_tgt = make_wcs(Tan, [180.3, 30.0], plate_deg, 400.0, precision="f32")
         rp = Reprojector(wcs_src, wcs_tgt, matrix_precision="f32")
         x_out, y_out = rp.pix_to_pix(x, y)
         err = np.sqrt((np.asarray(x_out) - x_ref) ** 2 + (np.asarray(y_out) - y_ref) ** 2)
@@ -184,19 +195,122 @@ def test_no_float64_ops_in_jaxpr():
     assert jnp.float64 not in dtypes, f"unexpected float64 in jaxpr: {dtypes}"
 
 
-def test_rejects_jax_backed_wcs():
-    """compose_relative_rotation (and therefore Reprojector) must run on
-    NumPy-backed WCS objects: a JAX one's r_matrix may already be
-    truncated to float32 if x64 was never enabled, silently defeating the
-    whole point of composing M_rel in true float64.
-    """
-    wcs_src_np = make_wcs(Tan, [180.0, 30.0], 3.6 / 3600.0, 400.0)
-    wcs_tgt_jax = TanJax([400.0, 400.0], [[-1e-3, 0.0], [0.0, 1e-3]], [180.3, 30.0])
+def test_eager_constructor_rejects_truncated_reference():
+    src = make_wcs(Tan, [180.0, 30.0], 3.6 / 3600.0)
+    tgt = Tan(
+        [400.0, 400.0], [[-1e-3, 0.0], [0.0, 1e-3]],
+        jnp.asarray([180.3, 30.0], dtype=jnp.float32), precision="f64",
+    )
+    with pytest.raises(TypeError, match="true float64"):
+        Reprojector(src, tgt)
 
-    with pytest.raises(TypeError):
-        compose_relative_rotation(wcs_src_np, wcs_tgt_jax)
-    with pytest.raises(TypeError):
-        Reprojector(wcs_src_np, wcs_tgt_jax)
+
+@jax.tree_util.register_pytree_node_class
+class AttributeProjection:
+    """A composition wrapper, deliberately unrelated to WCS pipeline bases."""
+
+    def __init__(self, projection):
+        self._projection = projection
+
+    @property
+    def crpix(self):
+        return self._projection.crpix
+
+    @property
+    def cd(self):
+        return self._projection.cd
+
+    @property
+    def crval(self):
+        return self._projection.crval
+
+    @property
+    def sip(self):
+        return self._projection.sip
+
+    def with_precision(self, precision):
+        return type(self)(self._projection.with_precision(precision))
+
+    def _pix_to_native_valid(self, x, y):
+        return self._projection._pix_to_native_valid(x, y)
+
+    def _native_to_pix_valid(self, xn, yn, zn, valid=None):
+        return self._projection._native_to_pix_valid(xn, yn, zn, valid)
+
+    def tree_flatten(self):
+        return (self._projection,), None
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        obj = cls.__new__(cls)
+        obj._projection, = children
+        return obj
+
+
+def test_reprojector_accepts_attribute_protocol_without_pipeline_inheritance():
+    source = AttributeProjection(make_wcs(Tan, [180.0, 30.0], 3.6 / 3600.0))
+    target = AttributeProjection(make_wcs(Tan, [180.3, 30.0], 3.6 / 3600.0))
+    rp = Reprojector(source, target, matrix_precision="f32")
+
+    assert rp.src_leg is not source and rp.tgt_leg is not target
+    assert source._projection.precision == "f64"
+    x, y = jnp.asarray(400.0), jnp.asarray(400.0)
+    got = rp.pix_to_pix(x, y)
+    expected = reference_pix_to_pix(source._projection, target._projection, x, y)
+    np.testing.assert_allclose(np.asarray(got), np.asarray(expected), atol=2e-4)
+
+
+def test_from_matrix_preserves_source_and_target_reference_gradients():
+    cd = [[-3.6 / 3600.0, 0.0], [0.0, 3.6 / 3600.0]]
+
+    def loss(crvals):
+        src = Tan([400.0, 400.0], cd, crvals[0], precision="f64")
+        tgt = Tan([400.0, 400.0], cd, crvals[1], precision="f64")
+        m_rel = tgt.r_matrix @ src.r_matrix.T
+        rp = Reprojector.from_matrix(src, tgt, m_rel, matrix_precision="f32")
+        x, y = rp.pix_to_pix(jnp.asarray(413.0), jnp.asarray(387.0))
+        return x + 0.3 * y
+
+    crvals = jnp.asarray([[180.0, 30.0], [180.3, 30.2]], dtype=jnp.float64)
+    grad = jax.grad(loss)(crvals)
+    assert np.all(np.isfinite(np.asarray(grad))), grad
+    assert np.all(np.any(np.abs(np.asarray(grad)) > 1e-5, axis=1)), grad
+
+
+@pytest.mark.parametrize("bad_value", [np.nan, np.inf, 1e100], ids=["nan", "inf", "post-cast-overflow"])
+def test_nonfinite_post_cast_matrix_is_identity_standin_and_invalidates_outputs(bad_value):
+    src = make_wcs(Tan, [180.0, 30.0], 3.6 / 3600.0)
+    tgt = make_wcs(Tan, [180.3, 30.0], 3.6 / 3600.0)
+    matrix = np.eye(3)
+    matrix[0, 0] = bad_value
+    rp = Reprojector.from_matrix(src, tgt, jnp.asarray(matrix), matrix_precision="f32")
+
+    out = rp.pix_to_pix(jnp.asarray([400.0, 401.0]), jnp.asarray([400.0, 402.0]))
+    assert all(np.all(np.isnan(np.asarray(value))) for value in out), out
+    intermediate = rp.pix_to_native_tgt(jnp.asarray([400.0]), jnp.asarray([400.0]))
+    assert all(np.all(np.isnan(np.asarray(value))) for value in intermediate), intermediate
+
+    def loss(m_rel):
+        r = Reprojector.from_matrix(src, tgt, m_rel, matrix_precision="f32")
+        return sum(jnp.sum(jnp.where(jnp.isfinite(value), value, 0.0))
+                   for value in r.pix_to_pix(jnp.asarray([400.0]), jnp.asarray([400.0])))
+
+    grad = jax.grad(loss)(jnp.asarray(matrix))
+    assert np.all(np.isfinite(np.asarray(grad))), grad
+    np.testing.assert_array_equal(np.asarray(grad), np.zeros((3, 3), dtype=np.float64))
+
+    projector_grad = jax.grad(
+        lambda r: sum(jnp.sum(jnp.where(jnp.isfinite(value), value, 0.0))
+                      for value in r.pix_to_pix(jnp.asarray([400.0]), jnp.asarray([400.0])))
+    )(rp)
+    for leaf in jax.tree_util.tree_leaves(projector_grad):
+        np.testing.assert_array_equal(np.asarray(leaf), np.zeros_like(np.asarray(leaf)))
+
+
+def test_from_matrix_requires_a_dynamic_three_by_three_leaf():
+    src = make_wcs(Tan, [180.0, 30.0], 3.6 / 3600.0)
+    with pytest.raises(ValueError, match=r"shape \(3, 3\)"):
+        Reprojector.from_matrix(src, src, jnp.eye(2))
 
 
 def test_invalid_matrix_precision_raises():
@@ -204,7 +318,7 @@ def test_invalid_matrix_precision_raises():
     wcs_tgt = make_wcs(Tan, [180.3, 30.0], 3.6 / 3600.0, 400.0)
     with pytest.raises(ValueError):
         Reprojector(wcs_src, wcs_tgt, matrix_precision="f32x2")
-    assert "f32x2" not in SUPPORTED_MATRIX_PRECISIONS  # removed -- see Reprojector's docstring Note
+    assert "f32x2" not in SUPPORTED_MATRIX_PRECISIONS
 
 
 def test_frame_rotation_is_applied():
@@ -240,26 +354,21 @@ def test_frame_rotation_is_applied():
 
 
 def test_pytree_roundtrip_preserves_dtype():
-    """Regression test for the bug this implementation hit and fixed:
-    plain TanJax/SinJax's inherited WCSBase.__init__ hardcodes
-    dtype=float, so naively reusing them for Reprojector's legs silently
-    re-promoted crpix/cd/sip back to float64 (whenever jax_enable_x64 is
-    on) on every pytree flatten/unflatten round-trip -- e.g. every time a
-    Reprojector is passed through jax.jit. Reprojector's dedicated leg
-    classes must not do this.
-    """
+    """Converted projection leaves and SIP settings survive PyTree rebuilding."""
     plate_deg = 3.6 / 3600.0
-    wcs_src = make_wcs(Tan, [180.0, 30.0], plate_deg, 400.0, sip=_sample_sip(400.0))
+    sip = _sample_sip(400.0)
+    sip.inverse_steps = 7
+    wcs_src = make_wcs(Tan, [180.0, 30.0], plate_deg, 400.0, sip=sip)
     wcs_tgt = make_wcs(Tan, [180.3, 30.0], plate_deg, 400.0, sip=_sample_sip(400.0))
     rp = Reprojector(wcs_src, wcs_tgt, matrix_precision="f32")
 
     leaves, treedef = jax.tree_util.tree_flatten(rp)
     rp2 = jax.tree_util.tree_unflatten(treedef, leaves)
 
-    assert rp2._src_leg.crpix.dtype == jnp.float32
-    assert rp2._src_leg.cd.dtype == jnp.float32
     assert rp2._src_leg.sip.a.dtype == jnp.float32
+    assert rp2._src_leg.cd.dtype == jnp.float32
     assert rp2.m_rel.dtype == jnp.float32
+    assert rp2._src_leg.sip.inverse_steps == 7
 
 
 def test_jit_over_reprojector_argument():
@@ -298,3 +407,128 @@ def test_vmap_over_pix_to_pix():
     direct = rp.pix_to_pix(x, y)
     np.testing.assert_allclose(np.asarray(batched[0]), np.asarray(direct[0]))
     np.testing.assert_allclose(np.asarray(batched[1]), np.asarray(direct[1]))
+
+
+# ---------------------------------------------------------------------------
+# Host composition: retained-reference overrides and frame validation.
+# ---------------------------------------------------------------------------
+
+_CD = [[-1e-3, 0.0], [0.0, 1e-3]]
+
+
+def test_overrides_recover_composition_after_x64_off_jit():
+    """The documented recovery: a WCS returned from jit with x64 off carries a
+    float32 crval, so compose from the retained originals instead."""
+    host_src = np.asarray([180.0, 30.0])
+    host_tgt = np.asarray([180.3, 30.1])
+    src = Tan([400.0, 400.0], _CD, host_src, precision="f32")
+    tgt = Sin([400.0, 400.0], _CD, host_tgt, precision="f32")
+    eager = Reprojector(src, tgt, matrix_precision="f32")
+    m_eager = compose_relative_rotation(src, tgt)
+
+    previous = jax.config.jax_enable_x64
+    jax.config.update("jax_enable_x64", False)
+    try:
+        src_out, tgt_out = jax.jit(lambda s, t: (s, t))(src, tgt)
+        assert src_out.crval.dtype == jnp.float32
+        with pytest.raises(TypeError, match="true float64"):
+            compose_relative_rotation(src_out, tgt_out)
+        m = compose_relative_rotation(src_out, tgt_out,
+                                      crval_src=host_src, crval_tgt=host_tgt)
+        assert m.dtype == np.float64
+        np.testing.assert_array_equal(m, m_eager)
+        rebuilt = Reprojector.from_matrix(src_out, tgt_out, m, matrix_precision="f32")
+        x = jnp.asarray([300.0, 400.0, 500.0], jnp.float32)
+        y = jnp.asarray([310.0, 400.0, 480.0], jnp.float32)
+        got = rebuilt.pix_to_pix(x, y)
+        want = eager.pix_to_pix(x, y)
+        for a, b in zip(got, want):
+            np.testing.assert_array_equal(np.asarray(a), np.asarray(b))
+    finally:
+        jax.config.update("jax_enable_x64", previous)
+
+
+def test_overrides_replace_only_the_named_reference():
+    src = make_wcs(Tan, [180.0, 30.0], 1e-3)
+    tgt = make_wcs(Tan, [180.3, 30.0], 1e-3)
+    moved = make_wcs(Tan, [181.0, 31.0], 1e-3)
+    np.testing.assert_array_equal(
+        compose_relative_rotation(src, tgt, crval_src=moved.crval),
+        compose_relative_rotation(moved, tgt),
+    )
+    np.testing.assert_array_equal(
+        compose_relative_rotation(src, tgt, crval_tgt=moved.crval),
+        compose_relative_rotation(src, moved),
+    )
+
+
+@pytest.mark.parametrize("override,error", [
+    (np.asarray([180.0, 30.0], np.float32), TypeError),
+    (np.asarray([180.0, np.nan]), ValueError),
+    (np.asarray([180.0, 30.0, 0.0]), ValueError),
+])
+def test_overrides_are_validated(override, error):
+    src = make_wcs(Tan, [180.0, 30.0], 1e-3)
+    with pytest.raises(error, match="crval_src"):
+        compose_relative_rotation(src, src, crval_src=override)
+
+
+def test_traced_override_is_rejected():
+    src = make_wcs(Tan, [180.0, 30.0], 1e-3)
+    with pytest.raises(TypeError, match="traced"):
+        jax.jit(lambda c: compose_relative_rotation(src, src, crval_src=c))(
+            jnp.asarray([180.0, 30.0])
+        )
+
+
+@pytest.mark.parametrize("frame", [
+    np.full((3, 3), np.nan),
+    np.diag([1.0, np.inf, 1.0]),
+    np.eye(2),
+])
+def test_invalid_frame_rotation_is_rejected(frame):
+    src = make_wcs(Tan, [180.0, 30.0], 1e-3)
+    with pytest.raises(ValueError, match="finite \\(3, 3\\)"):
+        compose_relative_rotation(src, src, frame)
+    with pytest.raises(ValueError, match="finite \\(3, 3\\)"):
+        Reprojector(src, src, frame)
+
+
+def test_reprojector_uses_the_public_composition():
+    src = make_wcs(Tan, [180.0, 30.0], 1e-3)
+    tgt = make_wcs(Sin, [180.3, 30.2], 1e-3)
+    c, s = np.cos(0.01), np.sin(0.01)
+    frame = np.asarray([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
+    for precision, dtype in (("f32", jnp.float32), ("f64", jnp.float64)):
+        rp = Reprojector(src, tgt, frame, matrix_precision=precision)
+        np.testing.assert_array_equal(
+            np.asarray(rp.m_rel),
+            np.asarray(jnp.asarray(compose_relative_rotation(src, tgt, frame), dtype)),
+        )
+
+
+@pytest.mark.parametrize("override", [
+    [np.float32(180.0), 30],
+    [np.float32(180.0), 30.0],
+    (180.0, np.float32(30.0)),
+    [np.asarray(180.0, np.float32), np.float64(30.0)],
+])
+def test_override_sequence_with_float32_component_is_rejected(override):
+    """Assembling such a sequence would promote it to float64 and hide the
+    truncation, so the components are checked first."""
+    src = make_wcs(Tan, [180.0, 30.0], 1e-3)
+    with pytest.raises(TypeError, match="float32 component"):
+        compose_relative_rotation(src, src, crval_src=override)
+
+
+@pytest.mark.parametrize("override", [
+    [180.0, 30.0],
+    (np.float64(180.0), 30.0),
+    np.asarray([180.0, 30.0]),
+])
+def test_float64_override_sequences_are_accepted(override):
+    src = make_wcs(Tan, [180.0, 30.0], 1e-3)
+    np.testing.assert_array_equal(
+        compose_relative_rotation(src, src, crval_src=override),
+        compose_relative_rotation(src, src),
+    )

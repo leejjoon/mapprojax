@@ -29,6 +29,12 @@ def _worker(kind: str, repeats: int, warmups: int, size: int,
         if "rocm" not in identity.lower():
             raise RuntimeError(f"ROCm requested but device identity is {identity!r}")
 
+    if implementation != "new":
+        raise ValueError(
+            "the legacy classes were retired in Stage 3 C8; measure the legacy "
+            "baseline with benchmarks/benchmark_stage3.py from a d60a5b1 checkout"
+        )
+
     if workload == "sip":
         axis = jnp.linspace(0.0, float(size - 1), size, dtype=jnp.float32)
         x, y = jnp.meshgrid(axis, axis)
@@ -48,13 +54,9 @@ def _worker(kind: str, repeats: int, warmups: int, size: int,
                   ap=None if sip.ap is None else jnp.asarray(sip.ap, dtype=jnp.float32),
                   bp=None if sip.bp is None else jnp.asarray(sip.bp, dtype=jnp.float32),
                   inverse_steps=steps)
-        if implementation == "legacy":
-            from mapprojax.jax_projections import TanJaxMixed
-            wcs = TanJaxMixed(crpix, cd, crval, sip=sip)
-        else:
-            from mapprojax.wcs import Tan
-            wcs = Tan(crpix, cd, jnp.asarray(crval, dtype=jnp.float64),
-                      sip=sip, precision="mixed")
+        from mapprojax.wcs import Tan
+        wcs = Tan(crpix, cd, jnp.asarray(crval, dtype=jnp.float64),
+                  sip=sip, precision="mixed")
         if order == 3:
             # Real SPHEREx header: forward evaluation plus the SIP inverse.
             fn = jax.jit(lambda obj, px, py: (
@@ -70,23 +72,16 @@ def _worker(kind: str, repeats: int, warmups: int, size: int,
     elif workload == "batch":
         x = jnp.linspace(0.0, 4095.0, 4096, dtype=jnp.float32)
         y = jnp.linspace(0.0, 4095.0, 4096, dtype=jnp.float32)
-        if implementation == "legacy":
-            from mapprojax.jax_projections import TanJaxMixed
-            one = TanJaxMixed([2048.0, 2048.0], [[-1e-3, 0], [0, 1e-3]],
-                              [180.0, 0.0])
-        else:
-            from mapprojax.wcs import Tan
-            one = Tan([2048.0, 2048.0], [[-1e-3, 0], [0, 1e-3]],
-                      [180.0, 0.0], precision="mixed")
+        from mapprojax.wcs import Tan
+        one = Tan([2048.0, 2048.0], [[-1e-3, 0], [0, 1e-3]],
+                  [180.0, 0.0], precision="mixed")
         objects = jax.tree_util.tree_map(
             lambda value: jnp.broadcast_to(value, (256,) + value.shape), one)
         fn = jax.jit(lambda obj, px, py: jax.vmap(
             lambda one_wcs: one_wcs.unproj_offset(px, py))(obj))
         args = (objects, x, y)
     elif workload == "pair":
-        if implementation != "legacy":
-            raise ValueError("pair control is only available for legacy Reprojector")
-        from mapprojax.projections import Tan as LegacyTan
+        from mapprojax.wcs import Tan
         from mapprojax.reproject import Reprojector
         repo = Path(__file__).resolve().parents[1]
         sys.path.insert(0, str(repo / "tests"))
@@ -94,8 +89,8 @@ def _worker(kind: str, repeats: int, warmups: int, size: int,
         from mapprojax.wcs_utils import load_wcs_params_from_header
         src = load_wcs_params_from_header(load_header("spherex_l2.hdr"))
         tgt = load_wcs_params_from_header(load_header("spherex_template.hdr"))
-        source = LegacyTan(*src)
-        target = LegacyTan(*tgt)
+        source = Tan(*src, precision="f64")
+        target = Tan(*tgt, precision="f64")
         from accuracy_reference import galactic_to_icrs_matrix
         frame_rotation = galactic_to_icrs_matrix().T
         reproj = Reprojector(source, target, frame_rotation=frame_rotation,
@@ -220,6 +215,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repeats", type=int, default=30)
     parser.add_argument("--warmups", type=int, default=5)
     args = parser.parse_args(argv)
+    if args.implementation != "new":
+        parser.error("the legacy classes were retired in Stage 3 C8; measure the "
+                     "legacy baseline with this script from a d60a5b1 checkout")
     if args.worker:
         _worker(args.worker, args.repeats, args.warmups, args.size or 64,
                 args.workload, args.order, args.steps, args.implementation,

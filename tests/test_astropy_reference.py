@@ -12,15 +12,13 @@ separate ordinary test, so getting worse fails even while the target is
 xfailed.
 """
 
-import warnings
-
 import jax
+import jax.numpy as jnp
 import numpy as np
 import pytest
 
-import mapprojax as mp
-
 import accuracy_reference as ar
+from mapprojax.wcs import Sin, Tan
 
 FORWARD_MAS = ar.FORWARD_MAS
 INVERSE_PX = ar.INVERSE_PX
@@ -119,30 +117,43 @@ def test_wide_angle_front_hemisphere_matches_astropy(proj, impl, sep_deg):
     assert rel.max() < 1e-12
 
 
-# --- Array variants ----------------------------------------------------------
+# --- Per-centre vmap oracle coverage ----------------------------------------
 
 ARRAY_CENTRES = np.array([[150.0, 30.0], [359.99, 5.0], [45.0, 89.9], [200.0, -60.0]])
 
 
-@pytest.mark.parametrize(
-    "cls_name, proj",
-    [("TanArray", "TAN"), ("TanJaxArray", "TAN"), ("SinArray", "SIN"), ("SinJaxArray", "SIN")],
-)
-def test_array_variant_matches_independent_astropy_per_centre(cls_name, proj):
+@pytest.mark.parametrize("cls, proj", [(Tan, "TAN"), (Sin, "SIN")])
+def test_vmap_matches_independent_astropy_per_centre(cls, proj):
     crpix, cd, _, _ = ar._params(ar.synthetic_header(proj, (0.0, 0.0)))
-    wcs = getattr(mp, cls_name)(crpix, cd, (ARRAY_CENTRES[:, 0], ARRAY_CENTRES[:, 1]))
+    wcses = [
+        cls(crpix, cd, centre, precision="f64") for centre in ARRAY_CENTRES
+    ]
+    batched_wcs = jax.tree_util.tree_map(
+        lambda *leaves: jnp.stack(leaves), *wcses
+    )
     pix = ar.pixel_grid(ar.synthetic_header(proj, (0.0, 0.0)), 9)
+    px, py = jnp.asarray(pix[:, 0]), jnp.asarray(pix[:, 1])
 
-    # Pixels as (P, 1) broadcast against the N centres -> (P, N).
-    ra, dec = wcs.unproj(pix[:, 0:1], pix[:, 1:2])
+    # The stacked WCS axis is 0; out_axes=1 preserves the old (pixels, centres)
+    # layout while each vmap body sees the same shared pixel grid.
+    ra, dec = jax.vmap(
+        lambda w: w.unproj(px, py), in_axes=0, out_axes=1
+    )(batched_wcs)
     ra, dec = np.degrees(np.asarray(ra)), np.degrees(np.asarray(dec))
-    for k, centre in enumerate(ARRAY_CENTRES):
-        ref = ar.oracle_world(ar.synthetic_header(proj, tuple(centre)), pix)
+    references = np.stack([
+        ar.oracle_world(ar.synthetic_header(proj, tuple(centre)), pix)
+        for centre in ARRAY_CENTRES
+    ])
+    for k, ref in enumerate(references):
         sep = ar.separation_mas(ra[:, k], dec[:, k], ref[:, 0], ref[:, 1])
         assert sep.max() < FORWARD_MAS, f"centre {k}: {sep.max():.3e} mas"
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            x, y = wcs.proj(np.radians(ref[:, 0:1]), np.radians(ref[:, 1:2]))
-        got = np.column_stack([np.asarray(x)[:, k], np.asarray(y)[:, k]])
-        assert np.hypot(*(got - pix).T).max() < INVERSE_PX, f"centre {k}"
+    lon = jnp.radians(jnp.asarray(references[:, :, 0]))
+    lat = jnp.radians(jnp.asarray(references[:, :, 1]))
+    x, y = jax.vmap(
+        lambda w, sky_lon, sky_lat: w.proj(sky_lon, sky_lat),
+        in_axes=(0, 0, 0), out_axes=1,
+    )(batched_wcs, lon, lat)
+    got = np.stack([np.asarray(x).T, np.asarray(y).T], axis=-1)
+    for k in range(len(ARRAY_CENTRES)):
+        assert np.hypot(*(got[k] - pix).T).max() < INVERSE_PX, f"centre {k}"

@@ -6,11 +6,10 @@ Tests:
     standard NumPy implementations across image resolutions from 512x512 to
     8192x8192, across the precision strategies this package now offers:
 
-    - NumPy (f64): full double precision, the correctness reference.
-    - JAX Std (f64): TanJax/SinJax at whatever precision jax_enable_x64
-      allows (this script enables it, for a fair "current default" baseline).
-    - JAX Mixed (Opt): MixedPrecisionWCSJaxMixin -- fp64 rotation, fp32
-      everything else (see DEVELOPER.md Sec 4).
+    - WCS f64: ``Tan``/``Sin`` with precision="f64" (this script enables
+      jax_enable_x64), the correctness reference.
+    - WCS mixed: precision="mixed" -- fp64 rotation, fp32 everything else
+      (see DEVELOPER.md's Precision Strategy section).
     - Reprojector (f32) [fo64_report_and_plan.md Phase 1]: composes the two
       WCSes' relative rotation once, in true float64, on the host -- then
       runs the *entire* per-pixel path in float32. No jax_enable_x64 needed
@@ -19,7 +18,8 @@ Tests:
       to isolate Reprojector's own overhead from the fp32-vs-fp64 accuracy
       question.
 
-    Offset-form absolute output (Phase 2: unproj_absolute/proj_absolute) is
+    Offset-form absolute output (``unproj_offset``/``proj_offset`` composed
+    with ``absolute_from_offset``/``offset_from_absolute`` on the host) is
     reported separately in the accuracy section below, not the per-size
     timing table -- it answers a different question ("give me true RA/Dec
     without global fp64", a host-side NumPy epilogue) than the others here
@@ -57,8 +57,17 @@ import numpy as np
 # NOT depend on this being set (see the accuracy section's explicit check).
 jax.config.update("jax_enable_x64", True)
 
-from mapprojax import Tan, Sin, TanJax, SinJax, TanJaxMixed, SinJaxMixed
 from mapprojax.reproject import Reprojector
+from mapprojax import absolute_from_offset, offset_from_absolute
+from mapprojax.wcs import Tan as ReprojectTan, Sin as ReprojectSin
+
+
+def Tan(*args, **kwargs):
+    return ReprojectTan(*args, precision=kwargs.pop("precision", "f64"), **kwargs)
+
+
+def Sin(*args, **kwargs):
+    return ReprojectSin(*args, precision=kwargs.pop("precision", "f64"), **kwargs)
 
 CRPIX = [100.0, 100.0]
 CD = [[-0.001, 0.0], [0.0, 0.001]]
@@ -75,7 +84,7 @@ def run_timing_benchmark():
     sizes = [512, 1024, 2048, 4096, 8192]
 
     print(f"backend={jax.default_backend()} devices={jax.devices()}\n")
-    print(f"{'Size':<12} | {'NumPy (f64)':<15} | {'JAX Std (f64)':<15} | {'JAX Mix (Opt)':<15} | "
+    print(f"{'Size':<12} | {'WCS (f64)':<15} | {'WCS mixed':<15} | {'WCS Mix (Opt)':<15} | "
           f"{'Reprojector f32':<16} | {'Reprojector f64':<16}")
     print("-" * 108)
 
@@ -84,10 +93,10 @@ def run_timing_benchmark():
 
     # Reprojector doesn't depend on image size -- built once, outside the
     # loop, like the jit wrappers above.
-    wcs_src_np = Tan(CRPIX, CD, CRVAL_SRC)
-    wcs_tgt_np = Sin(CRPIX, CD, CRVAL_TGT)
-    rp_f32 = Reprojector(wcs_src_np, wcs_tgt_np, matrix_precision="f32")
-    rp_f64 = Reprojector(wcs_src_np, wcs_tgt_np, matrix_precision="f64")
+    wcs_src_reproj = ReprojectTan(CRPIX, CD, CRVAL_SRC, precision="f64")
+    wcs_tgt_reproj = ReprojectSin(CRPIX, CD, CRVAL_TGT, precision="f64")
+    rp_f32 = Reprojector(wcs_src_reproj, wcs_tgt_reproj, matrix_precision="f32")
+    rp_f64 = Reprojector(wcs_src_reproj, wcs_tgt_reproj, matrix_precision="f64")
     rp_f32_jit = jax.jit(rp_f32.pix_to_pix)
     rp_f64_jit = jax.jit(rp_f64.pix_to_pix)
 
@@ -105,8 +114,8 @@ def run_timing_benchmark():
         t_np = (time.time() - start) * 1000
 
         # --- JAX Standard ---
-        wcs_src_std = TanJax(CRPIX, CD, CRVAL_SRC)
-        wcs_tgt_std = SinJax(CRPIX, CD, CRVAL_TGT)
+        wcs_src_std = ReprojectTan(CRPIX, CD, CRVAL_SRC, precision="f64")
+        wcs_tgt_std = ReprojectSin(CRPIX, CD, CRVAL_TGT, precision="f64")
         out_std = proj2_std_jit(wcs_src_std, wcs_tgt_std, x_jax, y_jax)
         out_std[0].block_until_ready()
         start = time.time()
@@ -115,8 +124,8 @@ def run_timing_benchmark():
         t_std = (time.time() - start) * 1000
 
         # --- JAX Mixed ---
-        wcs_src_mix = TanJaxMixed(CRPIX, CD, CRVAL_SRC)
-        wcs_tgt_mix = SinJaxMixed(CRPIX, CD, CRVAL_TGT)
+        wcs_src_mix = ReprojectTan(CRPIX, CD, CRVAL_SRC, precision="mixed")
+        wcs_tgt_mix = ReprojectSin(CRPIX, CD, CRVAL_TGT, precision="mixed")
         out_mix = proj2_mix_jit(wcs_src_mix, wcs_tgt_mix, x_jax, y_jax)
         out_mix[0].block_until_ready()
         start = time.time()
@@ -151,31 +160,45 @@ def report_accuracy():
 
     wcs_src_np = Tan(CRPIX, CD, CRVAL_SRC)
     wcs_tgt_np = Sin(CRPIX, CD, CRVAL_TGT)
+    wcs_tgt_f32 = Sin(CRPIX, CD, CRVAL_TGT, precision="f32")
+    src_scale = wcs_src_np.offset_scale()
+    tgt_scale = wcs_tgt_np.offset_scale()
+    tgt_scale_f32 = wcs_tgt_f32.offset_scale()
     ra_ref, dec_ref = wcs_src_np.unproj(x, y)
     x_ref, y_ref = wcs_tgt_np.proj(ra_ref, dec_ref)
 
     def max_err(x_out, y_out):
         return np.max(np.hypot(np.asarray(x_out, dtype=np.float64) - x_ref, np.asarray(y_out, dtype=np.float64) - y_ref))
 
-    wcs_src_mix = TanJaxMixed(CRPIX, CD, CRVAL_SRC)
-    wcs_tgt_mix = SinJaxMixed(CRPIX, CD, CRVAL_TGT)
+    wcs_src_mix = ReprojectTan(CRPIX, CD, CRVAL_SRC, precision="mixed")
+    wcs_tgt_mix = ReprojectSin(CRPIX, CD, CRVAL_TGT, precision="mixed")
     ra_m, dec_m = wcs_src_mix.unproj(jnp.asarray(x, dtype=jnp.float32), jnp.asarray(y, dtype=jnp.float32))
     x_m, y_m = wcs_tgt_mix.proj(ra_m, dec_m)
     err_mix = max_err(x_m, y_m)
 
-    rp_f32 = Reprojector(wcs_src_np, wcs_tgt_np, matrix_precision="f32")
+    wcs_src_reproj = ReprojectTan(CRPIX, CD, CRVAL_SRC, precision="f64")
+    wcs_tgt_reproj = ReprojectSin(CRPIX, CD, CRVAL_TGT, precision="f64")
+    rp_f32 = Reprojector(wcs_src_reproj, wcs_tgt_reproj, matrix_precision="f32")
     x_rp32, y_rp32 = rp_f32.pix_to_pix(x, y)
     err_rp32 = max_err(x_rp32, y_rp32)
 
-    rp_f64 = Reprojector(wcs_src_np, wcs_tgt_np, matrix_precision="f64")
+    rp_f64 = Reprojector(wcs_src_reproj, wcs_tgt_reproj, matrix_precision="f64")
     x_rp64, y_rp64 = rp_f64.pix_to_pix(x, y)
     err_rp64 = max_err(x_rp64, y_rp64)
 
     # Offset-form (Phase 2): a different question -- absolute (RA, Dec)
     # output -- but round-tripping src -> (ra, dec) -> tgt through it
     # gives a directly comparable pixel-space number.
-    ra_off, dec_off = wcs_src_np.unproj_absolute(x, y)
-    x_off, y_off = wcs_tgt_np.proj_absolute(ra_off, dec_off)
+    ra_off, dec_off = absolute_from_offset(
+        wcs_src_np.unproj_offset(x, y),
+        crval=wcs_src_np.crval,
+        offset_scale=src_scale,
+    )
+    x_off, y_off = wcs_tgt_np.proj_offset(
+        *offset_from_absolute(
+            (ra_off, dec_off), crval=wcs_tgt_np.crval, offset_scale=tgt_scale
+        )
+    )
     err_off = max_err(x_off, y_off)
 
     # Same, but with unproj_offset's bulk math actually run in float32
@@ -184,15 +207,20 @@ def report_accuracy():
     prev_x64 = jax.config.jax_enable_x64
     jax.config.update("jax_enable_x64", False)
     try:
-        from mapprojax.jax_projections import TanJax as _TanJax
-        wcs_src_jax32 = _TanJax(jnp.asarray(CRPIX), jnp.asarray(CD), jnp.asarray(CRVAL_SRC))
+        wcs_src_jax32 = ReprojectTan(jnp.asarray(CRPIX), jnp.asarray(CD), jnp.asarray(CRVAL_SRC), precision="f32")
         dalpha_cosdec, ddelta = wcs_src_jax32.unproj_offset(jnp.asarray(x), jnp.asarray(y))
         dec0 = np.radians(CRVAL_SRC[1])
         dalpha = np.asarray(dalpha_cosdec, dtype=np.float64) / np.cos(dec0)
         ddelta = np.asarray(ddelta, dtype=np.float64)
         ra_off32 = np.radians(CRVAL_SRC[0]) + dalpha
         dec_off32 = dec0 + ddelta
-        x_off32, y_off32 = wcs_tgt_np.proj_absolute(ra_off32, dec_off32)
+        x_off32, y_off32 = wcs_tgt_f32.proj_offset(
+            *offset_from_absolute(
+                (ra_off32, dec_off32),
+                crval=wcs_tgt_f32.crval,
+                offset_scale=tgt_scale_f32,
+            )
+        )
         err_off32 = max_err(x_off32, y_off32)
     finally:
         jax.config.update("jax_enable_x64", prev_x64)
@@ -200,7 +228,7 @@ def report_accuracy():
     print(f"  JAX Mixed (fp64 rotation + fp32 rest):                     {err_mix:.3e} px")
     print(f"  Reprojector (f32, no jax_enable_x64 needed):               {err_rp32:.3e} px")
     print(f"  Reprojector (f64):                                         {err_rp64:.3e} px")
-    print(f"  Offset-form (unproj_absolute/proj_absolute, NumPy f64):    {err_off:.3e} px")
+    print(f"  Offset-form (absolute_from_offset/offset_from_absolute):     {err_off:.3e} px")
     print(f"  Offset-form's unproj_offset in fp32, jax_enable_x64=False: {err_off32:.3e} px")
 
 
@@ -227,12 +255,12 @@ def report_plate_scale_sensitivity():
     def make_wcs(cls, crval_deg, plate_arcsec):
         plate_deg = plate_arcsec / 3600.0
         cd = [[-plate_deg, 0.0], [0.0, plate_deg]]
-        return cls(crpix, cd, crval_deg)
+        return cls(crpix, cd, crval_deg, precision="f64")
 
     def max_median_err(plate_arcsec, sep_arcsec, matrix_precision):
         sep_deg = sep_arcsec / 3600.0
-        wcs_src = make_wcs(Tan, [180.0, 30.0], plate_arcsec)
-        wcs_tgt = make_wcs(Sin, [180.0, 30.0 + sep_deg], plate_arcsec)
+        wcs_src = make_wcs(ReprojectTan, [180.0, 30.0], plate_arcsec)
+        wcs_tgt = make_wcs(ReprojectSin, [180.0, 30.0 + sep_deg], plate_arcsec)
 
         rng = np.random.default_rng(0)
         x = rng.uniform(0, 2 * crpix[0], 5000)

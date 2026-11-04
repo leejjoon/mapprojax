@@ -11,17 +11,27 @@ import warnings
 
 import numpy as np
 import pytest
+import jax
 from astropy.io import fits
 from astropy.wcs import WCS
 
-from mapprojax import Sin, Tan
+from mapprojax.wcs import Sin as _PrecisionSin, Tan as _PrecisionTan
 from mapprojax.wcs_utils import load_wcs_params_from_header
 
 import accuracy_reference as ar
 
 DATA_DIR = Path(__file__).resolve().parent / "data"
+jax.config.update("jax_enable_x64", True)
 
 PIX = np.array([[0.0, 0.0], [10.0, 90.0], [49.5, 49.5], [99.0, 3.0], [70.0, 70.0]])
+
+
+def Tan(*args, **kwargs):
+    return _PrecisionTan(*args, precision="f64", **kwargs)
+
+
+def Sin(*args, **kwargs):
+    return _PrecisionSin(*args, precision="f64", **kwargs)
 
 
 def _header(**cards):

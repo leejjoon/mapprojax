@@ -3,7 +3,7 @@ import numpy as np
 import jax
 import jax.numpy as jnp
 from mapprojax import Tan, Sin
-from mapprojax.jax_projections import TanJax, SinJax
+from mapprojax.wcs import Tan, Sin
 
 # Enable 64-bit precision for JAX to match NumPy
 jax.config.update("jax_enable_x64", True)
@@ -34,8 +34,8 @@ def test_jax_consistency():
     wcs_tgt_np = Sin(crpix_tgt, cd_tgt, crval_tgt)
 
     # Instantiate JAX classes
-    wcs_src_jax = TanJax(crpix_src, cd_src, crval_src)
-    wcs_tgt_jax = SinJax(crpix_tgt, cd_tgt, crval_tgt)
+    wcs_src_jax = Tan(crpix_src, cd_src, crval_src)
+    wcs_tgt_jax = Sin(crpix_tgt, cd_tgt, crval_tgt)
 
     # Generate test data
     y_src, x_src = np.indices((200, 200), dtype=float)

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mapprojax"
-version = "0.2.0"
+version = "0.3.0"
 description = "A Python implementation of cds-mapproj for WCS projections"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -19,7 +19,6 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-serialization = ["asdf"]
 test = ["pytest", "astropy"]
 # AMD GPU (ROCm 7) backend; plugin versions must match jaxlib exactly
 rocm = [
@@ -28,10 +27,6 @@ rocm = [
     "jax-rocm7-plugin==0.11.1; sys_platform == 'linux' and python_version >= '3.12'",
     "jax-rocm7-pjrt==0.11.1; sys_platform == 'linux' and python_version >= '3.12'",
 ]
-
-[project.entry-points]
-"asdf.extensions" = { mapprojax = "mapprojax.io.asdf.extension:get_extensions" }
-"asdf.resource_mappings" = { mapprojax = "mapprojax.io.asdf.extension:get_resource_mappings" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

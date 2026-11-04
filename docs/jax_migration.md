@@ -1,5 +1,7 @@
 # migration to jax (dual-backend) - COMPLETED
 
+> **Historical record.** This describes the original NumPy-to-JAX port. The `*Jax`, `*Array` and `*Mixed` classes, `jax_projections.py` and the ASDF support it mentions were removed in 0.3.0; see the migration table in [the user manual](user_manual.md).
+
    *. **Update Dependencies**: Added `jax` to `pyproject.toml`.
    *. **Refactor Core Logic for Dual Backend Support**:
        * Modified `src/mapprojax/utils.py` to be backend-agnostic (accepts `xp` argument).

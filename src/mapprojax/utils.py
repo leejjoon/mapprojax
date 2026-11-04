@@ -1,3 +1,4 @@
+import jax
 import numpy as np
 
 def radec_to_xyz(ra_rad, dec_rad, xp=np):
@@ -125,7 +126,57 @@ def apply_rotation_transpose(matrix, x, y, z):
     return xn, yn, zn
 
 
-def compose_relative_rotation(wcs_src, wcs_tgt, frame_rotation=None):
+def _check_sequence_components(value, name):
+    """Reject a host sequence holding a traced or narrower-float component.
+
+    ``np.asarray`` would promote ``[np.float32(x), 30]`` to float64 and so
+    hide the truncation the dtype check exists to catch. Python floats and
+    integers carry no stored precision and are left to the array checks.
+    """
+    if isinstance(value, (np.ndarray, jax.Array)) or not isinstance(value, (list, tuple)):
+        return
+    for item in value:
+        if isinstance(item, jax.core.Tracer):
+            raise TypeError(f"{name} is traced and cannot be used on the host")
+        if isinstance(item, (bool, int, float)):
+            continue
+        dtype = getattr(item, "dtype", None)
+        if dtype is not None and np.dtype(dtype).kind == "f" and np.dtype(dtype) != np.float64:
+            raise TypeError(
+                f"{name} has a {np.dtype(dtype)} component; host references must "
+                "be float64 throughout, and assembling the sequence would hide "
+                "the lost precision"
+            )
+
+
+def _host_reference_rotation(crval, name):
+    """Build a host rotation from an actual float64 degree-valued reference.
+
+    The reference must be a concrete, finite ``(2,)`` array whose dtype is
+    already float64: a float32 or traced reference is rejected rather than
+    upcast, since an upcast cannot restore precision lost earlier.
+    """
+    if isinstance(crval, jax.core.Tracer):
+        raise TypeError(
+            f"{name} is traced; build the relative matrix in JAX and pass it "
+            "to Reprojector.from_matrix"
+        )
+    _check_sequence_components(crval, name)
+    try:
+        value = np.asarray(crval)
+    except (TypeError, ValueError) as exc:
+        raise TypeError(f"{name} must be a concrete float64 array") from exc
+    if value.shape != (2,):
+        raise ValueError(f"{name} must have shape (2,), got {value.shape}")
+    if value.dtype != np.dtype(np.float64):
+        raise TypeError(f"{name} must have true float64 dtype, got {value.dtype}")
+    if not np.all(np.isfinite(value)):
+        raise ValueError(f"{name} must be finite")
+    return rotation_matrix(np.radians(value[0]), np.radians(value[1]), xp=np)
+
+
+def compose_relative_rotation(wcs_src, wcs_tgt, frame_rotation=None, *,
+                              crval_src=None, crval_tgt=None):
     """
     Compose the direct native(src) -> native(tgt) rotation
     ``M_rel = M_tgt @ frame_rotation @ M_src.T``, entirely in float64 on
@@ -136,39 +187,54 @@ def compose_relative_rotation(wcs_src, wcs_tgt, frame_rotation=None):
     absolute celestial unit vector on the per-pixel path: with ``M_rel``
     precomputed once here, the bulk per-pixel work is
     ``pix_to_native -> apply M_rel -> native_to_pix``, which stays in the
-    field-relative regime throughout and is safe in fp32 (see
-    ``fo64_report_and_plan.md`` and DEVELOPER.md's Precision Strategy
-    section for why the celestial<->native rotation is otherwise the one
-    fp64-mandatory step).
+    field-relative regime throughout and is safe in fp32 (see DEVELOPER.md's
+    Precision Strategy section for why the celestial<->native rotation is
+    otherwise the one fp64-mandatory step).
 
     Parameters
     ----------
-    wcs_src, wcs_tgt : WCSBase (NumPy-backed, e.g. Tan/Sin)
-        Must be NumPy-backed (``wcs.xp is numpy``), not a JAX WCS: this
-        composition must run in true float64 regardless of
-        ``jax_enable_x64``, and a JAX WCS's own ``r_matrix`` may already
-        be truncated to float32 if x64 was never enabled.
+    wcs_src, wcs_tgt : conforming WCS
+        Any WCS exposing a concrete float64 ``crval`` pair in degrees. The
+        rotation is rebuilt from those host references in true float64,
+        independent of the WCS kernel precision and ``jax_enable_x64``.
     frame_rotation : array, shape (3, 3), optional
-        Rotation converting a celestial unit vector from ``wcs_src``'s
+        Finite rotation converting a celestial unit vector from ``wcs_src``'s
         reference frame into ``wcs_tgt``'s (e.g. ICRS -> Galactic).
         Defaults to the identity (both WCSes share a frame).
+    crval_src, crval_tgt : array, shape (2,), float64, optional, keyword-only
+        Original host references in degrees, used instead of the
+        corresponding ``wcs.crval``. Use them when a WCS has passed through a
+        transformation (for example ``jit`` with x64 off) that left its own
+        ``crval`` traced or float32. They are validated like ``wcs.crval``;
+        nothing can prove that an override describes the intended frame, so
+        retaining the original references is the caller's responsibility.
 
     Returns
     -------
     M_rel : numpy.ndarray, shape (3, 3), dtype float64
-    """
-    for name, wcs in (("wcs_src", wcs_src), ("wcs_tgt", wcs_tgt)):
-        if wcs.xp is not np:
-            raise TypeError(
-                f"{name} must be a NumPy-backed WCS (e.g. Tan/Sin), not a JAX one: "
-                "this composition must run in true float64 regardless of "
-                "jax_enable_x64, and a JAX WCS's r_matrix may already be "
-                "truncated to float32."
-            )
 
-    m_src = np.asarray(wcs_src.r_matrix, dtype=np.float64)
-    m_tgt = np.asarray(wcs_tgt.r_matrix, dtype=np.float64)
+    Typical recovery after a transformation::
+
+        m = compose_relative_rotation(src, tgt, crval_src=host_src,
+                                      crval_tgt=host_tgt)
+        rp = Reprojector.from_matrix(src, tgt, m, matrix_precision="f32")
+    """
+    m_src = _host_reference_rotation(
+        wcs_src.crval if crval_src is None else crval_src,
+        "wcs_src.crval" if crval_src is None else "crval_src",
+    )
+    m_tgt = _host_reference_rotation(
+        wcs_tgt.crval if crval_tgt is None else crval_tgt,
+        "wcs_tgt.crval" if crval_tgt is None else "crval_tgt",
+    )
     if frame_rotation is None:
         return m_tgt @ m_src.T
-    frame_rotation = np.asarray(frame_rotation, dtype=np.float64)
+    if isinstance(frame_rotation, jax.core.Tracer):
+        raise TypeError("frame_rotation must be a concrete host matrix")
+    try:
+        frame_rotation = np.asarray(frame_rotation, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise TypeError("frame_rotation must be a concrete host matrix") from exc
+    if frame_rotation.shape != (3, 3) or not np.all(np.isfinite(frame_rotation)):
+        raise ValueError("frame_rotation must be a finite (3, 3) matrix")
     return m_tgt @ frame_rotation @ m_src.T

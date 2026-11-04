@@ -1,206 +1,128 @@
-"""The x64 policy, tested in fresh subprocesses.
-
-`jax_enable_x64` is process-global and effectively latched once arrays have
-been created, so each case runs in its own interpreter: the in-process
-fixtures that other test modules use to toggle x64 cannot reproduce what a
-user sees at import.
-"""
+"""Precision policy tests for the explicit mapprojax.wcs API."""
 
 import subprocess
 import sys
 import textwrap
 from pathlib import Path
 
-import pytest
-
 REPO = Path(__file__).resolve().parents[1]
 
 
 def run(code, expect_ok=True):
-    """Run ``code`` in a fresh interpreter with x64 off (JAX's default)."""
-    proc = subprocess.run(
-        [sys.executable, "-c", textwrap.dedent(code)],
-        cwd=REPO, capture_output=True, text=True, timeout=300,
-    )
-    if expect_ok and proc.returncode != 0:
-        raise AssertionError(f"expected success, got {proc.returncode}:\n{proc.stdout}\n{proc.stderr}")
+    proc = subprocess.run([sys.executable, "-c", textwrap.dedent(code)], cwd=REPO,
+                          capture_output=True, text=True, timeout=300)
+    if expect_ok and proc.returncode:
+        raise AssertionError(f"expected success, got {proc.returncode}:\n{proc.stderr}")
     return proc
 
 
 def test_import_is_quiet_with_x64_off():
-    """No import-time warning: the old one fired on every user's first import."""
     proc = run("""
         import warnings
-        warnings.simplefilter("error")
-        import mapprojax            # must not warn
+        warnings.simplefilter('error')
+        import mapprojax
         import jax
-        assert jax.config.jax_enable_x64 is False
-        print("ok")
+        assert not jax.config.jax_enable_x64
+        print('ok')
     """)
     assert "ok" in proc.stdout
 
 
-def test_numpy_classes_work_with_x64_off():
+def test_f32_projection_and_reprojection_work_with_x64_off():
     proc = run("""
         import numpy as np
-        from mapprojax import Tan, Sin
-        w = Tan([10., 10.], [[-1e-3, 0.], [0., 1e-3]], [180., 0.])
-        ra, dec = w.unproj(np.array(12.0), np.array(9.0))
-        x, y = w.proj(ra, dec)
-        assert abs(float(x) - 12.0) < 1e-6, x
-        d = w.unproj_offset(np.array(12.0), np.array(9.0))
-        assert np.all(np.isfinite(d[0]))
-        print("ok")
+        from mapprojax import Reprojector
+        from mapprojax.wcs import Tan
+        src = Tan([20., 20.], [[-1e-3, 0.], [0., 1e-3]], [180., 30.], precision='f32')
+        tgt = Tan([20., 20.], [[-1e-3, 0.], [0., 1e-3]], [180.01, 30.], precision='f32')
+        rp = Reprojector(src, tgt, matrix_precision='f32')
+        x, y = rp.pix_to_pix(np.array(20., dtype=np.float32), np.array(20., dtype=np.float32))
+        assert np.isfinite(float(x)) and np.isfinite(float(y))
+        print('ok')
     """)
     assert "ok" in proc.stdout
 
 
-def test_f32_reprojection_works_with_x64_off():
+def test_f64_requests_fail_clearly_with_x64_off():
     proc = run("""
-        import numpy as np
-        from mapprojax import Tan, Reprojector
-        src = Tan([200., 200.], [[-1e-3, 0.], [0., 1e-3]], [180., 30.])
-        tgt = Tan([200., 200.], [[-1e-3, 0.], [0., 1e-3]], [180.01, 30.])
-        rp = Reprojector(src, tgt, matrix_precision="f32")
-        x, y = rp.pix_to_pix(np.array(200.0), np.array(200.0))
-        assert np.isfinite(float(x))
-        print(float(x))
-    """)
-    assert "ok" not in proc.stdout and proc.stdout.strip()
+        from mapprojax.wcs import Tan
+        Tan([0., 0.], [[-1e-3, 0.], [0., 1e-3]], [0., 0.], precision='f64')
+    """, expect_ok=False)
+    assert proc.returncode and "requires float64" in proc.stderr
 
 
-@pytest.mark.parametrize("code, needle", [
-    ("""from mapprojax import Tan, Reprojector
-w = Tan([0., 0.], [[-1e-3, 0.], [0., 1e-3]], [0., 0.])
-Reprojector(w, w, matrix_precision="f64")""", "requires float64"),
-    ("""from mapprojax import TanJaxMixed
-TanJaxMixed([0., 0.], [[-1e-3, 0.], [0., 1e-3]], [0., 0.])""",
-     "requires float64"),
-    ("""from mapprojax import TanJaxArrayMixed
-TanJaxArrayMixed([0., 0.], [[-1e-3, 0.], [0., 1e-3]], ([0.], [0.]))""",
-     "requires float64"),
-])
-def test_explicit_f64_requests_fail_clearly(code, needle):
-    proc = run(code + "\nprint('should not reach here')", expect_ok=False)
-    assert proc.returncode != 0
-    assert "ValueError" in proc.stderr and needle in proc.stderr, proc.stderr[-500:]
-    assert "should not reach here" not in proc.stdout
+_F64_WALKER = """
+import jax, jax.numpy as jnp
+import numpy as np
 
 
-def test_bare_jax_class_absolute_methods_raise_without_x64():
-    proc = run("""
-        import jax.numpy as jnp
-        from mapprojax import TanJax
-        w = TanJax(jnp.array([0., 0.]), jnp.array([[-1e-3, 0.], [0., 1e-3]]),
-                   jnp.array([0., 0.]))
-        try:
-            w.unproj(jnp.array(1.0), jnp.array(1.0))
-        except TypeError as exc:
-            assert "float64" in str(exc)
-            print("raised")
-    """)
-    assert "raised" in proc.stdout
+def f64_primitives(closed):
+    \"\"\"Every primitive touching a float64 value, nested jaxprs included.\"\"\"
+    found = set()
+
+    # Operations only: an unused float64 leaf (the legs' host crval) is
+    # data carried by the PyTree, not arithmetic in the trace.
+    def walk(jx):
+        for e in jx.eqns:
+            for v in list(e.invars) + list(e.outvars):
+                if getattr(getattr(v, "aval", None), "dtype", None) == jnp.float64:
+                    found.add(str(e.primitive))
+            for p in e.params.values():
+                for sub in (p if isinstance(p, (list, tuple)) else [p]):
+                    if hasattr(sub, "eqns"):
+                        walk(sub)
+                    elif hasattr(getattr(sub, "jaxpr", None), "eqns"):
+                        walk(sub.jaxpr)
+
+    walk(closed.jaxpr)
+    return sorted(found)
+"""
 
 
-def test_bare_jax_class_offset_path_still_works_with_x64_off():
-    """The offset APIs are the supported f32 route; they must not raise."""
-    proc = run("""
-        import numpy as np
-        import jax.numpy as jnp
-        from mapprojax import TanJax
-        w = TanJax(jnp.array([0., 0.]), jnp.array([[-1e-3, 0.], [0., 1e-3]]),
-                   jnp.array([0., 0.]))
-        d = w.unproj_offset(jnp.array(5.0), jnp.array(5.0))
-        assert np.all(np.isfinite(np.asarray(d[0])))
-        n = w.pix_to_native(jnp.array(5.0), jnp.array(5.0))
-        assert np.all(np.isfinite(np.asarray(n[0])))
-        print("ok")
-    """)
+def test_f64_walker_detects_a_plain_f64_operation():
+    """Mutation control: the check below must fail on real f64 arithmetic,
+    including arithmetic hidden in a nested jit."""
+    proc = run(_F64_WALKER + """
+jax.config.update('jax_enable_x64', True)
+inner = jax.jit(lambda a: a + a)
+f = lambda x: x + inner(jnp.float64(1.0)).astype(jnp.float32)
+assert f64_primitives(jax.make_jaxpr(f)(jnp.float32(1.0))), "walker missed f64"
+assert not f64_primitives(jax.make_jaxpr(lambda x: x + x)(jnp.float32(1.0)))
+print('ok')
+""")
     assert "ok" in proc.stdout
 
 
-def test_f32_sip_reprojection_has_no_f64_ops():
-    """A single f64 anywhere in the jaxpr would defeat the fp32 path."""
-    proc = run("""
-        import jax, jax.numpy as jnp
-        jax.config.update("jax_enable_x64", True)  # build, then inspect types
-        from mapprojax import Tan, Reprojector
+def test_f32_reprojector_jaxpr_has_no_f64_ops_with_x64_on_or_off():
+    """A single f64 anywhere in the trace would defeat the fp32 path: nested
+    SIP with AP/BP on both legs, Reprojector closed over and passed as a jit
+    argument, with x64 on and off."""
+    for enabled in (False, True):
+        proc = run(_F64_WALKER + f"""
+jax.config.update('jax_enable_x64', {enabled})
+from mapprojax import Reprojector
+from mapprojax.sip import Sip
+from mapprojax.wcs import Tan, Sin
 
-        src = Tan([100., 100.], [[-1e-3, 0.], [0., 1e-3]], [180., 30.],
-                  sip=__import__("mapprojax.sip", fromlist=["Sip"]).Sip(
-                      a=[[0., 0.], [0., 0.], [1e-5, 0.]],
-                      b=[[0., 0.], [0., 0.], [0., 1e-5]]))
-        tgt = Tan([100., 100.], [[-1e-3, 0.], [0., 1e-3]], [180., 30.])
-        rp = Reprojector(src, tgt, matrix_precision="f32")
-        jaxpr = jax.make_jaxpr(lambda x, y: rp.pix_to_pix(x, y))(
-            jnp.float32(3.), jnp.float32(4.))
+a = np.zeros((4, 4)); a[2, 0] = 4e-6; a[1, 1] = -2e-6; a[0, 3] = 1e-9
+b = np.zeros((4, 4)); b[2, 0] = -3e-6; b[1, 1] = 2.5e-6; b[3, 0] = 1e-9
+sip_src = Sip(a=a, b=b, ap=-a, bp=-b, inverse_steps=2)
+sip_tgt = Sip(a=0.5 * a, b=0.5 * b, ap=-0.5 * a, bp=-0.5 * b, inverse_steps=3)
+cd = [[-1e-3, 0.], [0., 1e-3]]
+src = Tan([100., 100.], cd, [180., 30.], sip=sip_src, precision='f32')
+tgt = Sin([100., 100.], cd, [180.01, 30.], sip=sip_tgt, precision='f32')
+rp = Reprojector(src, tgt, matrix_precision='f32')
+x = jnp.full((8,), 3.0, jnp.float32); y = jnp.full((8,), 4.0, jnp.float32)
 
-        def walk(jx):
-            # Nested jaxprs too (pjit, where, ...): an f64 constant inside a
-            # sub-jaxpr is still an f64 op in the trace.
-            for e in jx.eqns:
-                for v in list(e.invars) + list(e.outvars):
-                    aval = getattr(v, "aval", None)
-                    if getattr(aval, "dtype", None) == jnp.float64:
-                        yield str(e.primitive)
-                for p in e.params.values():
-                    subs = p if isinstance(p, (list, tuple)) else [p]
-                    for sub in subs:
-                        inner = getattr(sub, "jaxpr", None)
-                        if inner is not None:
-                            yield from walk(getattr(inner, "jaxpr", inner))
-
-        bad = sorted(set(walk(jaxpr.jaxpr)))
-        assert not bad, bad
-        print("ok")
-    """)
-    assert "ok" in proc.stdout
-
-
-@pytest.mark.parametrize("cls", ["TanJax", "TanJaxArray", "TanJaxMixed", "TanJaxArrayMixed"])
-def test_absolute_methods_raise_after_x64_is_switched_off(cls):
-    """Built with x64 on, used with it off: the stored leaves are still
-    float64 but every operation now truncates, so the check is on effective
-    precision. Every absolute method goes through the same rotation guard,
-    including ``unproj_xyz`` on the Mixed array class (it had none)."""
-    proc = run(f"""
-        import jax, jax.numpy as jnp
-        jax.config.update("jax_enable_x64", True)
-        import mapprojax as mp
-        arr = "Array" in "{cls}"
-        crval = (jnp.array([10.0]), jnp.array([20.0])) if arr else jnp.array([10.0, 20.0])
-        w = mp.{cls}(jnp.zeros(2), jnp.array([[1e-3, 0.], [0., 1e-3]]), crval)
-        jax.config.update("jax_enable_x64", False)
-        x = jnp.array([1.0]); y = jnp.array([2.0])
-        calls = {{
-            "proj": lambda: w.proj(x * 0.1, y * 0.1),
-            "unproj": lambda: w.unproj(x, y),
-            "proj_xyz": lambda: w.proj_xyz(x, x, x),
-            "unproj_xyz": lambda: w.unproj_xyz(x, y),
-        }}
-        for name, call in calls.items():
-            try:
-                call()
-            except TypeError:
-                continue
-            raise SystemExit(f"{{name}} did not raise")
-        print("ok")
-    """)
-    assert "ok" in proc.stdout
-
-
-def test_array_guard_checks_both_reference_components():
-    """A float32 Dec array next to a float64 RA array is not float64."""
-    proc = run("""
-        import jax, jax.numpy as jnp
-        jax.config.update("jax_enable_x64", True)
-        import mapprojax as mp
-        w = mp.TanJaxArray(jnp.zeros(2), jnp.array([[1e-3, 0.], [0., 1e-3]]),
-                           (jnp.array([10.0]), jnp.array([20.0])))
-        w.crvals = (w.crvals[0], w.crvals[1].astype(jnp.float32))
-        try:
-            w.unproj(jnp.array([1.0]), jnp.array([2.0]))
-        except TypeError:
-            print("raised")
-    """)
-    assert "raised" in proc.stdout
+closed_over = jax.make_jaxpr(lambda x, y: rp.pix_to_pix(x, y))(x, y)
+as_argument = jax.make_jaxpr(lambda r, x, y: r.pix_to_pix(x, y))(rp, x, y)
+from_matrix = jax.make_jaxpr(
+    lambda r, x, y: Reprojector.from_matrix(src, tgt, r.m_rel).pix_to_pix(x, y)
+)(rp, x, y)
+for name, jx in [("closed", closed_over), ("argument", as_argument), ("from_matrix", from_matrix)]:
+    bad = f64_primitives(jx)
+    assert not bad, (name, bad)
+    assert any(e.primitive.name for e in jx.jaxpr.eqns), name
+print('ok')
+""")
+        assert "ok" in proc.stdout
