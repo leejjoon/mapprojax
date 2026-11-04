@@ -320,21 +320,98 @@ Done when:
 
 ### Stage 4: the kernel's public surface
 
-- [ ] **Pixel map with validity mask.** Given a target shape and the source image shape, `Reprojector` returns source pixel coordinates plus a mask combining the projection domain and the source footprint. Define the pixel-edge convention explicitly (a pixel centre at index `i` covers `[i-0.5, i+0.5)`). Every resampler needs this and only mapprojax knows the domains; coverage that depends on the interpolation kernel stays in reprojax.
-- [ ] **Gradient tests.** `jax.test_util.check_grads` with respect to `crpix`, `cd`, `crval` and SIP `a`/`b`, for each projection, at several field positions, in fp64 first and then with documented fp32 tolerances. A package sold as differentiable must verify this before release.
-- [ ] **Differentiability table.** Which parameters are differentiable in which precision mode, including `Reprojector`'s host-side `crval` composition.
+Revised by the Stage 4 committee review (Fable, Astra; Nov 5 2026; record appended below).
+
+**What Stage 3 already covered:**
+- The gradient tests are mostly done: `tests/test_gradients_modes.py` has 90 tests running `check_grads` forward and reverse for `Tan` and `Sin` in all three modes. They cover every leaf including AP/BP, on the forward and inverse offset paths plus the absolute path in mixed and f64. Both SIP cases are included, and the tolerances are recorded: f64 eps 1e-3, atol 1e-6, rtol 1e-5; mixed eps 0.3, 3e-3; f32 eps 1, 1e-2. Mixed-versus-f64 Jacobians are reported.
+- The facts for the differentiability table are settled.
+
+Stage 4 adds API; it does not break any. No existing signature changes, versions stay at 0.3.0 for mapprojax and 0.2.0 for reprojax, and nothing is released.
+
+- [ ] **1. `Reprojector.pixel_map(x, y, *, bounds_shape=None) -> (x_mapped, y_mapped, valid)`.**
+  - **Direction and inputs.** Same direction and broadcasting as `pix_to_pix`: constructor source → constructor target. For resampling, build `Reprojector(output_wcs, input_wcs)` and pass the input image's `(ny, nx)`.
+  - **Outputs.** Coordinates in the kernel dtype (`matrix_precision`), finite everywhere, with zero stand-ins where invalid. `valid` is boolean.
+  - **Validity.** Both projection legs plus the existing runtime checks (CD, SIP convergence), from the pipeline's internal flags rather than reconstructed from NaN. Also an explicit `isfinite` on the mapped coordinates. When `bounds_shape` is given, the coordinates must also lie in `[-0.5, nx-0.5) × [-0.5, ny-0.5)`.
+  - **Edge rule.** A pixel centre `i` covers `[i-0.5, i+0.5)`, and the last pixel's far edge is excluded. This matches astropy `reproject`'s clip and reprojax: both members probed it, and `-0.5` and `n-0.5-δ` are accepted while `-0.5-δ` and `n-0.5` are not.
+  - **What it doesn't do.** No clipping, no epsilon and no f64 promotion. Classify the computed kernel-dtype coordinate. Document that f32 can classify a coordinate within about one ulp of an edge differently from f64: `3.5 ± 1e-8` both round to `3.5` in f32. Zero flips were measured on the real pair.
+  - **Shapes, `jit` and `vmap`.** `bounds_shape` is static: positive Python ints that form part of the `jit` cache key. Coordinate values may be traced. Batch with `vmap` over stacked Reprojectors and explicit grids; there is no batched class. There is no grid helper either: the manual shows a whole image with `jnp.indices`, and tiles and sparse samples are passed directly.
+  - **Gradients.** They flow through the coordinates on valid regions. The mask has none, and consumers apply it with `where` before any unsafe arithmetic.
+  - **`pix_to_pix`** and its NaN contract are unchanged.
+  - **Stays in reprojax:** kernel-dependent coverage, half-pixel clipping, data-derived footprints (source NaNs) and the adaptive window checks.
+  - **Measured on the real 2040² pair** (CPU prototypes by both members): coordinates bit-identical to `pix_to_pix`, finite gradients, no speedup. The case for the method is one footprint definition, owned by mapprojax, not performance.
+- [ ] **2. Gradient tests through `Reprojector`.** Build on `test_gradients_modes.py`'s scaling and floors. Use short step sweeps to set tolerances for the new losses; do not copy one eps blindly. Keep the mixed-versus-f64 report.
+  - **Parameters.** `check_grads` forward and reverse in f32 and f64 on:
+    - the input coordinates and both legs' `crpix`, `cd` and SIP: A/B-seeded on both legs, and AP/BP-only;
+    - `m_rel`;
+    - live `crval` on both sides, through a matrix built inside the differentiated function and passed to `from_matrix`, checked numerically, not just finite and nonzero.
+
+    `Reprojector` has f32 and f64 kernels only; there is no mixed mode.
+  - **Eager and `from_matrix` pins.**
+    - The eager constructor rejects traced references.
+    - Applying an already-built `Reprojector` has no path back to its stored `crval`.
+    - `from_matrix` does not tie the legs' `crval` to `m_rel`.
+  - **Masking.** Masked losses on `pix_to_pix` and `pixel_map`, including bounds masks. A valid sample's gradient must not change with invalid neighbours. Cover all-invalid batches. At exact singularities, test the documented invalid behaviour.
+  - **Geometry.** Representative cases from existing fixtures, not a full cross product: centre, reference column and off-axis samples; an equatorial field with RA wrap; near-pole references of both signs; and one TAN/SIN pair. The real SPHEREx pair covers wide separation. Use angular residuals where raw longitude is not smooth.
+  - **No f64.** The no-f64 walker covers the isolated f32 `pixel_map` kernel. A differentiable f64 matrix built before an f32 kernel does not violate the rule.
+- [ ] **3. Differentiability table** in `docs/user_manual.md`, with pointers from DEVELOPER.md, the README and the method docstrings.
+  - **Rows:** native/pixel methods, offset methods, absolute methods (mixed and f64), an already-built eager `Reprojector`, `from_matrix`, the host composition and helpers, the validity and bounds mask, and the static configuration (precision, shapes, projection type, `inverse_steps`).
+  - **Cells** say differentiable on smooth valid regions, zero by construction, host-only or not differentiable.
+  - **"Differentiable" does not mean "nonzero":**
+    - native/pixel methods have no `crval` dependency;
+    - offset methods do not use the reference longitude;
+    - AP/BP sensitivity vanishes once the Newton inverse has converged.
+- [ ] **4. Accuracy harness edge.** `tests/accuracy_reference.py` (~line 351) uses an inclusive upper overlap bound. Change it to the half-open `<` and add an exact-edge regression test. Both members measured no change: overlap stays at 1009 and 320 of 1090 samples per direction, so the protected rows stay byte-identical.
+- [ ] **5. reprojax integration, one commit.**
+  - Add a validity-aware adapter that uses `pixel_map`, and keep the two-result `PixelTransform` protocol and its fallback for other providers.
+  - For orders 0 and 1, the mask replaces the redundant coordinate sanitization and the second `map_coordinates` coverage pass (`interp.py`). Measured: zero footprint mismatches on 1.44M real-pair pixels and on 20,015 edge, NaN and Inf probes, in both dtypes and both orders.
+  - Keep half-pixel clipping, which is a sampling step: at `x=-0.25`, interpolating ones without clipping gives 0.75. Keep the data-derived footprint, `~isnan(result)` (`interp.py:106–111`): an in-bounds source NaN is geometrically valid but has footprint 0. Keep the adaptive resampler's window and Jacobian checks.
+  - Re-pin the pair afterwards.
+
+**Done when**
+- Direction, dtypes, bounds, stand-ins and the edge rule at both ends and corners are documented and tested. This includes exact endpoints and `nextafter` neighbours in f32, and non-finite coordinates.
+- Explicit grids, broadcasting, empty inputs, `jit` with static bounds and `vmap` over stacked Reprojectors work, and invalid shapes fail clearly.
+- `pix_to_pix` arithmetic and the protected accuracy and pair rows are byte-identical, and the harness uses the half-open rule.
+- The item 2 gradient tests pass on CPU and ROCm with recorded tolerances, and invalid-neighbour isolation is preserved.
+- The no-f64 walker covers the f32 `pixel_map` kernel, and changing numerical leaves does not retrace.
+- In reprojax, final images and footprints are unchanged on the synthetic and real-data gates, including source NaNs, with no relaxed budgets.
+- **Performance:** Stage 3's rules on CPU and ROCm, using `benchmark_stage3.py` with a `pixel_map` workload (2040² real pair, f32 and f64).
+  - **Limits:** warm `max(1.10·B, B+0.05 ms)`; lowering, compile and cold `max(1.20·B, B+50 ms)`.
+  - **Baseline B:** the current coordinates plus equivalent finite and bounds checks, measured in the same session. The plain pair-kernel comparison is kept as well.
+- The suite has no new skips or xfails, and the tested mapprojax/reprojax revision pair is recorded.
+
+**Regression net.** Stage 3's suites unchanged: accuracy, gradients, SIP, CD, JSON, x64 and the fresh-process tests. Downstream: the synthetic interpolation and adaptive comparisons, image-data gradients, batching and the real SPHEREx gate.
+
+**Commit order**
+1. Contract and characterization: this revision and baseline measurements.
+2. Gradient tests (item 2) and the differentiability table (item 3).
+3. `pixel_map` with its edge, dtype, `jit`, `vmap`, mask-gradient and no-f64 tests, the harness edge fix (item 4) and the timing workload.
+4. reprojax adapter and full gate (item 5).
+5. Closure record and re-pinned pair.
 
 ### Stage 5: docs and release
 
-- [ ] Reconcile the precision numbers across the `reproject.py` docstring, DEVELOPER.md and `precision_results.md`, using realistic-size figures. Link the existing plate-scale envelope tables rather than producing new ones.
-- [ ] Fix `docs/user_manual.md`: remove the nonexistent `to_bytes`/`from_bytes`, remove the ASDF recommendation, and rewrite examples for the JAX-first API.
-- [ ] README built from `user_manual.md` and the DEVELOPER.md decision tree: what mapprojax is (coordinate kernel), what it is not (header parsing and general pix↔sky stay in astropy; image resampling is reprojax), the precision table, and the comparison with jax-galsim, dfreproject and astropy `reproject`. `pyproject.toml` already points at the missing README.
-- [ ] Document the Mixed precision envelope from the Stage 1 follow-up (per-case fp32 caps, no absolute form) as a limitation, not a bug.
-- [ ] State conventions once: 0-based pixels, `crval` in degrees, `proj`/`unproj` in radians, (lon, lat) order, and behaviour outside each projection's domain.
+Coverage from Stage 3 (Nov 5 2026): the user-manual fixes and the conventions are done. The README exists but lacks the precision table and comparisons. The rest is open.
+
+- [ ] Reconcile the precision numbers across the `reproject.py` docstring, DEVELOPER.md and `precision_results.md`, using realistic-size figures. Link the existing plate-scale envelope tables rather than producing new ones. *Open. Stage 3 marked `precision_results.md` as a pre-0.3.0 historical record and regenerated `accuracy_results.md`.*
+- [x] Fix `docs/user_manual.md`: remove the nonexistent `to_bytes`/`from_bytes`, remove the ASDF recommendation, and rewrite examples for the JAX-first API. *Done in Stage 3:*
+  - neither is recommended any more, and both appear only as "not supported";
+  - every example uses `Tan`/`Sin` with `precision=` and they all run in a fresh process;
+  - added sections on offset helpers, `Reprojector`/`from_matrix`, retained references, the migration table and compatibility.
+- [ ] README built from `user_manual.md` and the DEVELOPER.md decision tree: what mapprojax is (coordinate kernel), what it is not (header parsing and general pix↔sky stay in astropy; image resampling is reprojax), the precision table, and the comparison with jax-galsim, dfreproject and astropy `reproject`.
+  - *Partly done in Stage 3:* `README.md` exists and is committed, and `pyproject.toml` points at it. It covers what mapprojax is and is not, install, a quick start that runs, the three precision modes in prose, serialization and migration.
+  - *Remaining:* the measured precision table and the comparison with jax-galsim, dfreproject and astropy `reproject`.
+- [ ] Document the Mixed precision envelope from the Stage 1 follow-up (per-case fp32 caps) as a limitation, not a bug. (Corrected Nov 5 2026: mixed mode does provide absolute `proj`/`unproj`; only f32 lacks them.)
+- [x] State conventions once: 0-based pixels, `crval` in degrees, `proj`/`unproj` in radians, (lon, lat) order, and behaviour outside each projection's domain. *Done in Stage 3:* `docs/user_manual.md`, "Conventions and installation", covers the units and order. Its "Constructing a WCS" section covers the TAN/SIN domains, including the boundaries, and per-sample NaN.
 - [ ] Mark `fo64_report_and_plan.md` as implemented (its header still says "not started") and move it and `GEMINI.md` into `docs/notes/`. Add `*.fits` and `*.tgz` to `.gitignore` and clean scratch scripts out of the root.
 - [ ] Rerun `benchmark_precision.py` on Strix Halo: the committed results predate the script's rewrite and lack the `Reprojector` columns and accuracy section.
 - [ ] CI on GitHub Actions: one full job with x64 on, plus a separate-process x64-off smoke job covering import without warning, `Reprojector` f32, the offset APIs and no fp64 in the jaxpr. The tests toggle x64 themselves, so a full on/off matrix would mostly fail for expected reasons.
 - [ ] Packaging: set `requires-python` and the JAX floor to what CI tests (the rocm extra already needs Python 3.12); add LICENSE; verify a clean wheel install.
+  - *Partly done in Stage 3:*
+    - version 0.3.0;
+    - the ASDF extra and entry points removed;
+    - a wheel built from a clean copy contains no ASDF files and includes the README;
+    - reprojax 0.2.0 declares `mapprojax>=0.3.0,<0.4`.
+  - *Remaining:* `requires-python` (still `>=3.8`), the JAX floor (still `>=0.4.0`), LICENSE, and an install check from the built wheel.
 - [ ] GitHub description and topics; tag v0.3.0; publish to PyPI.
 
 ## After v0.3.0
@@ -345,7 +422,6 @@ Done when:
 | TPV | Standard in SCAMP/SWarp output (DES, DECaLS, Pan-STARRS) | A distortion step like SIP, so no new projection class; shares the Newton inverse from Stage 2. Watch the radial terms' non-differentiable `r` at the origin |
 | Astrometric-fit example | The demo for the gradient story | Fit CD + SIP to Gaia matches; compare with `astropy.wcs.utils.fit_wcs_from_points` |
 | ZEA, STG, ARC | Zenithal family, cheap once the restructure is done | Add when a dataset needs them |
-| `Reprojector` differentiable in `crval` | Closes the last gradient gap | The rotation is composed on the host today |
 | Research note | Makes the precision work citable | RNAAS length, built on realistic-size numbers. The contribution is the measured envelope and the offset form; composing M_tgt·M_srcᵀ itself is standard |
 
 ## Cut or deferred
@@ -793,3 +869,24 @@ Both were repaired, and both members then returned GO, conditional only on commi
 - Superseded `benchmarks/results` artifacts can be pruned once nothing cites them.
 - `stage3-g012-qa.json`, the C5–C8 session's withdrawn QA report, is left untracked.
 - The user-owned `AGENT.md` still describes the retired class families and ASDF.
+
+### Stage 4 committee review — Nov 5 2026
+
+Fable and Astra reviewed the Stage 4 plan against the code and reprojax's current use of mapprojax. Both said to revise it before implementation, and Stage 4 above is the converged text.
+
+**Agreed from the first round:**
+- the half-open edge rule, confirmed against astropy `reproject` 0.21.0 and reprojax;
+- finite stand-ins plus a boolean mask, with `pix_to_pix` keeping NaN;
+- additive changes and no version bump;
+- strike "Reprojector differentiable in `crval`" from the after-0.3.0 list, because `from_matrix` already provides it;
+- keep `from_astropy` deferred;
+- put the table in the user manual;
+- add a "Done when" list, Stage 3's timing rules, and one reprojax commit followed by a re-pin.
+
+**Resolved in reconciliation:**
+- **Coverage replacement.** Fable showed that the geometric mask equals reprojax's coverage interpolation for orders 0 and 1, with zero mismatches in 1.44M pixels. Astra showed that clipping and the data-derived footprint must stay: an in-bounds source NaN has footprint 0, and at `x=-0.25` unclipped interpolation of ones gives 0.75. Result: replace only the sanitization and the coverage pass.
+- **Accuracy harness.** Astra found the inclusive upper bound. Both measured that changing it moves no sample.
+- **Scope moves.** API documentation moves into Stage 4, CI stays in Stage 5, and the Stage 5 statement about mixed mode is corrected now.
+- **Gradient geometry.** Astra's representative list, trimmed by Fable: angular residuals are a tolerance detail, and the real pair already covers wide separation.
+
+**Operator decision (Nov 5).** The members' final positions had swapped: Fable proposed `pix_to_pix_with_validity` plus a `pixel_grid` helper, and Astra `pixel_map` with no helper. The operator chose `pixel_map(x, y, *, bounds_shape=None)` with no grid helper; a helper can be added later without a break.
