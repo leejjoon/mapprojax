@@ -1,0 +1,80 @@
+{
+  "timing": [
+    {
+      "baseline": "benchmarks/results/stage4-baseline-cpu-pair-f64-r2.json",
+      "candidate": "benchmarks/results/stage4-new-cpu-pair-f64-r2.json",
+      "metadata": {
+        "backend_requested": "cpu",
+        "mode": "full",
+        "workload": "pair",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 3,
+        "batch_shape": null,
+        "pair_precision": "f64",
+        "devices": "CpuDevice(id=0)",
+        "input_dtype": "float32",
+        "kernel_precision": "f64",
+        "sip": {
+          "source": {
+            "order": 3,
+            "inverse_steps": 3
+          },
+          "target": {
+            "order": null,
+            "inverse_steps": null
+          }
+        },
+        "bounds_shape": null,
+        "bounds": null,
+        "direction": {
+          "source": "spherex_l2",
+          "target": "spherex_template"
+        },
+        "semantic_workload": "pair_pixel_mapping",
+        "backend_actual": "cpu",
+        "calls": {
+          "baseline": "pix_to_pix",
+          "candidate": "pix_to_pix"
+        },
+        "provenance": {
+          "baseline": {
+            "mapprojax_sha256": "5413074f147ede139594ad6f51bfdfa508f3fa95c52853ba6119c850f60428f7",
+            "benchmark_sha256": "032de873e55f6f73773d5c5066c8450e2b15f78c0da7672595d1181e29092de9"
+          },
+          "candidate": {
+            "mapprojax_sha256": "74ae95d290d017d8eb6ff77d7d9ac6ec727fdc60835a57ef507f8f792e879017",
+            "benchmark_sha256": "032de873e55f6f73773d5c5066c8450e2b15f78c0da7672595d1181e29092de9"
+          }
+        }
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.026007011299952865,
+          "candidate": 0.02547445730306208,
+          "budget": 0.028607712429948154,
+          "passed": true
+        },
+        "lowering_median_seconds": {
+          "baseline": 0.028354660142213106,
+          "candidate": 0.02846122905611992,
+          "budget": 0.07835466014221311,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 0.09161634696647525,
+          "candidate": 0.09214164223521948,
+          "budget": 0.14161634696647524,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 0.14405538700520992,
+          "candidate": 0.1417345330119133,
+          "budget": 0.1940553870052099,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    }
+  ]
+}

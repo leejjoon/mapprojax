@@ -1,0 +1,83 @@
+{
+  "timing": [
+    {
+      "baseline": "benchmarks/results/stage4-baseline-rocm-pixel_map-f32-r2.json",
+      "candidate": "benchmarks/results/stage4-new-rocm-pixel_map-f32-r2.json",
+      "metadata": {
+        "backend_requested": "rocm",
+        "mode": "full",
+        "workload": "pixel_map",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 3,
+        "batch_shape": null,
+        "pair_precision": "f32",
+        "devices": "RocmDevice(id=0)",
+        "input_dtype": "float32",
+        "kernel_precision": "f32",
+        "sip": {
+          "source": {
+            "order": 3,
+            "inverse_steps": 3
+          },
+          "target": {
+            "order": null,
+            "inverse_steps": null
+          }
+        },
+        "bounds_shape": [
+          1201,
+          1201
+        ],
+        "bounds": "half_open_pixel_centres",
+        "direction": {
+          "source": "spherex_l2",
+          "target": "spherex_template"
+        },
+        "semantic_workload": "bounded_pair_pixel_mapping",
+        "backend_actual": "gpu",
+        "calls": {
+          "baseline": "pix_to_pix+finite_half_open_bounds+zero_selection",
+          "candidate": "pixel_map"
+        },
+        "provenance": {
+          "baseline": {
+            "mapprojax_sha256": "5413074f147ede139594ad6f51bfdfa508f3fa95c52853ba6119c850f60428f7",
+            "benchmark_sha256": "032de873e55f6f73773d5c5066c8450e2b15f78c0da7672595d1181e29092de9"
+          },
+          "candidate": {
+            "mapprojax_sha256": "74ae95d290d017d8eb6ff77d7d9ac6ec727fdc60835a57ef507f8f792e879017",
+            "benchmark_sha256": "032de873e55f6f73773d5c5066c8450e2b15f78c0da7672595d1181e29092de9"
+          }
+        }
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.00042476155795156956,
+          "candidate": 0.00042990664951503277,
+          "budget": 0.0004747615579515696,
+          "passed": true
+        },
+        "lowering_median_seconds": {
+          "baseline": 0.028952369932085276,
+          "candidate": 0.02893703104928136,
+          "budget": 0.07895236993208528,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 0.1577104851603508,
+          "candidate": 0.15987208718433976,
+          "budget": 0.2077104851603508,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 0.1876632608473301,
+          "candidate": 0.18801633175462484,
+          "budget": 0.23766326084733008,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    }
+  ]
+}

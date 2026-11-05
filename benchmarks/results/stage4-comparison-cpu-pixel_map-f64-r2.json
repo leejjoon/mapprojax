@@ -1,0 +1,83 @@
+{
+  "timing": [
+    {
+      "baseline": "benchmarks/results/stage4-baseline-cpu-pixel_map-f64-r2.json",
+      "candidate": "benchmarks/results/stage4-new-cpu-pixel_map-f64-r2.json",
+      "metadata": {
+        "backend_requested": "cpu",
+        "mode": "full",
+        "workload": "pixel_map",
+        "size": 2040,
+        "order": 3,
+        "inverse_steps": 3,
+        "batch_shape": null,
+        "pair_precision": "f64",
+        "devices": "CpuDevice(id=0)",
+        "input_dtype": "float32",
+        "kernel_precision": "f64",
+        "sip": {
+          "source": {
+            "order": 3,
+            "inverse_steps": 3
+          },
+          "target": {
+            "order": null,
+            "inverse_steps": null
+          }
+        },
+        "bounds_shape": [
+          1201,
+          1201
+        ],
+        "bounds": "half_open_pixel_centres",
+        "direction": {
+          "source": "spherex_l2",
+          "target": "spherex_template"
+        },
+        "semantic_workload": "bounded_pair_pixel_mapping",
+        "backend_actual": "cpu",
+        "calls": {
+          "baseline": "pix_to_pix+finite_half_open_bounds+zero_selection",
+          "candidate": "pixel_map"
+        },
+        "provenance": {
+          "baseline": {
+            "mapprojax_sha256": "5413074f147ede139594ad6f51bfdfa508f3fa95c52853ba6119c850f60428f7",
+            "benchmark_sha256": "032de873e55f6f73773d5c5066c8450e2b15f78c0da7672595d1181e29092de9"
+          },
+          "candidate": {
+            "mapprojax_sha256": "74ae95d290d017d8eb6ff77d7d9ac6ec727fdc60835a57ef507f8f792e879017",
+            "benchmark_sha256": "032de873e55f6f73773d5c5066c8450e2b15f78c0da7672595d1181e29092de9"
+          }
+        }
+      },
+      "rules": {
+        "warm_median_of_process_medians_seconds": {
+          "baseline": 0.02670845785178244,
+          "candidate": 0.027165810577571392,
+          "budget": 0.029379303636960688,
+          "passed": true
+        },
+        "lowering_median_seconds": {
+          "baseline": 0.028707733377814293,
+          "candidate": 0.029347372241318226,
+          "budget": 0.0787077333778143,
+          "passed": true
+        },
+        "compile_median_seconds": {
+          "baseline": 0.10060195391997695,
+          "candidate": 0.11297816503793001,
+          "budget": 0.15060195391997694,
+          "passed": true
+        },
+        "cold_median_seconds": {
+          "baseline": 0.1503573819063604,
+          "candidate": 0.1575216674245894,
+          "budget": 0.20035738190636038,
+          "passed": true
+        }
+      },
+      "all_passed": true
+    }
+  ]
+}

@@ -19,32 +19,76 @@ RULES = (
     ("compile_median_seconds", 1.20, 0.05),
     ("cold_median_seconds", 1.20, 0.05),
 )
-FIELDS = ("backend_requested", "mode", "workload", "call", "size", "order",
-          "inverse_steps", "batch_shape", "pair_precision", "devices")
+HISTORICAL_FIELDS = (
+    "backend_requested", "mode", "workload", "call", "size", "order",
+    "inverse_steps", "batch_shape", "pair_precision", "devices",
+)
+CURRENT_FIELDS = tuple(field for field in HISTORICAL_FIELDS if field != "call") + (
+    "input_dtype", "kernel_precision", "sip", "bounds_shape", "bounds",
+    "direction", "semantic_workload", "backend_actual",
+)
 
 
 def compare(baseline: Path, candidate: Path) -> dict:
     b_root = json.loads(baseline.read_text())
     c_root = json.loads(candidate.read_text())
     b, c = b_root["measurement"], c_root["measurement"]
-    if b.get("implementation") != "legacy" or c.get("implementation") != "new":
-        raise ValueError("baseline must be legacy and candidate must be new")
-    if any(b.get(field) != c.get(field) for field in FIELDS):
+    roles = (b.get("implementation"), c.get("implementation"))
+    if roles == ("baseline", "new"):
+        fields = CURRENT_FIELDS
+        historical = False
+    elif roles == ("legacy", "new"):
+        fields = HISTORICAL_FIELDS
+        historical = True
+    else:
+        raise ValueError("pair roles must be current baseline/new or historical legacy/new")
+    if not historical:
+        if b.get("workload") == "pixel_map":
+            expected_calls = {
+                "baseline": "pix_to_pix+finite_half_open_bounds+zero_selection",
+                "new": "pixel_map",
+            }
+            valid_calls = (
+                b.get("call") == expected_calls["baseline"]
+                and c.get("call") == expected_calls["new"]
+                and b.get("semantic_call") == expected_calls["baseline"]
+                and c.get("semantic_call") == expected_calls["new"]
+            )
+        elif b.get("workload") == "pair":
+            valid_calls = (
+                b.get("call") == c.get("call") == "pix_to_pix"
+                and b.get("semantic_workload") == c.get("semantic_workload") == "pair_pixel_mapping"
+            )
+        else:
+            valid_calls = False
+        if not valid_calls:
+            raise ValueError("current baseline/new pair has incompatible semantics")
+        missing = [field for field in fields if field not in b or field not in c]
+        if missing:
+            raise ValueError(f"missing current workload metadata: {', '.join(missing)}")
+    if any(b.get(field) != c.get(field) for field in fields):
         raise ValueError("baseline and candidate workload metadata differ")
     if b_root.get("environment") != c_root.get("environment"):
         raise ValueError("baseline and candidate runtime environments differ")
     values = {}
     for name, limit, floor in RULES:
         if name not in b or name not in c:
-            if name == "lowering_median_seconds":
+            if historical and name == "lowering_median_seconds":
                 continue  # artifacts recorded before lowering was measured
             raise ValueError(f"missing {name}")
         before, after = b[name], c[name]
         budget = max(limit * before, before + floor)
         values[name] = {"baseline": before, "candidate": after,
                         "budget": budget, "passed": after <= budget}
+    metadata = {k: b.get(k) for k in fields}
+    if not historical:
+        metadata["calls"] = {"baseline": b["call"], "candidate": c["call"]}
+        metadata["provenance"] = {
+            "baseline": b.get("source_identity"),
+            "candidate": c.get("source_identity"),
+        }
     return {"baseline": str(baseline), "candidate": str(candidate),
-            "metadata": {k: b.get(k) for k in FIELDS},
+            "metadata": metadata,
             "rules": values, "all_passed": all(v["passed"] for v in values.values())}
 
 
