@@ -322,13 +322,18 @@ Done when:
 
 Revised by the Stage 4 committee review (Fable, Astra; Nov 5 2026; record appended below).
 
+**Status: complete (Nov 6 2026).** Verified pair: mapprojax C2
+`6969519a5da08d64517d4d5ae2b576a237b85cbb` with reprojax R1
+`14990d3639877a027bbe195091f05f9f9e1572e1`; closure record and final C3
+are recorded below.
+
 **What Stage 3 already covered:**
 - The gradient tests are mostly done: `tests/test_gradients_modes.py` has 90 tests running `check_grads` forward and reverse for `Tan` and `Sin` in all three modes. They cover every leaf including AP/BP, on the forward and inverse offset paths plus the absolute path in mixed and f64. Both SIP cases are included, and the tolerances are recorded: f64 eps 1e-3, atol 1e-6, rtol 1e-5; mixed eps 0.3, 3e-3; f32 eps 1, 1e-2. Mixed-versus-f64 Jacobians are reported.
 - The facts for the differentiability table are settled.
 
 Stage 4 adds API; it does not break any. No existing signature changes, versions stay at 0.3.0 for mapprojax and 0.2.0 for reprojax, and nothing is released.
 
-- [ ] **1. `Reprojector.pixel_map(x, y, *, bounds_shape=None) -> (x_mapped, y_mapped, valid)`.**
+- [x] **1. `Reprojector.pixel_map(x, y, *, bounds_shape=None) -> (x_mapped, y_mapped, valid)`.**
   - **Direction and inputs.** Same direction and broadcasting as `pix_to_pix`: constructor source → constructor target. For resampling, build `Reprojector(output_wcs, input_wcs)` and pass the input image's `(ny, nx)`.
   - **Outputs.** Coordinates in the kernel dtype (`matrix_precision`), finite everywhere, with zero stand-ins where invalid. `valid` is boolean.
   - **Validity.** Both projection legs plus the existing runtime checks (CD, SIP convergence), from the pipeline's internal flags rather than reconstructed from NaN. Also an explicit `isfinite` on the mapped coordinates. When `bounds_shape` is given, the coordinates must also lie in `[-0.5, nx-0.5) × [-0.5, ny-0.5)`.
@@ -339,7 +344,7 @@ Stage 4 adds API; it does not break any. No existing signature changes, versions
   - **`pix_to_pix`** and its NaN contract are unchanged.
   - **Stays in reprojax:** kernel-dependent coverage, half-pixel clipping, data-derived footprints (source NaNs) and the adaptive window checks.
   - **Measured on the real 2040² pair** (CPU prototypes by both members): coordinates bit-identical to `pix_to_pix`, finite gradients, no speedup. The case for the method is one footprint definition, owned by mapprojax, not performance.
-- [ ] **2. Gradient tests through `Reprojector`.** Build on `test_gradients_modes.py`'s scaling and floors. Use short step sweeps to set tolerances for the new losses; do not copy one eps blindly. Keep the mixed-versus-f64 report.
+- [x] **2. Gradient tests through `Reprojector`.** Build on `test_gradients_modes.py`'s scaling and floors. Use short step sweeps to set tolerances for the new losses; do not copy one eps blindly. Keep the mixed-versus-f64 report.
   - **Parameters.** `check_grads` forward and reverse in f32 and f64 on:
     - the input coordinates and both legs' `crpix`, `cd` and SIP: A/B-seeded on both legs, and AP/BP-only;
     - `m_rel`;
@@ -353,15 +358,15 @@ Stage 4 adds API; it does not break any. No existing signature changes, versions
   - **Masking.** Masked losses on `pix_to_pix` and `pixel_map`, including bounds masks. A valid sample's gradient must not change with invalid neighbours. Cover all-invalid batches. At exact singularities, test the documented invalid behaviour.
   - **Geometry.** Representative cases from existing fixtures, not a full cross product: centre, reference column and off-axis samples; an equatorial field with RA wrap; near-pole references of both signs; and one TAN/SIN pair. The real SPHEREx pair covers wide separation. Use angular residuals where raw longitude is not smooth.
   - **No f64.** The no-f64 walker covers the isolated f32 `pixel_map` kernel. A differentiable f64 matrix built before an f32 kernel does not violate the rule.
-- [ ] **3. Differentiability table** in `docs/user_manual.md`, with pointers from DEVELOPER.md, the README and the method docstrings.
+- [x] **3. Differentiability table** in `docs/user_manual.md`, with pointers from DEVELOPER.md, the README and the method docstrings.
   - **Rows:** native/pixel methods, offset methods, absolute methods (mixed and f64), an already-built eager `Reprojector`, `from_matrix`, the host composition and helpers, the validity and bounds mask, and the static configuration (precision, shapes, projection type, `inverse_steps`).
   - **Cells** say differentiable on smooth valid regions, zero by construction, host-only or not differentiable.
   - **"Differentiable" does not mean "nonzero":**
     - native/pixel methods have no `crval` dependency;
     - offset methods do not use the reference longitude;
     - AP/BP sensitivity vanishes once the Newton inverse has converged.
-- [ ] **4. Accuracy harness edge.** `tests/accuracy_reference.py` (~line 351) uses an inclusive upper overlap bound. Change it to the half-open `<` and add an exact-edge regression test. Both members measured no change: overlap stays at 1009 and 320 of 1090 samples per direction, so the protected rows stay byte-identical.
-- [ ] **5. reprojax integration, one commit.**
+- [x] **4. Accuracy harness edge.** `tests/accuracy_reference.py` (~line 351) uses an inclusive upper overlap bound. Change it to the half-open `<` and add an exact-edge regression test. Both members measured no change: overlap stays at 1009 and 320 of 1090 samples per direction, so the protected rows stay byte-identical.
+- [x] **5. reprojax integration, one commit.**
   - Add a validity-aware adapter that uses `pixel_map`, and keep the two-result `PixelTransform` protocol and its fallback for other providers.
   - For orders 0 and 1, the mask replaces the redundant coordinate sanitization and the second `map_coordinates` coverage pass (`interp.py`). Measured: zero footprint mismatches on 1.44M real-pair pixels and on 20,015 edge, NaN and Inf probes, in both dtypes and both orders.
   - Keep half-pixel clipping, which is a sampling step: at `x=-0.25`, interpolating ones without clipping gives 0.75. Keep the data-derived footprint, `~isnan(result)` (`interp.py:106–111`): an in-bounds source NaN is geometrically valid but has footprint 0. Keep the adaptive resampler's window and Jacobian checks.
