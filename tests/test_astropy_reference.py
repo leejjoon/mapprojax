@@ -65,12 +65,13 @@ def test_astropy_overlap_mask_uses_half_open_exact_edges():
         [x_hi, 0.0],
         [np.nextafter(x_hi, np.inf), 0.0],
         [0.0, np.nextafter(y_lo, -np.inf)],
+        [0.0, np.nextafter(y_lo, np.inf)],
         [0.0, np.nextafter(y_hi, -np.inf)],
         [0.0, y_hi],
         [0.0, np.nextafter(y_hi, np.inf)],
     ], dtype=np.float64)
     expected = np.array(
-        [True, False, True, True, False, False, False, True, False, False]
+        [True, False, True, True, False, False, False, True, True, False, False]
     )
     np.testing.assert_array_equal(ar._overlap_mask(points, (3, 4)), expected)
 
