@@ -94,15 +94,18 @@ print('ok')
 
 
 def test_f32_reprojector_jaxpr_has_no_f64_ops_with_x64_on_or_off():
-    """A single f64 anywhere in the trace would defeat the fp32 path: nested
-    SIP with AP/BP on both legs, Reprojector closed over and passed as a jit
-    argument, with x64 on and off."""
+    """Isolate the f32 pixel_map kernel across construction and call styles.
+
+    A live f64 relative matrix may be formed before the kernel; cast it before
+    tracing so the check covers the per-pixel path rather than host setup.
+    """
     for enabled in (False, True):
         proc = run(_F64_WALKER + f"""
 jax.config.update('jax_enable_x64', {enabled})
 from mapprojax import Reprojector
 from mapprojax.sip import Sip
 from mapprojax.wcs import Tan, Sin
+from mapprojax.utils import compose_relative_rotation
 
 a = np.zeros((4, 4)); a[2, 0] = 4e-6; a[1, 1] = -2e-6; a[0, 3] = 1e-9
 b = np.zeros((4, 4)); b[2, 0] = -3e-6; b[1, 1] = 2.5e-6; b[3, 0] = 1e-9
@@ -114,12 +117,39 @@ tgt = Sin([100., 100.], cd, [180.01, 30.], sip=sip_tgt, precision='f32')
 rp = Reprojector(src, tgt, matrix_precision='f32')
 x = jnp.full((8,), 3.0, jnp.float32); y = jnp.full((8,), 4.0, jnp.float32)
 
-closed_over = jax.make_jaxpr(lambda x, y: rp.pix_to_pix(x, y))(x, y)
-as_argument = jax.make_jaxpr(lambda r, x, y: r.pix_to_pix(x, y))(rp, x, y)
+closed_over = jax.make_jaxpr(
+    lambda x, y: rp.pixel_map(x, y, bounds_shape=(8, 8))
+)(x, y)
+as_argument = jax.make_jaxpr(
+    lambda r, x, y: r.pixel_map(x, y, bounds_shape=(8, 8))
+)(rp, x, y)
 from_matrix = jax.make_jaxpr(
+    lambda r, x, y: Reprojector.from_matrix(src, tgt, r.m_rel).pixel_map(
+        x, y, bounds_shape=(8, 8)
+    )
+)(rp, x, y)
+pix_to_pix_closed = jax.make_jaxpr(lambda x, y: rp.pix_to_pix(x, y))(x, y)
+pix_to_pix_argument = jax.make_jaxpr(lambda r, x, y: r.pix_to_pix(x, y))(rp, x, y)
+pix_to_pix_from_matrix = jax.make_jaxpr(
     lambda r, x, y: Reprojector.from_matrix(src, tgt, r.m_rel).pix_to_pix(x, y)
 )(rp, x, y)
-for name, jx in [("closed", closed_over), ("argument", as_argument), ("from_matrix", from_matrix)]:
+
+# Composition can use live host/f64 references before entering this f32
+# kernel. Keep that work outside make_jaxpr and pass the already-cast leaf.
+external_live_f64 = compose_relative_rotation(src, tgt)
+assert external_live_f64.dtype == np.float64
+external_f32 = jnp.asarray(external_live_f64.astype(np.float32))
+external_matrix = jax.make_jaxpr(
+    lambda x, y: Reprojector.from_matrix(src, tgt, external_f32).pixel_map(
+        x, y, bounds_shape=(8, 8)
+    )
+)(x, y)
+
+for name, jx in [("closed", closed_over), ("argument", as_argument),
+                 ("from_matrix", from_matrix), ("external_matrix", external_matrix),
+                 ("pix_to_pix_closed", pix_to_pix_closed),
+                 ("pix_to_pix_argument", pix_to_pix_argument),
+                 ("pix_to_pix_from_matrix", pix_to_pix_from_matrix)]:
     bad = f64_primitives(jx)
     assert not bad, (name, bad)
     assert any(e.primitive.name for e in jx.jaxpr.eqns), name

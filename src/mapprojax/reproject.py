@@ -158,6 +158,50 @@ class Reprojector:
         x, y, valid = self._tgt_leg._native_to_pix_valid(xt, yt, zt, valid)
         return self._mask(x, y, valid)
 
+    def pixel_map(self, x, y, *, bounds_shape=None):
+        """Map source pixels to finite target pixels and return validity.
+
+        The returned coordinates use this Reprojector's kernel dtype, with
+        zero stand-ins wherever ``valid`` is false. When ``bounds_shape`` is
+        provided, it must be a static ``(ny, nx)`` tuple of positive Python
+        integers and the target pixel must lie in
+        ``[-0.5, nx - 0.5) x [-0.5, ny - 0.5)``. Bounds classify the computed
+        kernel-dtype coordinates without clipping or promotion; near an edge,
+        float32 can therefore classify a coordinate differently from float64.
+
+        Coordinate values may be traced. Keep ``bounds_shape`` static when
+        jitting this method.
+        """
+        if bounds_shape is not None:
+            if not isinstance(bounds_shape, tuple):
+                raise TypeError("bounds_shape must be a tuple of two Python integers")
+            if len(bounds_shape) != 2:
+                raise ValueError("bounds_shape must contain exactly two dimensions")
+            if any(type(size) is not int for size in bounds_shape):
+                raise TypeError("bounds_shape must be a tuple of two Python integers")
+            if any(size <= 0 for size in bounds_shape):
+                raise ValueError("bounds_shape dimensions must be positive")
+
+        xt, yt, zt, valid = self._pix_to_native_tgt_valid(x, y)
+        x_mapped, y_mapped, valid = self._tgt_leg._native_to_pix_valid(
+            xt, yt, zt, valid
+        )
+        x_mapped = jnp.asarray(x_mapped, dtype=self._dtype)
+        y_mapped = jnp.asarray(y_mapped, dtype=self._dtype)
+        valid = valid & jnp.isfinite(x_mapped) & jnp.isfinite(y_mapped)
+
+        if bounds_shape is not None:
+            ny, nx = bounds_shape
+            half = jnp.asarray(0.5, dtype=self._dtype)
+            x_upper = jnp.asarray(nx, dtype=self._dtype) - half
+            y_upper = jnp.asarray(ny, dtype=self._dtype) - half
+            valid = (valid & (x_mapped >= -half) & (x_mapped < x_upper)
+                     & (y_mapped >= -half) & (y_mapped < y_upper))
+
+        x_mapped = jnp.where(valid, x_mapped, jnp.zeros_like(x_mapped))
+        y_mapped = jnp.where(valid, y_mapped, jnp.zeros_like(y_mapped))
+        return x_mapped, y_mapped, valid
+
     @staticmethod
     def _mask(*values):
         *outputs, valid = values

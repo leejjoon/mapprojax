@@ -1,15 +1,10 @@
-"""Dense-grid comparison of mapprojax against astropy (fp64).
+"""Dense-grid comparison of mapprojax against astropy.
 
 Cases, sampling and metrics live in ``tests/accuracy_reference.py`` and are
-shared with ``benchmarks/benchmark_accuracy.py``. Budgets:
-
-- forward (pixel -> sky): 1e-4 mas great-circle separation;
-- inverse (sky -> pixel) without SIP: 1e-6 px;
-Known Stage 2 defects (SIP inverse; near-pole forward through ``unproj``)
-are strict ``xfail`` against those budgets, and each is also held to its
-measured regression cap from ``tests/data/accuracy_baselines.json`` by a
-separate ordinary test, so getting worse fails even while the target is
-xfailed.
+shared with ``benchmarks/benchmark_accuracy.py``. The fp64 paths are held to a
+1e-4 mas great-circle forward budget and a 1e-6 px inverse budget. The mixed
+fp32 path is held to its per-case measured caps in
+``tests/data/accuracy_baselines.json``.
 """
 
 import jax
@@ -53,6 +48,38 @@ def test_oracle_converges(case):
     stats = ar.oracle_self_check(case)["roundtrip_px"]
     assert stats["n_nonfinite"] == 0
     assert stats["max"] < 1e-8
+
+
+def test_astropy_overlap_mask_uses_half_open_exact_edges():
+    # Literal expectations keep this Astropy-side oracle check independent of
+    # Reprojector.pixel_map's candidate bounds predicate.
+    x_lo = np.float64(-0.5)
+    y_lo = np.float64(-0.5)
+    x_hi = np.float64(3.5)
+    y_hi = np.float64(2.5)
+    points = np.array([
+        [x_lo, y_lo],
+        [np.nextafter(x_lo, -np.inf), 0.0],
+        [np.nextafter(x_lo, np.inf), 0.0],
+        [np.nextafter(x_hi, -np.inf), np.nextafter(y_hi, -np.inf)],
+        [x_hi, 0.0],
+        [np.nextafter(x_hi, np.inf), 0.0],
+        [0.0, np.nextafter(y_lo, -np.inf)],
+        [0.0, np.nextafter(y_hi, -np.inf)],
+        [0.0, y_hi],
+        [0.0, np.nextafter(y_hi, np.inf)],
+    ], dtype=np.float64)
+    expected = np.array(
+        [True, False, True, True, False, False, False, True, False, False]
+    )
+    np.testing.assert_array_equal(ar._overlap_mask(points, (3, 4)), expected)
+
+
+@pytest.mark.parametrize("direction, expected_overlap", [("forward", 1009), ("reverse", 320)])
+def test_pair_reference_overlap_rows_remain_stable(direction, expected_overlap):
+    reference = ar.pair_reference(direction)
+    assert reference["overlap"].shape == (1090,)
+    assert int(reference["overlap"].sum()) == expected_overlap
 
 
 @pytest.mark.parametrize("case, impl", _params(lambda c, i: ()))

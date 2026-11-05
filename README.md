@@ -38,10 +38,10 @@ Pixels and `crpix` are 0-based. `crval` is in degrees; `proj` and `unproj` use r
 
 Choose `mixed` for a lower-precision native path with absolute celestial coordinates, or `f64` for a fully float64 path. Accuracy depends on field geometry and plate scale; consult the measured limits in `docs/benchmarks/accuracy_results.md` and `docs/benchmarks/precision_results.md`.
 
-Batch compatible WCS objects by stacking their PyTrees and using `jax.vmap`; all entries must share projection, precision, SIP shapes, and `inverse_steps`. `Reprojector(src, tgt)` computes a coordinate map only, not image resampling.
+Batch compatible WCS objects by stacking their PyTrees and using `jax.vmap`; all entries must share projection, precision, SIP shapes, and `inverse_steps`. `Reprojector(src, tgt)` computes a coordinate map only, not image resampling. `Reprojector.pixel_map(x, y, *, bounds_shape=None)` additionally returns validity with finite zero stand-ins for invalid coordinates and optional half-open image bounds. See the [user manual](docs/user_manual.md#reprojection) for grid/vmap examples and the [differentiability contract](docs/user_manual.md#differentiability-contract).
 
 ## Serialization and migration
 
 Use the JSON-safe `to_dict()` and matching projection class's `from_dict()` methods. The contract preserves type, precision, reference dtype, and SIP state. ASDF integration and the old undocumented byte methods have been removed.
 
-The old NumPy, `*Array`, `*Jax`, and `*Mixed` public class families have no compatibility aliases. Import `Tan` / `Sin` from `mapprojax` and specify a precision mode. Replace Array classes with stacked PyTrees and `jax.vmap`; replace Mixed classes with `precision="mixed"`. See [the user manual](docs/user_manual.md) for offset composition, SIP use, batching, serialization, and detailed migration notes.
+The old NumPy, `*Array`, `*Jax`, and `*Mixed` public class families have no compatibility aliases. Import `Tan` / `Sin` from `mapprojax` and specify a precision mode. Replace Array classes with stacked PyTrees and `jax.vmap`; replace Mixed classes with `precision="mixed"`. See [the user manual](docs/user_manual.md) for offset composition, SIP use, batching, serialization, differentiability limits, and detailed migration notes.

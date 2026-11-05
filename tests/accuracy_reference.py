@@ -349,9 +349,18 @@ def pair_reference(direction: str = "forward", n: int = GRID_N) -> dict:
     lon, lat = oracle_world(h_src, pix_src).T
     lon_d, lat_d = convert(lon, lat)
     pix_dst = oracle_pixel(h_dst, np.column_stack([lon_d, lat_d]))
-    inside = ((pix_dst[:, 0] >= -0.5) & (pix_dst[:, 0] <= h_dst["NAXIS1"] - 0.5)
-              & (pix_dst[:, 1] >= -0.5) & (pix_dst[:, 1] <= h_dst["NAXIS2"] - 0.5))
+    inside = _overlap_mask(pix_dst, (h_dst["NAXIS2"], h_dst["NAXIS1"]))
     return {"src_pix": pix_src, "dst_pix": pix_dst, "overlap": inside}
+
+
+def _overlap_mask(pix: np.ndarray, bounds_shape: tuple[int, int]) -> np.ndarray:
+    """Astropy-reference overlap mask using half-open pixel-footprint bounds.
+
+    This oracle-side predicate is independent of ``Reprojector.pixel_map``.
+    """
+    ny, nx = bounds_shape
+    return ((pix[..., 0] >= -0.5) & (pix[..., 0] < nx - 0.5)
+            & (pix[..., 1] >= -0.5) & (pix[..., 1] < ny - 0.5))
 
 
 def reprojector(precision: str, direction: str = "forward", frame_rotation=None):

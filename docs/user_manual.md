@@ -98,7 +98,7 @@ lon, lat = absolute_from_offset(
 
 ## Reprojection
 
-`Reprojector(src, tgt)` composes two supported WCS pipelines and maps source pixels to target pixels. Use `pix_to_pix(x, y)` for the map coordinates; the returned values are NaN where a projection leg is invalid. `matrix_precision="f32"` is the default and keeps the per-pixel path, including the relative rotation, in float32; use `"f64"` (requires x64) when that measured precision trade-off is unsuitable. `Reprojector` maps coordinates only; it does not interpolate image data.
+`Reprojector(src, tgt)` composes two supported WCS pipelines and maps source pixels to target pixels. Use `pix_to_pix(x, y)` for map coordinates; it returns NaN where a projection leg is invalid. Use `pixel_map(x, y, *, bounds_shape=None)` when a separate validity mask and finite coordinates are needed. `matrix_precision="f32"` is the default and keeps the per-pixel path, including the relative rotation, in float32; use `"f64"` (requires x64) when that measured precision trade-off is unsuitable. `Reprojector` maps coordinates only; it does not interpolate image data.
 
 ```python
 from mapprojax import Reprojector, Tan, Sin
@@ -108,6 +108,47 @@ tgt = Sin(crpix, cd, [45.1, 30.05], precision="f32")
 rp = Reprojector(src, tgt)  # default matrix_precision="f32"
 x_tgt, y_tgt = rp.pix_to_pix(jnp.arange(10.0), jnp.arange(10.0))
 ```
+
+`pixel_map` has the same source-to-target direction and broadcasting as `pix_to_pix`, and returns `(x_mapped, y_mapped, valid)`. Coordinates use the Reprojector's kernel dtype and are finite everywhere; invalid entries have zero stand-ins, with `valid=False`. `pix_to_pix` is unchanged and continues to return NaN for invalid samples.
+
+When `bounds_shape=(ny, nx)` is supplied, validity additionally requires the mapped target pixel to lie in `[-0.5, nx-0.5) × [-0.5, ny-0.5)`: lower edges are included and upper edges excluded. The tuple must contain exactly two positive built-in Python integers (not booleans or NumPy integers). It is static configuration, so keep it fixed at trace time under `jit`. Bounds classify the computed kernel-dtype coordinates without clipping, epsilon adjustments, or promotion; float32 may classify a value within an ulp of an edge differently from float64.
+
+For resampling, map each output pixel into the input image's pixel grid by constructing `Reprojector(output_wcs, input_wcs)`. `jnp.indices` returns `(yy, xx)` in row/column order, so pass `xx` as x and `yy` as y. The bounds shape is the input image shape:
+
+```python
+import jax
+import jax.numpy as jnp
+from mapprojax import Reprojector
+
+input_ny, input_nx = input_image.shape
+rp = Reprojector(output_wcs, input_wcs)
+yy, xx = jnp.indices((output_ny, output_nx), dtype=jnp.float32)
+x_in, y_in, valid = rp.pixel_map(
+    xx, yy, bounds_shape=(input_ny, input_nx)
+)
+```
+
+Tiles, broadcastable coordinate arrays, and sparse samples can be passed directly; no grid helper is required. Compatible Reprojectors can be stacked as PyTrees and mapped over with an explicit `jax.vmap` axis:
+
+```python
+stacked = jax.tree_util.tree_map(lambda *leaves: jnp.stack(leaves), *reprojectors)
+x_in, y_in, valid = jax.vmap(
+    lambda r: r.pixel_map(xx, yy, bounds_shape=(input_ny, input_nx)),
+    in_axes=0,
+)(stacked)
+```
+
+Apply validity before nonlinear loss operations. If downstream evaluation can be unsafe at invalid coordinates, substitute a regular in-domain value before evaluating it as well:
+
+```python
+x_safe = jnp.where(valid, x_in, safe_x)
+y_safe = jnp.where(valid, y_in, safe_y)
+prediction = model(x_safe, y_safe)
+residual = jnp.where(valid, prediction - observed, 0.0)
+loss = jnp.sum(residual ** 2)
+```
+
+`safe_x` and `safe_y` must be values where the downstream model is regular. Masking only after a nonlinear operation can still allow invalid values or singular derivatives to contaminate gradients.
 
 There are two constructors:
 
@@ -135,6 +176,24 @@ rp = Reprojector.from_matrix(src_t, tgt_t, m, matrix_precision="f32")
 ```
 
 `crval_src` and `crval_tgt` are keyword-only and validated like a WCS `crval`: concrete, finite, shape `(2,)` and already float64. Nothing can prove that an override describes the intended frame, so keeping the right originals is the caller's responsibility. A changed reference or frame needs a new composition. Host composition is outside autodiff; to differentiate with respect to `crval`, build the matrix inside the traced function from the live references and pass it to `from_matrix`.
+
+## Differentiability contract
+
+Differentiability applies on smooth, valid interior regions. It does not imply that every derivative is nonzero.
+
+| API surface | Differentiability |
+| --- | --- |
+| Native/pixel WCS methods (`pix_to_native`, `native_to_pix`) | Differentiable with respect to coordinates and numerical WCS leaves on valid smooth regions. They do not use `crval`, so the `crval` derivative is zero by construction. |
+| Offset methods (`unproj_offset`, `proj_offset`) | Differentiable with respect to coordinates and numerical WCS leaves on valid smooth regions. The reference longitude is unused (zero sensitivity by construction); the longitude offset scale can depend on reference latitude. `f32` supports these methods. |
+| Absolute WCS methods (`proj`, `unproj`) | Differentiable with respect to coordinates and numerical WCS leaves, including `crval`, in `mixed` and `f64` on valid smooth regions. These methods are unavailable in `f32`; `mixed` and `f64` require JAX x64. |
+| Already-built eager `Reprojector` | Its pixel maps differentiate through input coordinates and projection-leg parameters on valid regions. The host-composed relative rotation is fixed at construction, so there is no derivative from that matrix back to either leg's `crval` (zero by construction). |
+| `Reprojector.from_matrix` | Differentiable through the supplied `m_rel` and any live values used to construct it inside the traced function. The matrix is not automatically tied to the source or target `crval`; make that dependency explicit. |
+| Host composition and offset helpers (`compose_relative_rotation`, `absolute_from_offset`, `offset_from_absolute`) | Host-only; not JIT- or autodiff-compatible. |
+| Validity and bounds masks | The boolean `valid` mask is not differentiable. Coordinates have gradients on valid smooth regions; no gradient is promised across mask transitions or for invalid samples. `pixel_map` gives invalid samples finite zero stand-ins, while `pix_to_pix` returns NaN. |
+| Static configuration (precision, projection type, array shapes, SIP coefficient shapes, `Sip.inverse_steps`, `bounds_shape`) | Not differentiable; these are Python/static choices that determine PyTree structure, validation, or compiled program shape. |
+| SIP inverse seed (`AP`/`BP`) | With A/B present, AP/BP seed Newton refinement: sensitivity is convergence-dependent, not identically zero for a finite step count, and vanishes as the inverse converges. If AP/BP alone defines the inverse (no A/B), its sensitivity is genuine and remains differentiable. |
+
+Projection singularities, invalid-domain regions, and validity/bounds transitions are non-differentiable regions. Keep optimization samples away from them, and use `pixel_map`'s validity result to exclude invalid samples before nonlinear losses.
 
 ## JSON serialization
 

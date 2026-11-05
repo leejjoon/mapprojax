@@ -23,7 +23,7 @@ The public root exports are `Tan`, `Sin`, `Reprojector`, `absolute_from_offset`,
 
 `crval` is retained at the supplied reference dtype. Do not assume that casting a truncated reference back to float64 restores its information. Host composition of the reference rotation uses concrete float64 references; it must reject tracers and non-float64 references. Precision trade-offs are workload-dependent; measured envelopes are maintained in `docs/benchmarks/accuracy_results.md` and `docs/benchmarks/precision_results.md`.
 
-All pixel coordinates are 0-based. `crval` is in degrees; projection methods take and return radians in `(longitude, latitude)` order. TAN excludes the horizon and back hemisphere; SIN includes the front-hemisphere boundary and its inverse includes the unit-disc boundary. Invalid outputs are NaN, while validity is carried internally as a flag so invalid values do not poison downstream arithmetic or gradients.
+All pixel coordinates are 0-based. `crval` is in degrees; projection methods take and return radians in `(longitude, latitude)` order. TAN excludes the horizon and back hemisphere; SIN includes the front-hemisphere boundary and its inverse includes the unit-disc boundary. Public projection outputs are NaN when invalid; `Reprojector.pixel_map` instead returns finite zero stand-ins and a separate boolean validity mask. Internal validity flags keep invalid values from poisoning downstream arithmetic or gradients.
 
 ## Public API patterns
 
@@ -52,6 +52,8 @@ absolute = absolute_from_offset(offset, crval=wcs.crval, offset_scale=wcs.offset
 This helper is not JIT- or autodiff-compatible. `crval` and `offset_scale` are keyword-only. Preserve the offset component and scale dtypes returned by the producer.
 
 Use `Reprojector(src, tgt)` for source-to-target pixel coordinates. Its `matrix_precision="f32"` mode removes fp64 from the per-pixel path; the host-composed rotation is not differentiable with respect to the two WCS `crval` values. When gradients with respect to `crval` are required, build the relative matrix from the live references inside the traced function and pass it to `Reprojector.from_matrix`. After a transformation that leaves `crval` traced or float32, compose from retained host references with `compose_relative_rotation(src, tgt, crval_src=..., crval_tgt=...)` and pass the result to `from_matrix`.
+
+`pixel_map(x, y, *, bounds_shape=None)` returns mapped coordinates and a validity mask. Coordinates are finite and zero where invalid; a supplied `(ny, nx)` bounds tuple additionally applies the half-open target bounds `[-0.5, nx-0.5) × [-0.5, ny-0.5)`. The tuple must be static and contain two positive built-in Python integers. Use `jnp.where` to mask before nonlinear losses, and choose regular stand-ins before downstream computations that are unsafe at invalid coordinates. `pix_to_pix` is unchanged and keeps its NaN invalid-output contract. See the [user manual](docs/user_manual.md#differentiability-contract) for the complete differentiation table, including the distinction between eager composition and `from_matrix`.
 
 Serialization uses the tested JSON-safe `to_dict()` / `from_dict()` contract. It preserves projection type, precision, reference dtype, and SIP state and rejects mismatched types or legacy dictionaries. ASDF support and the undocumented byte-serialization claims have been retired.
 
