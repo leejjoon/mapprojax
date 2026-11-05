@@ -138,10 +138,14 @@ def sweep_family(family: str, precision: str) -> dict:
             "absolute_error": float(error),
         })
     selected = SELECTED[precision]
-    selected_record = min(records, key=lambda item: abs(item["eps"] - selected["eps"]))
+    selected_index = min(
+        range(len(records)),
+        key=lambda index: abs(records[index]["eps"] - selected["eps"]),
+    )
+    selected_record = records[selected_index]
     plateau = [
-        item["absolute_error"] for item in records
-        if selected["eps"] / 3 <= item["eps"] <= selected["eps"] * 3
+        item["absolute_error"]
+        for item in records[max(0, selected_index - 1):selected_index + 2]
     ]
     return {
         "selected": selected,

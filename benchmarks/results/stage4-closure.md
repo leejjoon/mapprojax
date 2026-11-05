@@ -137,3 +137,20 @@ Clean archives `/tmp/mapprojax-stage4-c4` and `/tmp/reprojax-stage4-r2`
 imported only C4/R2 sources and passed package-path/backend assertions.
 mapprojax passed **788 CPU** and **788 ROCm**. Reprojax passed **88 plus 2
 pre-existing CPU skips** and **90 ROCm**. No timing rerun was needed.
+
+## Evidence durability correction — Nov 6 2026
+
+The plateau window implementation and generated reports are now durable. The
+previous C4/C5 evidence remains frozen; this append supersedes only the
+plateau-window wording and report-location claims. The sweep now selects the
+three records centered on the selected step by index, so f32 includes
+`0.3, 1, 3` and f64 includes `3e-4, 1e-3, 3e-3`.
+
+- CPU sweep report: `benchmarks/results/stage4-gradient-sweep-cpu-c6.json`.
+- ROCm sweep report: `benchmarks/results/stage4-gradient-sweep-rocm-c6.json`.
+- Real-pair report: `benchmarks/results/stage4-real-equivalence-c6.json`.
+- Regeneration scripts: `benchmarks/sweep_reprojector_gradients.py` and
+  `benchmarks/compare_reprojax_pixel_map.py`.
+- The corrected reports contain all 14 parameter families × 2 kernels × 2
+  backends and all 8 real-pair kernel/coordinate-dtype/order cases. Every
+  real-pair mismatch count remains zero.

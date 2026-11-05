@@ -1,0 +1,120 @@
+{
+  "backend": "cpu",
+  "devices": [
+    "CpuDevice(id=0)"
+  ],
+  "records": [
+    {
+      "matrix_precision": "f32",
+      "coordinate_dtype": "<class 'jax.numpy.float32'>",
+      "order": 0,
+      "value_mismatch": 0,
+      "nan_mask_mismatch": 0,
+      "footprint_mismatch": 0,
+      "cap_value_sha256": "c598235821b2d662b079935674c0b01542c824f421ddfb774ae53f9743b6f5a1",
+      "fallback_value_sha256": "c598235821b2d662b079935674c0b01542c824f421ddfb774ae53f9743b6f5a1",
+      "cap_nan_mask_sha256": "347e6f0cfb9b8c0cc49a7a57c9de71e112832b6fbf75fa47f64b1da2c88f1d5e",
+      "fallback_nan_mask_sha256": "347e6f0cfb9b8c0cc49a7a57c9de71e112832b6fbf75fa47f64b1da2c88f1d5e",
+      "cap_footprint_sha256": "c0aaa1cf1c98b5d2138e255fe81585f0e3adee86cdc6ca8d716ee82d1bdd7144",
+      "fallback_footprint_sha256": "c0aaa1cf1c98b5d2138e255fe81585f0e3adee86cdc6ca8d716ee82d1bdd7144"
+    },
+    {
+      "matrix_precision": "f32",
+      "coordinate_dtype": "<class 'jax.numpy.float32'>",
+      "order": 1,
+      "value_mismatch": 0,
+      "nan_mask_mismatch": 0,
+      "footprint_mismatch": 0,
+      "cap_value_sha256": "348af10e7e21ccb32b0d9994ddfd8d5358443ee6065c6fe4d7838af7ce5c3959",
+      "fallback_value_sha256": "348af10e7e21ccb32b0d9994ddfd8d5358443ee6065c6fe4d7838af7ce5c3959",
+      "cap_nan_mask_sha256": "677571f82c6bf3d85f90d9e3cd8a6d66eae6b3f51f1c2c47c7763d4ce46d1151",
+      "fallback_nan_mask_sha256": "677571f82c6bf3d85f90d9e3cd8a6d66eae6b3f51f1c2c47c7763d4ce46d1151",
+      "cap_footprint_sha256": "8d98bd3df0991b4c1cce94fa659864bd57ab506f34264b33db77fb7c42a082a9",
+      "fallback_footprint_sha256": "8d98bd3df0991b4c1cce94fa659864bd57ab506f34264b33db77fb7c42a082a9"
+    },
+    {
+      "matrix_precision": "f32",
+      "coordinate_dtype": "<class 'jax.numpy.float64'>",
+      "order": 0,
+      "value_mismatch": 0,
+      "nan_mask_mismatch": 0,
+      "footprint_mismatch": 0,
+      "cap_value_sha256": "c598235821b2d662b079935674c0b01542c824f421ddfb774ae53f9743b6f5a1",
+      "fallback_value_sha256": "c598235821b2d662b079935674c0b01542c824f421ddfb774ae53f9743b6f5a1",
+      "cap_nan_mask_sha256": "347e6f0cfb9b8c0cc49a7a57c9de71e112832b6fbf75fa47f64b1da2c88f1d5e",
+      "fallback_nan_mask_sha256": "347e6f0cfb9b8c0cc49a7a57c9de71e112832b6fbf75fa47f64b1da2c88f1d5e",
+      "cap_footprint_sha256": "c0aaa1cf1c98b5d2138e255fe81585f0e3adee86cdc6ca8d716ee82d1bdd7144",
+      "fallback_footprint_sha256": "c0aaa1cf1c98b5d2138e255fe81585f0e3adee86cdc6ca8d716ee82d1bdd7144"
+    },
+    {
+      "matrix_precision": "f32",
+      "coordinate_dtype": "<class 'jax.numpy.float64'>",
+      "order": 1,
+      "value_mismatch": 0,
+      "nan_mask_mismatch": 0,
+      "footprint_mismatch": 0,
+      "cap_value_sha256": "348af10e7e21ccb32b0d9994ddfd8d5358443ee6065c6fe4d7838af7ce5c3959",
+      "fallback_value_sha256": "348af10e7e21ccb32b0d9994ddfd8d5358443ee6065c6fe4d7838af7ce5c3959",
+      "cap_nan_mask_sha256": "677571f82c6bf3d85f90d9e3cd8a6d66eae6b3f51f1c2c47c7763d4ce46d1151",
+      "fallback_nan_mask_sha256": "677571f82c6bf3d85f90d9e3cd8a6d66eae6b3f51f1c2c47c7763d4ce46d1151",
+      "cap_footprint_sha256": "8d98bd3df0991b4c1cce94fa659864bd57ab506f34264b33db77fb7c42a082a9",
+      "fallback_footprint_sha256": "8d98bd3df0991b4c1cce94fa659864bd57ab506f34264b33db77fb7c42a082a9"
+    },
+    {
+      "matrix_precision": "f64",
+      "coordinate_dtype": "<class 'jax.numpy.float32'>",
+      "order": 0,
+      "value_mismatch": 0,
+      "nan_mask_mismatch": 0,
+      "footprint_mismatch": 0,
+      "cap_value_sha256": "ba12ea2319bfb72cf69ee43cb32a67db374c9513854d839e6c25f8a63865a13a",
+      "fallback_value_sha256": "ba12ea2319bfb72cf69ee43cb32a67db374c9513854d839e6c25f8a63865a13a",
+      "cap_nan_mask_sha256": "347e6f0cfb9b8c0cc49a7a57c9de71e112832b6fbf75fa47f64b1da2c88f1d5e",
+      "fallback_nan_mask_sha256": "347e6f0cfb9b8c0cc49a7a57c9de71e112832b6fbf75fa47f64b1da2c88f1d5e",
+      "cap_footprint_sha256": "c0aaa1cf1c98b5d2138e255fe81585f0e3adee86cdc6ca8d716ee82d1bdd7144",
+      "fallback_footprint_sha256": "c0aaa1cf1c98b5d2138e255fe81585f0e3adee86cdc6ca8d716ee82d1bdd7144"
+    },
+    {
+      "matrix_precision": "f64",
+      "coordinate_dtype": "<class 'jax.numpy.float32'>",
+      "order": 1,
+      "value_mismatch": 0,
+      "nan_mask_mismatch": 0,
+      "footprint_mismatch": 0,
+      "cap_value_sha256": "576006dc06baa438d1c3c16a9d72ededfa977ccc1d8650c515c11c8376752de5",
+      "fallback_value_sha256": "576006dc06baa438d1c3c16a9d72ededfa977ccc1d8650c515c11c8376752de5",
+      "cap_nan_mask_sha256": "f665220ab2fbbd9a646d938e171b7c9b16e416586af4da8f7fc9452237ff3609",
+      "fallback_nan_mask_sha256": "f665220ab2fbbd9a646d938e171b7c9b16e416586af4da8f7fc9452237ff3609",
+      "cap_footprint_sha256": "b418bcd37acc298b24825866b8a760ef92bcf9cb8b2ea733f2676951c707ddd4",
+      "fallback_footprint_sha256": "b418bcd37acc298b24825866b8a760ef92bcf9cb8b2ea733f2676951c707ddd4"
+    },
+    {
+      "matrix_precision": "f64",
+      "coordinate_dtype": "<class 'jax.numpy.float64'>",
+      "order": 0,
+      "value_mismatch": 0,
+      "nan_mask_mismatch": 0,
+      "footprint_mismatch": 0,
+      "cap_value_sha256": "ba12ea2319bfb72cf69ee43cb32a67db374c9513854d839e6c25f8a63865a13a",
+      "fallback_value_sha256": "ba12ea2319bfb72cf69ee43cb32a67db374c9513854d839e6c25f8a63865a13a",
+      "cap_nan_mask_sha256": "347e6f0cfb9b8c0cc49a7a57c9de71e112832b6fbf75fa47f64b1da2c88f1d5e",
+      "fallback_nan_mask_sha256": "347e6f0cfb9b8c0cc49a7a57c9de71e112832b6fbf75fa47f64b1da2c88f1d5e",
+      "cap_footprint_sha256": "c0aaa1cf1c98b5d2138e255fe81585f0e3adee86cdc6ca8d716ee82d1bdd7144",
+      "fallback_footprint_sha256": "c0aaa1cf1c98b5d2138e255fe81585f0e3adee86cdc6ca8d716ee82d1bdd7144"
+    },
+    {
+      "matrix_precision": "f64",
+      "coordinate_dtype": "<class 'jax.numpy.float64'>",
+      "order": 1,
+      "value_mismatch": 0,
+      "nan_mask_mismatch": 0,
+      "footprint_mismatch": 0,
+      "cap_value_sha256": "576006dc06baa438d1c3c16a9d72ededfa977ccc1d8650c515c11c8376752de5",
+      "fallback_value_sha256": "576006dc06baa438d1c3c16a9d72ededfa977ccc1d8650c515c11c8376752de5",
+      "cap_nan_mask_sha256": "f665220ab2fbbd9a646d938e171b7c9b16e416586af4da8f7fc9452237ff3609",
+      "fallback_nan_mask_sha256": "f665220ab2fbbd9a646d938e171b7c9b16e416586af4da8f7fc9452237ff3609",
+      "cap_footprint_sha256": "b418bcd37acc298b24825866b8a760ef92bcf9cb8b2ea733f2676951c707ddd4",
+      "fallback_footprint_sha256": "b418bcd37acc298b24825866b8a760ef92bcf9cb8b2ea733f2676951c707ddd4"
+    }
+  ]
+}
