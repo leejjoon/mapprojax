@@ -322,10 +322,10 @@ Done when:
 
 Revised by the Stage 4 committee review (Fable, Astra; Nov 5 2026; record appended below).
 
-**Status: complete (Nov 6 2026).** Verified pair: mapprojax C2
-`6969519a5da08d64517d4d5ae2b576a237b85cbb` with reprojax R1
-`14990d3639877a027bbe195091f05f9f9e1572e1`; closure record and final C3
-are recorded below.
+**Status: complete (Nov 6 2026).** Verified pair: mapprojax C4
+`74bc5f3fb9d53235154eb4d7977c76db66a6350b` with reprojax R2
+`0483edba197317357cd1856c84141403a2d93400`; closure record:
+`benchmarks/results/stage4-closure.md`.
 
 **What Stage 3 already covered:**
 - The gradient tests are mostly done: `tests/test_gradients_modes.py` has 90 tests running `check_grads` forward and reverse for `Tan` and `Sin` in all three modes. They cover every leaf including AP/BP, on the forward and inverse offset paths plus the absolute path in mixed and f64. Both SIP cases are included, and the tolerances are recorded: f64 eps 1e-3, atol 1e-6, rtol 1e-5; mixed eps 0.3, 3e-3; f32 eps 1, 1e-2. Mixed-versus-f64 Jacobians are reported.
