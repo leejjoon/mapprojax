@@ -158,7 +158,7 @@ three records centered on the selected step by index, so f32 includes
 ## Coverage correction and re-pin — Nov 6 2026, round 2
 
 The committee identified two remaining coverage gaps; production code and
-timing were unchanged. The C6 plateau table is superseded by the committed C7
+timing were unchanged. The C5 plateau table is superseded by the committed C7
 JSON reports. In particular, the C6 table's earlier two-point window was
 described as a three-step neighborhood, and its combined f64 column obscured a
 ROCm/source-CD maximum difference.
