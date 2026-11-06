@@ -154,3 +154,36 @@ three records centered on the selected step by index, so f32 includes
 - The corrected reports contain all 14 parameter families × 2 kernels × 2
   backends and all 8 real-pair kernel/coordinate-dtype/order cases. Every
   real-pair mismatch count remains zero.
+
+## Coverage correction and re-pin — Nov 6 2026, round 2
+
+The committee identified two remaining coverage gaps; production code and
+timing were unchanged. The C6 plateau table is superseded by the committed C7
+JSON reports. In particular, the C6 table's earlier two-point window was
+described as a three-step neighborhood, and its combined f64 column obscured a
+ROCm/source-CD maximum difference.
+
+- C7 mapprojax script and reports: `300f11b53264c6e64e393a03b8292fffdb7b9b13`.
+- R3 reprojax tests: `ef1cb31e2325acc6e23085ceafc02285a7a71cd4`.
+- Corrected feature-bearing pair: C7 + R3.
+- C6 reports remain frozen; C7 reports are
+  `benchmarks/results/stage4-gradient-sweep-cpu-c7.json` and
+  `benchmarks/results/stage4-gradient-sweep-rocm-c7.json`.
+
+The C7 script now covers 18 families, including `tgt_ap_only`,
+`tgt_bp_only`, `src_crval_nosip` and `tgt_crval_nosip`, across f32/f64 on CPU
+and ROCm. The AP/BP-only f32 selected-step derivatives are approximately
+`0.2851813` and `0.0855544`, respectively; the SIP-free live-CRVAL f32
+selected-step FD/JVP error is approximately `1.07e-6`. C7's plateau is the
+three records centered by index on the selected step (`[0.3,1,3]` for f32 and
+`[3e-4,1e-3,3e-3]` for f64), and the full per-family values are durable in
+the two JSON reports.
+
+R3 changes the synthetic equivalence fixture to assert geometric invalidity
+from a target header 150 degrees away, while retaining independent bounds,
+plain delegates, source NaNs, both y-axis neighboring floats, both kernels,
+both coordinate dtypes and both interpolation orders. The C7/R3 exact archive
+retest imported only `/tmp/mapprojax-stage4-c7` and
+`/tmp/reprojax-stage4-r3`: mapprojax passed **788 CPU** and **788 ROCm**;
+reprojax passed **88 plus 2 pre-existing CPU skips** and **90 ROCm**; package
+paths and actual devices were asserted.
