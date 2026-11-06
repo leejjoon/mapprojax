@@ -420,12 +420,12 @@ Revised Nov 6 2026 against the repository at the end of Stage 4 (mapprojax `26b6
 - `origin` is `github.com/leejjoon/mapprojax`. There are no git tags and no `.github/`. `pypi.org/pypi/{mapprojax,reprojax}/json` return 404 (absent, not guaranteed claimable). The README's `pip install mapprojax` does not work yet.
 - The root scratch files (`debug_coords.py`, `ex_proj.py`, `ex_proj_jax.py`, `test_precision.py`, `reproj_test/`, the FITS and `t.tgz`) are untracked and user-owned. They are not in the repository, so "clean the root" needs no commit; Stage 5 must not stage, move or delete them.
 
-**Operator decisions before the affected items start** (none blocks item 1):
-- **D1. Licence** (item 5): licence, copyright holder, and whether the cds-mapproj-rust port (AGENT.md says the kernel is partly ported from it) requires an attribution or NOTICE under its terms.
-- **D2. `GEMINI.md`** (item 4): delete it (Fable's recommendation; git history keeps it) or move it to `docs/notes/` with a historical banner.
-- **D3. Supported window** (items 5-6): the target Python/JAX/NumPy floor. Proposed first attempt: Python 3.11 with JAX 0.10.2 and its NumPy as the oldest job; fall back to 3.12 / 0.11.1 and record why if it fails.
-- **D4. Repository visibility** (items 6, 9): whether `github.com/leejjoon/mapprojax` is public now or at release. CI needs a pushed branch; description and topics presume a public repository.
-- **D5. Publishing setup** (item 9, before configuring it): PyPI account/ownership and trusted publishing with a protected GitHub environment that requires manual approval.
+**Operator decisions** (recorded Nov 6 2026):
+- **D1. Licence** (item 5): **MIT, copyright Jae-Joon Lee.** cds-mapproj-rust (`github.com/cds-astro/cds-mapproj-rust`, which AGENT.md says the kernel is partly ported from) is dual-licensed `Apache-2.0 OR MIT` (its `Cargo.toml`; checked Nov 6 2026). Take it under MIT: the MIT terms require its notice in copies of substantial portions, so `LICENSE` carries mapprojax's MIT notice followed by the upstream notice, "Copyright (c) 2020 Universite de Strasbourg / CNRS" with its permission text, under a line saying parts of the projection code are derived from cds-mapproj-rust. Add a one-line acknowledgement to the README. No separate NOTICE file is needed, since Apache-2.0 is not the licence taken.
+- **D2. `GEMINI.md`** (item 4): **move it to `docs/notes/` with a historical banner.**
+- **D3. Supported window** (items 5-6): **agreed.** First attempt: Python 3.11 with JAX 0.10.2 and its NumPy as the oldest job; fall back to 3.12 / 0.11.1 and record why if it fails.
+- **D4. Repository visibility** (items 6, 9): **public now.** `github.com/leejjoon/mapprojax` is already public (checked Nov 6 2026), with an empty description and no topics.
+- **D5. Publishing setup** (item 9): PyPI account **`lee_j_joon`**, trusted publishing, and **a GitHub environment `pypi` with the operator as required reviewer**: a pushed `v*` tag builds and tests, then waits for manual approval before uploading. The operator creates the environment (repository Settings → Environments) and the PyPI pending publisher (project `mapprojax`, owner `leejjoon`, repository `mapprojax`, the publish workflow's filename, environment `pypi`).
 
 **Items**
 
