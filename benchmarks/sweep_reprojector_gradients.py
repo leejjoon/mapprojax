@@ -44,14 +44,16 @@ def _sip(a, b, ap=None, bp=None):
 
 def _loss(family: str, delta, precision: str):
     dtype = jnp.float32 if precision == "f32" else jnp.float64
+    sip_free = family in ("src_crval_nosip", "tgt_crval_nosip")
+    target_ap_only = family in ("tgt_ap_only", "tgt_bp_only")
     src_crpix = CRPIX_SRC
     tgt_crpix = CRPIX_TGT
     src_cd = CD_SRC
     tgt_cd = CD_TGT
     src_a = A
     src_b = B
-    tgt_a = A
-    tgt_b = B
+    tgt_a = None if target_ap_only else A
+    tgt_b = None if target_ap_only else B
     tgt_ap = -0.8 * A
     tgt_bp = -0.8 * B
     m_delta = jnp.zeros((3, 3), dtype=jnp.float64)
@@ -78,25 +80,28 @@ def _loss(family: str, delta, precision: str):
         tgt_a = tgt_a + SIP_SCALE * delta
     if family == "tgt_b":
         tgt_b = tgt_b + SIP_SCALE * delta
-    if family == "tgt_ap":
+    if family in ("tgt_ap", "tgt_ap_only"):
         tgt_ap = tgt_ap + SIP_SCALE * delta
-    if family == "tgt_bp":
+    if family in ("tgt_bp", "tgt_bp_only"):
         tgt_bp = tgt_bp + SIP_SCALE * delta
     if family == "m_rel":
         m_delta = m_delta.at[0, 0].set(1e-4 * delta)
-    if family == "src_crval":
+    if family in ("src_crval", "src_crval_nosip"):
         src_crval = src_crval.at[0].add(1e-2 * delta)
-    if family == "tgt_crval":
+    if family in ("tgt_crval", "tgt_crval_nosip"):
         tgt_crval = tgt_crval.at[0].add(1e-2 * delta)
 
     src = Tan(
         src_crpix, src_cd, src_crval,
-        sip=_sip(src_a, src_b),
+        sip=None if sip_free else _sip(src_a, src_b),
         precision="f64",
     )
     tgt = Tan(
         tgt_crpix, tgt_cd, tgt_crval,
-        sip=_sip(tgt_a, tgt_b, tgt_ap, tgt_bp),
+        sip=(
+            None if sip_free
+            else _sip(tgt_a, tgt_b, tgt_ap, tgt_bp)
+        ),
         precision="f64",
     )
     m_rel = tgt.r_matrix @ src.r_matrix.T + m_delta
@@ -108,7 +113,9 @@ def _loss(family: str, delta, precision: str):
 FAMILIES = (
     "pixels", "src_crpix", "tgt_crpix", "src_cd", "tgt_cd",
     "src_a", "src_b", "tgt_a", "tgt_b", "tgt_ap", "tgt_bp",
+    "tgt_ap_only", "tgt_bp_only",
     "m_rel", "src_crval", "tgt_crval",
+    "src_crval_nosip", "tgt_crval_nosip",
 )
 SELECTED = {
     "f32": {"eps": 1.0, "atol": 1e-2, "rtol": 1e-2},
