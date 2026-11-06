@@ -159,7 +159,7 @@ three records centered on the selected step by index, so f32 includes
 
 The committee identified two remaining coverage gaps; production code and
 timing were unchanged. The C5 plateau table is superseded by the committed C7
-JSON reports. In particular, the C6 table's earlier two-point window was
+JSON reports. In particular, the C5 table's earlier two-point window was
 described as a three-step neighborhood, and its combined f64 column obscured a
 ROCm/source-CD maximum difference.
 
