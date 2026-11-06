@@ -323,8 +323,8 @@ Done when:
 Revised by the Stage 4 committee review (Fable, Astra; Nov 5 2026; record appended below).
 
 **Status: complete (Nov 6 2026).** Verified pair: mapprojax C7
-`300f11b53264c6e64e393a03b8292fffdb7b9b13` with reprojax R3
-`ef1cb31e2325acc6e23085ceafc02285a7a71cd4`; closure record:
+`300f11b53264c6e64e393a03b8292fffdb7b9b13` with reprojax R4
+`79ee7299b209a83c6f247a1fe2e6f208f50baac6`; closure record:
 `benchmarks/results/stage4-closure.md`.
 
 **What Stage 3 already covered:**

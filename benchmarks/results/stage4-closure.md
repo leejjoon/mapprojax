@@ -187,3 +187,122 @@ retest imported only `/tmp/mapprojax-stage4-c7` and
 `/tmp/reprojax-stage4-r3`: mapprojax passed **788 CPU** and **788 ROCm**;
 reprojax passed **88 plus 2 pre-existing CPU skips** and **90 ROCm**; package
 paths and actual devices were asserted.
+
+## Provenance correction and re-pin — Nov 6 2026, round 3
+
+This append supersedes the round-two description of geometric-invalidity
+comparison coverage and supplies the missing report regeneration provenance.
+R3 `ef1cb31` asserted NaNs on a separate far-header transform, but compared
+capability and plain delegate only on the identity transform. R4
+`79ee7299b209a83c6f247a1fe2e6f208f50baac6` now passes that far-header transform
+through both compared interpolation paths, retaining the unbounded two-result
+NaN assertion, independent bounds mask, exact values/NaN-mask/footprint checks,
+identity edge probes and source NaNs. The test independently parametrizes both
+kernel precisions, both coordinate dtypes, both orders and both fixtures:
+16 cases. This does not claim that the entirely invalid far-header fixture
+itself exercises valid source pixels; the identity fixture retains that role.
+
+### Script provenance, separate from the runtime pair
+
+- C6 script revision: `84c563d2a657ce89258e1d7b8041c93f0552cc16`, generating
+  `stage4-gradient-sweep-{cpu,rocm}-c6.json` and
+  `stage4-real-equivalence-c6.json` under `benchmarks/results/`.
+- C7 script revision: `300f11b53264c6e64e393a03b8292fffdb7b9b13`, generating
+  `stage4-gradient-sweep-{cpu,rocm}-c7.json` under `benchmarks/results/`.
+- These are report-generator revisions, not new production-code revisions.
+  The feature-bearing mapprojax source has not changed since C1 `839ab64`.
+  The C5 `a02d147` plateau table is superseded by the committed JSON reports;
+  use each backend's own records rather than the table's combined f64 column.
+
+The following exact regeneration commands select the generator revision and
+archive-only import path explicitly. They write only new `/tmp` outputs, never
+overwrite frozen reports, and are recorded for reproduction, not rerun in
+round three. Both sweep scripts emit both precisions by default.
+
+```bash
+MP_PY=/home/jjlee/projects/mapprojax/.venv/bin/python
+for spec in \
+  c6:84c563d2a657ce89258e1d7b8041c93f0552cc16 \
+  c7:300f11b53264c6e64e393a03b8292fffdb7b9b13; do
+  label=${spec%%:*}
+  revision=${spec#*:}
+  archive=$(mktemp -d "/tmp/mapprojax-regenerate-${label}-XXXXXX")
+  git archive "$revision" | tar -x -C "$archive"
+  PYTHONPATH="$archive/src" JAX_PLATFORMS=cpu \
+    "$MP_PY" "$archive/benchmarks/sweep_reprojector_gradients.py" \
+    > "/tmp/stage4-gradient-sweep-cpu-${label}-regenerated.json"
+  PYTHONPATH="$archive/src" JAX_PLATFORMS=rocm \
+    XLA_PYTHON_CLIENT_PREALLOCATE=false \
+    "$MP_PY" "$archive/benchmarks/sweep_reprojector_gradients.py" \
+    > "/tmp/stage4-gradient-sweep-rocm-${label}-regenerated.json"
+done
+
+# C6 real-pair report: C6 generator with the then-verified reprojax R2.
+c6=$(mktemp -d /tmp/mapprojax-real-c6-XXXXXX)
+r2=$(mktemp -d /tmp/reprojax-real-r2-XXXXXX)
+git archive 84c563d2a657ce89258e1d7b8041c93f0552cc16 | tar -x -C "$c6"
+git -C /home/jjlee/projects/reprojax \
+  archive 0483edba197317357cd1856c84141403a2d93400 | tar -x -C "$r2"
+PYTHONPATH="$c6/src:$r2/src" JAX_PLATFORMS=cpu \
+  "$MP_PY" "$c6/benchmarks/compare_reprojax_pixel_map.py" \
+  --data-dir "$r2/tests/data" \
+  --output /tmp/stage4-real-equivalence-c6-regenerated.json
+```
+
+### Frozen-record correction policy
+
+Commits `6452ac4` and `3c248f5` edited previously committed closure text in
+place, changing C6 to C5 in two locations. That violated the append-only
+instruction. The final C5 attribution is correct: the table was introduced
+by `a02d147`. Those historical edits are acknowledged, not rewritten again.
+Frozen files are corrected only by appending; mistakes in this append must
+likewise be corrected by a further append.
+
+### Exact runtime pair and round-three retest
+
+The runtime pair is mapprojax C7
+`300f11b53264c6e64e393a03b8292fffdb7b9b13` plus reprojax R4
+`79ee7299b209a83c6f247a1fe2e6f208f50baac6`. The documentation commit cites
+this pair, never itself. Clean `git archive` trees were created at
+`/tmp/mapprojax-stage4-round3-c7` and `/tmp/reprojax-stage4-r4`.
+
+| Suite | CPU | ROCm |
+| --- | --- | --- |
+| mapprojax | 788 passed, 1 warning | 788 passed, 1 warning |
+| reprojax | 100 passed, 2 pre-existing skips | 102 passed |
+
+The additional 12 reprojax cases come from independent kernel/grid-dtype and
+identity/invalid fixture parametrization. In each pytest process, assertions
+checked the archive package paths and actual backend before running the full
+suite; printed audits showed `CpuDevice(id=0)` or `RocmDevice(id=0)`.
+Reprojax ROCm also asserted Python 3.12. Execution commands were:
+
+```bash
+MP_PY=/home/jjlee/projects/mapprojax/.venv/bin/python
+RP_CPU=/home/jjlee/projects/reprojax/.venv/bin/python
+RP_ROCM=/tmp/claude-1001/-home-jjlee-projects-mapprojax/2d77549f-bb77-4c52-bc93-8feed4309b39/scratchpad/rocmvenv/bin/python
+(
+  cd /tmp/mapprojax-stage4-round3-c7
+  for platform in cpu rocm; do
+    PYTHONPATH=/tmp/mapprojax-stage4-round3-c7/src:/tmp/mapprojax-stage4-round3-c7/tests \
+      JAX_PLATFORMS="$platform" XLA_PYTHON_CLIENT_PREALLOCATE=false \
+      "$MP_PY" -c 'import os,jax,mapprojax,pytest; assert mapprojax.__file__.startswith("/tmp/mapprojax-stage4-round3-c7/src/"); expected="cpu" if os.environ["JAX_PLATFORMS"]=="cpu" else "gpu"; assert jax.default_backend()==expected; print("ARCHIVE AUDIT",mapprojax.__file__,jax.devices(),flush=True); raise SystemExit(pytest.main(["-q"]))' \
+      > "/tmp/stage4-round3-mapprojax-$platform.log"
+  done
+)
+(
+  cd /tmp/reprojax-stage4-r4
+  for platform in cpu rocm; do
+    if [ "$platform" = cpu ]; then python=$RP_CPU; else python=$RP_ROCM; fi
+    PYTHONPATH=/tmp/mapprojax-stage4-round3-c7/src:/tmp/reprojax-stage4-r4/src \
+      JAX_PLATFORMS="$platform" XLA_PYTHON_CLIENT_PREALLOCATE=false \
+      "$python" -c 'import os,sys,jax,mapprojax,reprojax,pytest; assert mapprojax.__file__.startswith("/tmp/mapprojax-stage4-round3-c7/src/"); assert reprojax.__file__.startswith("/tmp/reprojax-stage4-r4/src/"); expected="cpu" if os.environ["JAX_PLATFORMS"]=="cpu" else "gpu"; assert jax.default_backend()==expected; assert expected=="cpu" or sys.version_info[:2]==(3,12); print("ARCHIVE AUDIT",mapprojax.__file__,reprojax.__file__,jax.devices(),sys.version,flush=True); raise SystemExit(pytest.main(["-q"]))' \
+      > "/tmp/stage4-round3-reprojax-$platform.log"
+  done
+)
+```
+
+ROCm emitted the existing nonfatal PCIe-bandwidth warnings. Full reprojax
+tests include their existing benchmark test; no Stage 4 timing evidence was
+regenerated. No sweep or real-pair report was rerun or modified in round three.
+No production code, version, Stage 5, push, tag or release changes were made.
