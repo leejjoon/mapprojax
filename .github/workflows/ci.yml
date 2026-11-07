@@ -1,0 +1,152 @@
+name: CI
+
+on:
+  push:
+    branches: [rocm-extra, main]
+  pull_request:
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  JAX_PLATFORMS: cpu
+
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: '3.11.15'
+            constraints: ci/minimum.txt
+          - python: '3.14.4'
+            constraints: ci/latest.txt
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: ${{ matrix.python }}
+          freethreaded: false
+      - name: Exact CPU environment
+        env:
+          CONSTRAINTS: ${{ matrix.constraints }}
+        run: |
+          python -m pip install uv==0.11.8
+          uv venv .venv --python "$(command -v python)"
+          uv pip install --python .venv/bin/python -c "$CONSTRAINTS" -e '.[test]'
+      - name: Source provenance and full suite
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
+          MAPPROJAX_EXPECTED_SOURCE_ROOT: ${{ github.workspace }}
+        run: |
+          .venv/bin/python -c 'import pathlib, mapprojax, jax; assert pathlib.Path(mapprojax.__file__).resolve() == pathlib.Path("src/mapprojax/__init__.py").resolve(); assert jax.default_backend() == "cpu"'
+          .venv/bin/python -m pytest -q
+          .venv/bin/python benchmarks/benchmark_accuracy.py --json "$RUNNER_TEMP/accuracy-${{ matrix.python }}.json"
+      - name: Fresh x64-off source smoke
+        env:
+          JAX_ENABLE_X64: '0'
+          PYTHONPATH: ${{ github.workspace }}/src
+          MAPPROJAX_EXPECTED_SOURCE_ROOT: ${{ github.workspace }}
+        run: |
+          .venv/bin/python -m pytest tests/test_x64_policy.py -q
+          .venv/bin/python - <<'PY'
+          import runpy
+          namespace = runpy.run_path('tests/test_x64_policy.py')
+          namespace['run'](namespace['_F64_WALKER'] + '''
+          import warnings
+          warnings.simplefilter('error')
+          from mapprojax import Reprojector, absolute_from_offset, offset_from_absolute
+          from mapprojax.wcs import Tan
+          assert not jax.config.jax_enable_x64
+          src = Tan([20., 20.], [[-1e-3, 0.], [0., 1e-3]], [180., 30.], precision='f32')
+          tgt = Tan([20., 20.], [[-1e-3, 0.], [0., 1e-3]], [180.01, 30.], precision='f32')
+          rp = Reprojector(src, tgt, matrix_precision='f32')
+          x = jnp.asarray([20., 21.], dtype=jnp.float32)
+          for function in (jax.jit(lambda x: rp.pixel_map(x, x)),
+                           jax.jit(lambda x: src.unproj_offset(x, x)),
+                           jax.jit(lambda x: src.proj_offset(*src.unproj_offset(x, x)))):
+              result = function(x)
+              assert all(np.isfinite(np.asarray(a)).all() for a in jax.tree.leaves(result))
+              assert not f64_primitives(jax.make_jaxpr(function)(x))
+          offsets = src.unproj_offset(x, x)
+          absolute = absolute_from_offset(offsets, crval=src.crval, offset_scale=src.offset_scale())
+          recovered = offset_from_absolute(absolute, crval=src.crval, offset_scale=src.offset_scale())
+          assert all(np.isfinite(np.asarray(a)).all() for a in recovered)
+          ''')
+          PY
+
+  packaging:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.14.4'
+          freethreaded: false
+      - name: Choose producer or explicit closure artifact
+        id: selection
+        run: python scripts/release_artifact.py choose --root . --output "$RUNNER_TEMP/selection.json"
+      - name: Bootstrap exact build tools
+        run: |
+          python -m pip install uv==0.11.8
+          uv venv .venv --python "$(command -v python)"
+          uv pip install --python .venv/bin/python -r ci/build.txt
+      - name: Single candidate build from clean archive
+        if: steps.selection.outputs.mode == 'produce'
+        run: |
+          mkdir "$RUNNER_TEMP/source" "$RUNNER_TEMP/bundle"
+          python scripts/release_artifact.py inputs --root . --output "$RUNNER_TEMP/bundle/inputs.json"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/source"
+          cd "$RUNNER_TEMP/source"
+          "$GITHUB_WORKSPACE/.venv/bin/python" -m build --no-isolation --sdist --wheel --outdir "$RUNNER_TEMP/bundle/dist"
+          "$GITHUB_WORKSPACE/.venv/bin/python" -m twine check "$RUNNER_TEMP/bundle/dist/"*.whl "$RUNNER_TEMP/bundle/dist/"*.tar.gz
+          python scripts/check_installed_artifacts.py manifest --dist-dir "$RUNNER_TEMP/bundle/dist" --output "$RUNNER_TEMP/bundle/manifest.json"
+      - name: Reuse original artifact without candidate rebuild
+        if: steps.selection.outputs.mode == 'reuse'
+        run: |
+          python scripts/release_artifact.py download --root . --destination "$RUNNER_TEMP/bundle"
+      - name: Validate original wheel and sdist CPU installs
+        run: |
+          python scripts/check_installed_artifacts.py verify --dist-dir "$RUNNER_TEMP/bundle/dist" --manifest "$RUNNER_TEMP/bundle/manifest.json"
+          python scripts/check_installed_artifacts.py check --dist-dir "$RUNNER_TEMP/bundle/dist" --manifest "$RUNNER_TEMP/bundle/manifest.json" --source-root "$GITHUB_WORKSPACE" --output-dir "$RUNNER_TEMP/installed-check" --constraints ci/latest.txt --build-constraints ci/build.txt --backend cpu
+      - name: Persist immutable original distributions and manifests
+        if: steps.selection.outputs.mode == 'produce'
+        id: original
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-original
+          path: ${{ runner.temp }}/bundle/
+          retention-days: 90
+          if-no-files-found: error
+          overwrite: false
+      - name: Actual API provenance for closure operator
+        if: steps.selection.outputs.mode == 'produce' && github.event_name == 'push' && github.ref == 'refs/heads/rocm-extra'
+        env:
+          ARTIFACT_ID: ${{ steps.original.outputs.artifact-id }}
+        run: |
+          python scripts/release_artifact.py provenance --root . --artifact-id "$ARTIFACT_ID" --manifest "$RUNNER_TEMP/bundle/manifest.json" --output "$RUNNER_TEMP/producer-record.json"
+          printf '### Closure artifact record (require whole CI success before use)\n```stage5-artifact-json\n' >> "$GITHUB_STEP_SUMMARY"
+          python -c 'import os, pathlib; p=pathlib.Path(os.environ["GITHUB_STEP_SUMMARY"]); p.open("a").write(pathlib.Path(os.environ["RUNNER_TEMP"], "producer-record.json").read_text())'
+          printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
+      - name: Persist validation logs separately from distribution inventory
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: installed-validation-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/installed-check/*.log
+            ${{ runner.temp }}/installed-check/*.json
+            ${{ runner.temp }}/installed-check/*constraints.txt
+          retention-days: 90
+          if-no-files-found: error

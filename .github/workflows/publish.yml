@@ -1,0 +1,84 @@
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  JAX_PLATFORMS: cpu
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.14.4'
+          freethreaded: false
+      - name: Require exact version, main closure, prior CI and live original artifact
+        run: |
+          python scripts/release_artifact.py download --root . --tag "$RELEASE_TAG" --destination "$RUNNER_TEMP/bundle"
+          python scripts/release_artifact.py verify --root . --tag "$RELEASE_TAG" --bundle "$RUNNER_TEMP/bundle"
+          python scripts/check_installed_artifacts.py verify --dist-dir "$RUNNER_TEMP/bundle/dist" --manifest "$RUNNER_TEMP/bundle/manifest.json"
+      - name: Full installed CPU validation of the same original distributions
+        run: |
+          python -m pip install uv==0.11.8
+          python scripts/check_installed_artifacts.py check --dist-dir "$RUNNER_TEMP/bundle/dist" --manifest "$RUNNER_TEMP/bundle/manifest.json" --source-root "$GITHUB_WORKSPACE" --output-dir "$RUNNER_TEMP/installed-check" --constraints ci/latest.txt --build-constraints ci/build.txt --backend cpu
+      - name: Preserve validation logs outside dist
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tag-installed-validation-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/installed-check/*.log
+            ${{ runner.temp }}/installed-check/*.json
+            ${{ runner.temp }}/installed-check/*constraints.txt
+          retention-days: 90
+          if-no-files-found: error
+
+  publish:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.14.4'
+          freethreaded: false
+      - name: Re-download original immutable artifact after protected approval
+        run: python scripts/release_artifact.py download --root . --tag "$RELEASE_TAG" --destination "$RUNNER_TEMP/bundle"
+      - name: Immediately recheck hashes, actual expiry, main and real reviewer protection
+        run: |
+          python scripts/release_artifact.py verify --root . --tag "$RELEASE_TAG" --bundle "$RUNNER_TEMP/bundle" --protection
+          python scripts/check_installed_artifacts.py verify --dist-dir "$RUNNER_TEMP/bundle/dist" --manifest "$RUNNER_TEMP/bundle/manifest.json"
+      # Remains inert until separately authorized configuration/evidence and arming.
+      # A named environment or local test cannot prove trusted-publisher setup.
+      - name: Upload original bytes with trusted publishing
+        if: false
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086
+        with:
+          packages-dir: ${{ runner.temp }}/bundle/dist/
