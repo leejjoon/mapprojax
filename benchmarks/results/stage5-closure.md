@@ -109,3 +109,22 @@ Authenticated read-only API observations on 2026-11-07 found:
 - Upload remains hard-disabled (`if: false`). No arming, tag, protected upload approval, PyPI publication/verification or downstream re-pin was performed or authorized.
 
 Fresh closure commit/push permission, green CI on the exact closure SHA, separately authorized ff-only main promotion/push and its applicable green checks remain required. Publication additionally requires actual operator reviewer/publisher proof and separate arming/tag/upload permissions. Arming changes workflow inputs and requires a fresh validated producer if done after this payload. This document does not claim those pending gates passed, does not cite its own future commit SHA and does not declare the full Stage 5 objective complete.
+
+## 2026-11-07 — operator setup, authorized arming and new candidate
+
+The preceding closure is preserved byte-for-byte as historical evidence. Operator-authorized arming changes the workflow input digest, so the old producer is not the publication candidate for the armed workflow. A fresh original CI artifact and the full exact-byte local gate are required.
+
+Dated authenticated read-only `gh api --include` evidence was captured on 2026-11-07 at approximately 20:40 UTC+09:00, with the HTTP Date headers retained separately from the local observation clock, under `/var/tmp/mapprojax-stage5-arming-cycle`:
+
+- `repos/leejjoon/mapprojax/environments/pypi`: environment ID `26561854210`, required reviewer `leejjoon`, `prevent_self_review: false`, `can_admins_bypass: false`, custom deployment policies enabled and protected-branches-only disabled.
+- Its `deployment-branch-policies` endpoint: exactly one policy, type `tag`, pattern `v*` (ID `65841023`); no branch deployment policy.
+- Active main ruleset `26754429`, no bypass actors and current-user bypass `never`, targets the default branch `main`, blocks deletion and non-fast-forward updates, and requires GitHub Actions integration `15368` checks `packaging`, `cpu (3.11.15, ci/minimum.txt)` and `cpu (3.14.4, ci/latest.txt)`. The effective `rules/branches/main` response confirms those checks and restrictions.
+- Active tag ruleset `26754613`, no bypass actors and current-user bypass `never`, targets `refs/tags/v*`, blocks update, deletion and non-fast-forward changes; tag creation is not restricted by a creation rule.
+- Repository description is `Differentiable JAX coordinate kernel for FITS: TAN/SIN WCS with SIP`; topics are `astronomy`, `fits`, `jax`, `wcs`.
+- `https://pypi.org/pypi/mapprojax/json` returned HTTP 404; response headers/body and observation time were retained. No project publication or installation was attempted.
+
+Operator statement dated 2026-11-07: PyPI account `lee_j_joon` has configured a pending publisher for project `mapprojax`, GitHub owner `leejjoon`, repository `mapprojax`, workflow `publish.yml`, environment `pypi`. The supplied screenshot at `/home/jjlee/.paseo/uploads/upload_e1e54dca-6fc8-41f3-bc26-1103f9841cdd/clipboard.png` was visually inspected: it shows that pending-publisher tuple and account. The statement and screenshot identity were recorded separately; this is operator/screenshot evidence, not an authenticated PyPI API query or proof that publication has happened.
+
+Read-only starting checks confirmed remote main and `rocm-extra` both at `3d2c62c253e7fcf6ab57a13848c78f8f5b943356`, no local or remote tags, and no tracked/staged changes. The bounded authorization permits only the four-file arming commit, a newly produced candidate's full validation, one appended evidence closure and guarded promotion of that green closure to main. No tags, protected publish approval, upload, settings changes, PyPI install verification, downstream edits or additional closure appends are authorized. Publication remains pending.
+
+<!-- stage5-new-candidate -->

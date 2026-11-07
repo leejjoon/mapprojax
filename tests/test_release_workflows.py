@@ -484,7 +484,7 @@ def test_workflow_event_permissions_pins_and_inert_publication_shape():
     assert publish.count("id-token: write") == 1 and "id-token:" not in ci
     assert "needs: validate" in publish and "environment: pypi" in publish
     assert "--protection" in publish
-    assert re.search(r"name: Upload original bytes with trusted publishing\n        if: false\n        uses: pypa/gh-action-pypi-publish@[0-9a-f]{40}", publish)
+    assert re.search(r"name: Upload original bytes with trusted publishing\n        if: success\(\)\n        uses: pypa/gh-action-pypi-publish@[0-9a-f]{40}", publish)
     # The x64 flag belongs only to the dedicated smoke step, never job/global env.
     assert ci.count("JAX_ENABLE_X64:") == 1
     assert "JAX_ENABLE_X64:" not in publish

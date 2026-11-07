@@ -75,10 +75,10 @@ jobs:
         run: |
           python scripts/release_artifact.py verify --root . --tag "$RELEASE_TAG" --bundle "$RUNNER_TEMP/bundle" --protection
           python scripts/check_installed_artifacts.py verify --dist-dir "$RUNNER_TEMP/bundle/dist" --manifest "$RUNNER_TEMP/bundle/manifest.json"
-      # Remains inert until separately authorized configuration/evidence and arming.
+      # Armed after recorded operator setup; tags and protected upload need separate approval.
       # A named environment or local test cannot prove trusted-publisher setup.
       - name: Upload original bytes with trusted publishing
-        if: false
+        if: success()
         uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086
         with:
           packages-dir: ${{ runner.temp }}/bundle/dist/
