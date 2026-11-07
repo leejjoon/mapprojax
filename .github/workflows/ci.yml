@@ -14,7 +14,7 @@ env:
 
 jobs:
   cpu:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -81,7 +81,7 @@ jobs:
           PY
 
   packaging:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ github.token }}
     steps:

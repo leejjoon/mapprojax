@@ -461,6 +461,8 @@ def test_workflow_event_permissions_pins_and_inert_publication_shape():
     assert "on:\n  push:\n    tags: ['v*']\n" in publish
     assert "pull_request" not in publish and "workflow_dispatch" not in publish
     for text in (ci, publish):
+        assert text.count("runs-on: ubuntu-24.04") == 2
+        assert "runs-on: ubuntu-latest" not in text
         assert "permissions:\n  contents: read\n  actions: read\n" in text
         assert "env:\n  JAX_PLATFORMS: cpu\n" in text
         uses = re.findall(r"uses: ([^\s]+)", text)
