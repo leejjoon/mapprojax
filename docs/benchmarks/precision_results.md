@@ -1,5 +1,7 @@
 # Precision-Mode Benchmark Results
 
+> Relocation: the historical fp64 proposal is now [docs/notes/fo64_report_and_plan.md](../notes/fo64_report_and_plan.md).
+
 > **Historical record (August 2026, pre-0.3.0 API).** `MixedPrecisionWCSJaxMixin` is now `precision="mixed"`, and `unproj_absolute`/`proj_absolute` are now `absolute_from_offset`/`offset_from_absolute`; see the migration table in [the user manual](../user_manual.md).
 
 **Date:** August 4, 2026 (plate-scale sensitivity section added August 5, 2026)

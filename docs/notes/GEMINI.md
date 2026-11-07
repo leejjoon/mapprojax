@@ -1,5 +1,7 @@
 # Project Context
 
+> Historical guidance for the retired dual backend; current architecture is in [DEVELOPER.md](../../DEVELOPER.md).
+
 ## Architecture & Developer Guide
 Refer to `DEVELOPER.md` for a detailed overview of the project's architecture, including:
 - **Backend Agnosticism**: How the project supports both NumPy and JAX.

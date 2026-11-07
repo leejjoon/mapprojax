@@ -1,5 +1,7 @@
 # Python Library Implementation Guide for WCS Projections
 
+> Historical pre-0.3.0 architecture. See [DEVELOPER.md](../../DEVELOPER.md) for the current JAX-first implementation.
+
 This document outlines the architecture and mathematical details required to implement a Python version of the `mapproj` library. It focuses on the `TAN` (Gnomonic) and `SIN` (Orthographic) projections as requested.
 
 ## Architecture Overview

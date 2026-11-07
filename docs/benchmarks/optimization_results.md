@@ -1,5 +1,7 @@
 # Optimization Benchmark Results
 
+> Historical pre-0.3.0 CPU measurements; current scripts and evidence are indexed in [benchmarks.md](../../benchmarks/benchmarks.md).
+
 **Date:** January 14, 2026  
 **Backend:** CPU  
 **Precision:** float64

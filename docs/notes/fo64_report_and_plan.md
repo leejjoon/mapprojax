@@ -1,7 +1,7 @@
 # Avoiding fp64 in mapprojax: Report and Implementation Plan
 
 **Date:** 2026-08-04
-**Status:** Proposal — research and numerical validation complete, implementation not started.
+**Status:** Historical proposal, implemented in 0.3.0 (`Reprojector`, offset form). Current guidance: [developer guide](../../DEVELOPER.md) and [user manual](../user_manual.md).
 
 This document has three parts:
 

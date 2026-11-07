@@ -1,9 +1,9 @@
-"""Tests for Reprojector / compose_relative_rotation (fo64_report_and_plan.md,
+"""Tests for Reprojector / compose_relative_rotation (docs/notes/fo64_report_and_plan.md,
 Phase 1): fused src-pixel -> tgt-pixel reprojection with no fp64 required on
 the per-pixel path.
 
 Accuracy is measured against the "reference" absolute-path pipeline
-(``wcs_src.unproj`` -> ``wcs_tgt.proj``, plain NumPy, always float64), for
+(``wcs_src.unproj`` -> ``wcs_tgt.proj``, JAX float64), for
 WCS pairs whose fields genuinely overlap or nearly so -- the regime the
 design targets (see Reprojector's docstring: `M_rel` stays close to the
 identity when fields overlap, so the bulk per-pixel math never differences
