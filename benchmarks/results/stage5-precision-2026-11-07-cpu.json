@@ -1,0 +1,1522 @@
+{
+  "metadata": {
+    "generated_at_utc": "2026-11-07T04:22:08.678114+00:00",
+    "revision": "e5b588afb4965a27803ffe752d0cfb3e27712dc2",
+    "script": "benchmark_precision.py",
+    "script_sha256": "903cb1e972985533b2f82f4bdd971925e38f3e887ed1638c5a1f1c0373fdc43d",
+    "command": "/home/jjlee/projects/mapprojax/.venv/bin/python /home/jjlee/projects/mapprojax/benchmarks/benchmark_precision.py --sizes 512 1024 2048 4096 --warmups 3 --repeats 10 --json benchmarks/results/stage5-precision-2026-11-07-cpu.json --markdown /tmp/mapprojax-stage5-precision-cpu.md",
+    "python": "3.12.13 (main, Apr 14 2026, 14:29:00) [Clang 22.1.3 ]",
+    "os": "Linux-7.0.0-34-generic-x86_64-with-glibc2.43",
+    "dependencies": {
+      "mapprojax": "0.3.0",
+      "jax": "0.11.1",
+      "jaxlib": "0.11.1",
+      "numpy": "2.5.1",
+      "jax-rocm7-plugin": "0.11.1",
+      "jax-rocm7-pjrt": "0.11.1"
+    },
+    "backend": "cpu",
+    "devices": [
+      "cpu:0"
+    ],
+    "device_kinds": [
+      "cpu"
+    ],
+    "platform_version": "cpu",
+    "rocm_runtime": null,
+    "environment": {
+      "JAX_PLATFORMS": "cpu",
+      "XLA_PYTHON_CLIENT_PREALLOCATE": "false",
+      "ROCM_PATH": null
+    },
+    "reference": "JAX WCS f64 TAN unproj -> SIN proj with float64 coordinates (not independent truth)",
+    "dtypes": {
+      "reference": "float64",
+      "f64_coordinates": "float64",
+      "mixed_and_f32_coordinates": "float32",
+      "host_absolute_helpers": "float64"
+    },
+    "sampling": {
+      "seed": 0,
+      "random_samples_per_case": 5000,
+      "accuracy_span_px": [
+        0,
+        8192
+      ],
+      "accuracy_crpix": [
+        100.0,
+        100.0
+      ],
+      "accuracy_cd_deg_per_px": [
+        [
+          -0.001,
+          0.0
+        ],
+        [
+          0.0,
+          0.001
+        ]
+      ],
+      "accuracy_crval_src_deg": [
+        45.0,
+        30.0
+      ],
+      "accuracy_crval_tgt_deg": [
+        45.5,
+        30.3
+      ],
+      "detector_shape": [
+        4096,
+        4096
+      ],
+      "detector_span_px": [
+        0,
+        4096
+      ],
+      "detector_crpix": [
+        2048.0,
+        2048.0
+      ],
+      "detector_src_crval_deg": [
+        180.0,
+        30.0
+      ],
+      "detector_target_separation_axis": "declination",
+      "projection_pair": "TAN->SIN",
+      "plate_cases": [
+        [
+          "cross-field",
+          3.6,
+          1800.0
+        ],
+        [
+          "cross-field",
+          0.1,
+          1800.0
+        ],
+        [
+          "cross-field",
+          0.05,
+          1800.0
+        ],
+        [
+          "same-pointing",
+          0.1,
+          1.0
+        ],
+        [
+          "same-pointing",
+          0.1,
+          10.0
+        ],
+        [
+          "same-pointing",
+          0.1,
+          60.0
+        ],
+        [
+          "same-pointing",
+          0.1,
+          300.0
+        ],
+        [
+          "same-pointing",
+          0.05,
+          1.0
+        ],
+        [
+          "same-pointing",
+          0.05,
+          10.0
+        ],
+        [
+          "same-pointing",
+          0.05,
+          60.0
+        ],
+        [
+          "same-pointing",
+          0.05,
+          300.0
+        ],
+        [
+          "same-pointing",
+          0.02,
+          1.0
+        ],
+        [
+          "same-pointing",
+          0.02,
+          10.0
+        ],
+        [
+          "same-pointing",
+          0.02,
+          60.0
+        ],
+        [
+          "same-pointing",
+          0.02,
+          300.0
+        ]
+      ],
+      "timing_grid": "integer pixel coordinates [0,size) on each axis"
+    },
+    "units": {
+      "timing": "ms",
+      "error": "px",
+      "plate_scale": "arcsec/px",
+      "separation": "arcsec"
+    },
+    "timing_policy": "perf_counter warm median; complete input/output tree waits; setup, transfers and compilation excluded; no cold timing",
+    "sizes": [
+      512,
+      1024,
+      2048,
+      4096
+    ],
+    "warmups": 3,
+    "repeats": 10
+  },
+  "timings": [
+    {
+      "size": 512,
+      "path": "wcs_eager_f64",
+      "label": "eager JAX WCS f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "median_ms": 15.336085110902786,
+      "min_ms": 10.550537146627903,
+      "max_ms": 20.58243891224265,
+      "std_ms": 2.605242266858998,
+      "samples_ms": [
+        15.096183866262436,
+        15.575986355543137,
+        12.7808409743011,
+        20.58243891224265,
+        14.973904006183147,
+        17.862313892692327,
+        16.171454917639494,
+        10.550537146627903,
+        13.869337271898985,
+        16.554145142436028
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 262144,
+        "n_reference_finite": 262144,
+        "n_output_finite": 262144,
+        "n_overlap": 262144,
+        "max_px": 2.1838546877452078e-11,
+        "median_px": 2.6375591365013364e-12
+      }
+    },
+    {
+      "size": 512,
+      "path": "wcs_jit_f64",
+      "label": "jitted JAX WCS f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "median_ms": 3.4948207903653383,
+      "min_ms": 2.514899242669344,
+      "max_ms": 3.805374726653099,
+      "std_ms": 0.3715492784362883,
+      "samples_ms": [
+        3.5446546971797943,
+        3.6478191614151,
+        3.300976939499378,
+        3.4449868835508823,
+        2.514899242669344,
+        3.7980014458298683,
+        3.187783993780613,
+        3.805374726653099,
+        3.7623238749802113,
+        3.2879416830837727
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 262144,
+        "n_reference_finite": 262144,
+        "n_output_finite": 262144,
+        "n_overlap": 262144,
+        "max_px": 0.0,
+        "median_px": 0.0
+      }
+    },
+    {
+      "size": 512,
+      "path": "wcs_jit_mixed",
+      "label": "jitted JAX WCS mixed",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "median_ms": 1.9954419694840908,
+      "min_ms": 1.6987440176308155,
+      "max_ms": 2.204235177487135,
+      "std_ms": 0.18442724669193405,
+      "samples_ms": [
+        1.8263040110468864,
+        2.0584198646247387,
+        2.1035452373325825,
+        2.1001589484512806,
+        1.7226291820406914,
+        1.932464074343443,
+        2.204235177487135,
+        2.1875733509659767,
+        1.6987440176308155,
+        1.7715110443532467
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 262144,
+        "n_reference_finite": 262144,
+        "n_output_finite": 262144,
+        "n_overlap": 262144,
+        "max_px": 0.0001086085514575844,
+        "median_px": 2.7074150540749024e-05
+      }
+    },
+    {
+      "size": 512,
+      "path": "rp_jit_f32",
+      "label": "jitted Reprojector f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "median_ms": 0.43988204561173916,
+      "min_ms": 0.28786109760403633,
+      "max_ms": 0.5328920669853687,
+      "std_ms": 0.07642981048886306,
+      "samples_ms": [
+        0.3582141362130642,
+        0.38772914558649063,
+        0.4795612767338753,
+        0.499179121106863,
+        0.28786109760403633,
+        0.41976897045969963,
+        0.3314628265798092,
+        0.5328920669853687,
+        0.4853620193898678,
+        0.4599951207637787
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 262144,
+        "n_reference_finite": 262144,
+        "n_output_finite": 262144,
+        "n_overlap": 262144,
+        "max_px": 0.00015315818262681176,
+        "median_px": 3.090650500643563e-05
+      }
+    },
+    {
+      "size": 512,
+      "path": "rp_jit_f64",
+      "label": "jitted Reprojector f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "median_ms": 0.7386987563222647,
+      "min_ms": 0.6280411034822464,
+      "max_ms": 0.841011293232441,
+      "std_ms": 0.06535983211700641,
+      "samples_ms": [
+        0.7866793312132359,
+        0.7674330845475197,
+        0.841011293232441,
+        0.7602088153362274,
+        0.7153949700295925,
+        0.7171886973083019,
+        0.8153333328664303,
+        0.6280411034822464,
+        0.6494913250207901,
+        0.6988942623138428
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 262144,
+        "n_reference_finite": 262144,
+        "n_output_finite": 262144,
+        "n_overlap": 262144,
+        "max_px": 1.863415901744427e-11,
+        "median_px": 4.802175626649179e-12
+      }
+    },
+    {
+      "size": 1024,
+      "path": "wcs_eager_f64",
+      "label": "eager JAX WCS f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "median_ms": 50.798020558431745,
+      "min_ms": 45.70163832977414,
+      "max_ms": 63.66307009011507,
+      "std_ms": 6.315707773516786,
+      "samples_ms": [
+        46.6618831269443,
+        46.45687900483608,
+        58.2978711463511,
+        45.70163832977414,
+        61.15297880023718,
+        48.052228055894375,
+        63.66307009011507,
+        54.974012076854706,
+        53.543813060969114,
+        47.795374877750874
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 1048576,
+        "n_reference_finite": 1048576,
+        "n_output_finite": 1048576,
+        "n_overlap": 1048576,
+        "max_px": 2.3429696086432153e-11,
+        "median_px": 2.624664462158579e-12
+      }
+    },
+    {
+      "size": 1024,
+      "path": "wcs_jit_f64",
+      "label": "jitted JAX WCS f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "median_ms": 14.819693984463811,
+      "min_ms": 12.095571961253881,
+      "max_ms": 16.88959589228034,
+      "std_ms": 1.2513082591181406,
+      "samples_ms": [
+        14.058632776141167,
+        14.278185088187456,
+        14.921165071427822,
+        15.763539355248213,
+        16.88959589228034,
+        14.05414380133152,
+        15.77520091086626,
+        14.7182228974998,
+        12.095571961253881,
+        15.637891832739115
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 1048576,
+        "n_reference_finite": 1048576,
+        "n_output_finite": 1048576,
+        "n_overlap": 1048576,
+        "max_px": 0.0,
+        "median_px": 0.0
+      }
+    },
+    {
+      "size": 1024,
+      "path": "wcs_jit_mixed",
+      "label": "jitted JAX WCS mixed",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "median_ms": 10.248783975839615,
+      "min_ms": 6.998158060014248,
+      "max_ms": 11.728541925549507,
+      "std_ms": 1.3548721372393064,
+      "samples_ms": [
+        9.10199386999011,
+        10.922656394541264,
+        10.966659057885408,
+        11.728541925549507,
+        9.354368317872286,
+        11.404333170503378,
+        9.937223047018051,
+        8.970866911113262,
+        10.560344904661179,
+        6.998158060014248
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 1048576,
+        "n_reference_finite": 1048576,
+        "n_output_finite": 1048576,
+        "n_overlap": 1048576,
+        "max_px": 0.00023749851538295747,
+        "median_px": 3.865699515516683e-05
+      }
+    },
+    {
+      "size": 1024,
+      "path": "rp_jit_f32",
+      "label": "jitted Reprojector f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "median_ms": 1.3712684158235788,
+      "min_ms": 0.9560268372297287,
+      "max_ms": 1.9998596981167793,
+      "std_ms": 0.30136772905205544,
+      "samples_ms": [
+        1.7711501568555832,
+        1.9998596981167793,
+        1.6894461587071419,
+        1.4945999719202518,
+        0.9560268372297287,
+        1.3650469481945038,
+        1.1959988623857498,
+        1.2217573821544647,
+        1.3774898834526539,
+        1.1727451346814632
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 1048576,
+        "n_reference_finite": 1048576,
+        "n_output_finite": 1048576,
+        "n_overlap": 1048576,
+        "max_px": 0.0003163202337498485,
+        "median_px": 4.7837485335862234e-05
+      }
+    },
+    {
+      "size": 1024,
+      "path": "rp_jit_f64",
+      "label": "jitted Reprojector f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "median_ms": 5.3087021224200726,
+      "min_ms": 2.381468191742897,
+      "max_ms": 5.974032916128635,
+      "std_ms": 0.9366762116776828,
+      "samples_ms": [
+        2.381468191742897,
+        5.974032916128635,
+        5.401436239480972,
+        5.658318754285574,
+        5.040768068283796,
+        5.139313172549009,
+        5.291059147566557,
+        4.908157978206873,
+        5.326345097273588,
+        5.427816417068243
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 1048576,
+        "n_reference_finite": 1048576,
+        "n_output_finite": 1048576,
+        "n_overlap": 1048576,
+        "max_px": 1.8900420743932116e-11,
+        "median_px": 4.8367035983989465e-12
+      }
+    },
+    {
+      "size": 2048,
+      "path": "wcs_eager_f64",
+      "label": "eager JAX WCS f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "median_ms": 351.8434080760926,
+      "min_ms": 314.55779960379004,
+      "max_ms": 377.497305162251,
+      "std_ms": 19.409206305672022,
+      "samples_ms": [
+        349.0870948880911,
+        353.34833478555083,
+        334.419434890151,
+        316.35238602757454,
+        360.5287140235305,
+        314.55779960379004,
+        365.83456909283996,
+        377.497305162251,
+        350.33848136663437,
+        357.0825816132128
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 4194304,
+        "n_reference_finite": 4194304,
+        "n_output_finite": 4194304,
+        "n_overlap": 4194304,
+        "max_px": 2.702305283493095e-11,
+        "median_px": 2.651609927327309e-12
+      }
+    },
+    {
+      "size": 2048,
+      "path": "wcs_jit_f64",
+      "label": "jitted JAX WCS f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "median_ms": 59.08036953769624,
+      "min_ms": 54.7541962005198,
+      "max_ms": 65.92998886480927,
+      "std_ms": 3.629860092013352,
+      "samples_ms": [
+        56.50854483246803,
+        64.29096683859825,
+        56.85741128399968,
+        54.7541962005198,
+        58.14151419326663,
+        65.92998886480927,
+        54.89644408226013,
+        60.019224882125854,
+        60.14302792027593,
+        61.85417575761676
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 4194304,
+        "n_reference_finite": 4194304,
+        "n_output_finite": 4194304,
+        "n_overlap": 4194304,
+        "max_px": 0.0,
+        "median_px": 0.0
+      }
+    },
+    {
+      "size": 2048,
+      "path": "wcs_jit_mixed",
+      "label": "jitted JAX WCS mixed",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "median_ms": 40.471352403983474,
+      "min_ms": 34.25191901624203,
+      "max_ms": 43.79308735951781,
+      "std_ms": 3.30185386323171,
+      "samples_ms": [
+        37.79871668666601,
+        43.07569935917854,
+        38.07425498962402,
+        43.73320518061519,
+        43.79308735951781,
+        37.03192574903369,
+        38.136743009090424,
+        42.805961798876524,
+        34.25191901624203,
+        43.13465999439359
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 4194304,
+        "n_reference_finite": 4194304,
+        "n_output_finite": 4194304,
+        "n_overlap": 4194304,
+        "max_px": 0.0005037525229550513,
+        "median_px": 6.762207448546143e-05
+      }
+    },
+    {
+      "size": 2048,
+      "path": "rp_jit_f32",
+      "label": "jitted Reprojector f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "median_ms": 10.926538612693548,
+      "min_ms": 8.91093397513032,
+      "max_ms": 12.239241041243076,
+      "std_ms": 1.0587744577017617,
+      "samples_ms": [
+        11.34244492277503,
+        10.517213959246874,
+        11.156626045703888,
+        9.147087577730417,
+        11.873062700033188,
+        9.935961104929447,
+        12.239241041243076,
+        8.91093397513032,
+        11.489623226225376,
+        10.696451179683208
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 4194304,
+        "n_reference_finite": 4194304,
+        "n_output_finite": 4194304,
+        "n_overlap": 4194304,
+        "max_px": 0.0007402959959553446,
+        "median_px": 8.547095029620159e-05
+      }
+    },
+    {
+      "size": 2048,
+      "path": "rp_jit_f64",
+      "label": "jitted Reprojector f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "median_ms": 28.799607418477535,
+      "min_ms": 23.90364184975624,
+      "max_ms": 31.79248422384262,
+      "std_ms": 2.429462389655833,
+      "samples_ms": [
+        23.90364184975624,
+        31.1622591689229,
+        25.121482089161873,
+        26.650025974959135,
+        27.40208012983203,
+        31.79248422384262,
+        29.47272267192602,
+        30.219577252864838,
+        28.550127986818552,
+        29.04908685013652
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 4194304,
+        "n_reference_finite": 4194304,
+        "n_output_finite": 4194304,
+        "n_overlap": 4194304,
+        "max_px": 2.0092118342630963e-11,
+        "median_px": 4.881919847681249e-12
+      }
+    },
+    {
+      "size": 4096,
+      "path": "wcs_eager_f64",
+      "label": "eager JAX WCS f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "median_ms": 1309.5486792735755,
+      "min_ms": 1226.3918393291533,
+      "max_ms": 1356.3301949761808,
+      "std_ms": 36.65225241437869,
+      "samples_ms": [
+        1339.0175569802523,
+        1325.8310239762068,
+        1333.1936839967966,
+        1295.8844685927033,
+        1226.3918393291533,
+        1263.7801701202989,
+        1288.6411398649216,
+        1301.0926181450486,
+        1356.3301949761808,
+        1318.0047404021025
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 16777216,
+        "n_reference_finite": 16777216,
+        "n_output_finite": 16777216,
+        "n_overlap": 16777216,
+        "max_px": 3.240234431611394e-11,
+        "median_px": 2.7284841053187847e-12
+      }
+    },
+    {
+      "size": 4096,
+      "path": "wcs_jit_f64",
+      "label": "jitted JAX WCS f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "median_ms": 183.77835024148226,
+      "min_ms": 173.89064468443394,
+      "max_ms": 198.58571281656623,
+      "std_ms": 8.336825266606771,
+      "samples_ms": [
+        192.89872236549854,
+        196.8706496991217,
+        186.47209974005818,
+        181.08460074290633,
+        198.58571281656623,
+        191.70271325856447,
+        179.79416390880942,
+        177.55453381687403,
+        173.89064468443394,
+        178.3674811013043
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 16777216,
+        "n_reference_finite": 16777216,
+        "n_output_finite": 16777216,
+        "n_overlap": 16777216,
+        "max_px": 0.0,
+        "median_px": 0.0
+      }
+    },
+    {
+      "size": 4096,
+      "path": "wcs_jit_mixed",
+      "label": "jitted JAX WCS mixed",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "median_ms": 154.7345300205052,
+      "min_ms": 143.08474818244576,
+      "max_ms": 169.39518274739385,
+      "std_ms": 6.869540717194009,
+      "samples_ms": [
+        152.70831109955907,
+        169.39518274739385,
+        154.36712885275483,
+        155.10193118825555,
+        144.40865721553564,
+        157.93932508677244,
+        153.4864129498601,
+        143.08474818244576,
+        155.79660516232252,
+        155.4223019629717
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 16777216,
+        "n_reference_finite": 16777216,
+        "n_output_finite": 16777216,
+        "n_overlap": 16777216,
+        "max_px": 0.0011284774582342816,
+        "median_px": 0.00012990285298048734
+      }
+    },
+    {
+      "size": 4096,
+      "path": "rp_jit_f32",
+      "label": "jitted Reprojector f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "median_ms": 43.499703984707594,
+      "min_ms": 41.25580005347729,
+      "max_ms": 54.256842005997896,
+      "std_ms": 3.713012484911946,
+      "samples_ms": [
+        46.21879989281297,
+        54.256842005997896,
+        41.25580005347729,
+        44.3200608715415,
+        45.73629284277558,
+        42.45873121544719,
+        41.34068917483091,
+        45.80647498369217,
+        41.5841368958354,
+        42.67934709787369
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 16777216,
+        "n_reference_finite": 16777216,
+        "n_output_finite": 16777216,
+        "n_overlap": 16777216,
+        "max_px": 0.001558375073620334,
+        "median_px": 0.0001641870057706931
+      }
+    },
+    {
+      "size": 4096,
+      "path": "rp_jit_f64",
+      "label": "jitted Reprojector f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "median_ms": 84.86270904541016,
+      "min_ms": 81.56676311045885,
+      "max_ms": 96.9098866917193,
+      "std_ms": 4.348420621488809,
+      "samples_ms": [
+        89.36433168128133,
+        96.9098866917193,
+        88.23622204363346,
+        85.82579903304577,
+        83.03168695420027,
+        83.89961905777454,
+        82.50829298049212,
+        81.56676311045885,
+        83.5501211695373,
+        87.8410879522562
+      ],
+      "warmups": 3,
+      "repeats": 10,
+      "accuracy": {
+        "n_samples": 16777216,
+        "n_reference_finite": 16777216,
+        "n_output_finite": 16777216,
+        "n_overlap": 16777216,
+        "max_px": 2.0509055109468465e-11,
+        "median_px": 4.9528855267435495e-12
+      }
+    }
+  ],
+  "accuracy": [
+    {
+      "path": "wcs_eager_f64",
+      "label": "eager JAX WCS f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 2.2791871899501835e-11,
+      "median_px": 2.9700009632059266e-12
+    },
+    {
+      "path": "wcs_jit_f64",
+      "label": "jitted JAX WCS f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.0,
+      "median_px": 0.0
+    },
+    {
+      "path": "wcs_jit_mixed",
+      "label": "jitted JAX WCS mixed",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.001677175985304201,
+      "median_px": 0.00028139317084333124
+    },
+    {
+      "path": "rp_jit_f32",
+      "label": "jitted Reprojector f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.0025168002982806303,
+      "median_px": 0.00034515731880649484
+    },
+    {
+      "path": "rp_jit_f64",
+      "label": "jitted Reprojector f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 1.5848206150333993e-11,
+      "median_px": 5.1448789686149945e-12
+    },
+    {
+      "path": "offset_host_f64",
+      "label": "f64 offsets + host absolute helpers",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 3.2741809263825417e-11,
+      "median_px": 9.757632022338885e-12
+    },
+    {
+      "path": "offset_host_f32_x64_off",
+      "label": "f32 offsets (x64 off) + host f64 absolute helpers",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.008978765873877357,
+      "median_px": 0.0018122845237494405
+    }
+  ],
+  "plate_scale": [
+    {
+      "regime": "cross-field",
+      "plate_arcsec_per_px": 3.6,
+      "separation_arcsec": 1800.0,
+      "matrix_precision": "f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.0007367669338159397,
+      "median_px": 0.0001393707010874648
+    },
+    {
+      "regime": "cross-field",
+      "plate_arcsec_per_px": 3.6,
+      "separation_arcsec": 1800.0,
+      "matrix_precision": "f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 2.5016271348557322e-11,
+      "median_px": 8.953153214348876e-12
+    },
+    {
+      "regime": "cross-field",
+      "plate_arcsec_per_px": 0.1,
+      "separation_arcsec": 1800.0,
+      "matrix_precision": "f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.004823777648412614,
+      "median_px": 0.0010419861992568193
+    },
+    {
+      "regime": "cross-field",
+      "plate_arcsec_per_px": 0.1,
+      "separation_arcsec": 1800.0,
+      "matrix_precision": "f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 8.857792337502043e-10,
+      "median_px": 3.21161306375348e-10
+    },
+    {
+      "regime": "cross-field",
+      "plate_arcsec_per_px": 0.05,
+      "separation_arcsec": 1800.0,
+      "matrix_precision": "f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.008431281594830921,
+      "median_px": 0.00172297230354808
+    },
+    {
+      "regime": "cross-field",
+      "plate_arcsec_per_px": 0.05,
+      "separation_arcsec": 1800.0,
+      "matrix_precision": "f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 1.820588104277286e-09,
+      "median_px": 6.459237705627961e-10
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.1,
+      "separation_arcsec": 1.0,
+      "matrix_precision": "f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.0007186468504226186,
+      "median_px": 0.00013807058162943034
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.1,
+      "separation_arcsec": 1.0,
+      "matrix_precision": "f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 8.759666679282684e-10,
+      "median_px": 3.1762128754013985e-10
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.1,
+      "separation_arcsec": 10.0,
+      "matrix_precision": "f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.0006896247897858516,
+      "median_px": 0.0001362441571456572
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.1,
+      "separation_arcsec": 10.0,
+      "matrix_precision": "f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 8.725148021563073e-10,
+      "median_px": 3.213082032549236e-10
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.1,
+      "separation_arcsec": 60.0,
+      "matrix_precision": "f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.0006654957935755269,
+      "median_px": 0.00014744441817042992
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.1,
+      "separation_arcsec": 60.0,
+      "matrix_precision": "f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 8.844304640862124e-10,
+      "median_px": 3.20258585963668e-10
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.1,
+      "separation_arcsec": 300.0,
+      "matrix_precision": "f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.001389149675314093,
+      "median_px": 0.00022759028796503144
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.1,
+      "separation_arcsec": 300.0,
+      "matrix_precision": "f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 8.952149465736919e-10,
+      "median_px": 3.2249394955851965e-10
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.05,
+      "separation_arcsec": 1.0,
+      "matrix_precision": "f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.0005279925153514666,
+      "median_px": 0.00011761043425720052
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.05,
+      "separation_arcsec": 1.0,
+      "matrix_precision": "f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 1.8534668597430894e-09,
+      "median_px": 6.393091954981044e-10
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.05,
+      "separation_arcsec": 10.0,
+      "matrix_precision": "f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.0005549400419840395,
+      "median_px": 0.00011761620702814351
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.05,
+      "separation_arcsec": 10.0,
+      "matrix_precision": "f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 1.9271925545869703e-09,
+      "median_px": 6.405088533415517e-10
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.05,
+      "separation_arcsec": 60.0,
+      "matrix_precision": "f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.0007613186313630327,
+      "median_px": 0.0001576858841297208
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.05,
+      "separation_arcsec": 60.0,
+      "matrix_precision": "f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 1.930977521616827e-09,
+      "median_px": 6.381738624492468e-10
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.05,
+      "separation_arcsec": 300.0,
+      "matrix_precision": "f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.0015040496194386544,
+      "median_px": 0.0003616985161092278
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.05,
+      "separation_arcsec": 300.0,
+      "matrix_precision": "f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 1.891626817049852e-09,
+      "median_px": 6.412451274533208e-10
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.02,
+      "separation_arcsec": 1.0,
+      "matrix_precision": "f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.0005332120252246631,
+      "median_px": 9.73146561302631e-05
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.02,
+      "separation_arcsec": 1.0,
+      "matrix_precision": "f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 4.701540692093399e-09,
+      "median_px": 1.5805692661962423e-09
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.02,
+      "separation_arcsec": 10.0,
+      "matrix_precision": "f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.0005285158088410054,
+      "median_px": 9.608547170805808e-05
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.02,
+      "separation_arcsec": 10.0,
+      "matrix_precision": "f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 4.7460245995205425e-09,
+      "median_px": 1.604034403499862e-09
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.02,
+      "separation_arcsec": 60.0,
+      "matrix_precision": "f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.0008338590041649339,
+      "median_px": 0.0002239628834253913
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.02,
+      "separation_arcsec": 60.0,
+      "matrix_precision": "f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 4.6101195080137e-09,
+      "median_px": 1.5883182798531055e-09
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.02,
+      "separation_arcsec": 300.0,
+      "matrix_precision": "f32",
+      "input_dtype": "float32",
+      "output_dtypes": [
+        "float32",
+        "float32"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 0.002640760975319792,
+      "median_px": 0.0005064770148740756
+    },
+    {
+      "regime": "same-pointing",
+      "plate_arcsec_per_px": 0.02,
+      "separation_arcsec": 300.0,
+      "matrix_precision": "f64",
+      "input_dtype": "float64",
+      "output_dtypes": [
+        "float64",
+        "float64"
+      ],
+      "n_samples": 5000,
+      "n_reference_finite": 5000,
+      "n_output_finite": 5000,
+      "n_overlap": 5000,
+      "max_px": 4.597378700618544e-09,
+      "median_px": 1.5786218727629308e-09
+    }
+  ]
+}

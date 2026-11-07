@@ -5,10 +5,7 @@ This directory contains scripts for evaluating the performance of different coor
 ## Benchmark Scripts
 
 ### 1. `benchmark.py`
-**Tests:** Broad-scale coordinate transformation efficiency.
-- **Comparison:** NumPy (float64) vs. JAX Standard (float64) vs. JAX Mixed Precision (float32/float64).
-- **Workload:** Broadcasts 100,000 celestial points against 100 separate WCS definitions (10 million total transformations).
-- **Goal:** Measures raw throughput for high-volume coordinate mapping.
+**Tests:** JAX-first batching: a three-centre `vmap` over f64 `Tan` WCS PyTrees. It is not the old NumPy/JAX/mixed 100-WCS comparison described in the historical tables below.
 
 ### 2. `benchmark_optimization.py`
 **Tests:** Path-specific geometric optimizations.
@@ -16,17 +13,21 @@ This directory contains scripts for evaluating the performance of different coor
   1. **Full (RA/Dec):** Standard path through spherical coordinates.
   2. **XYZ (Vector):** Direct path using celestial unit vectors (bypassing RA/Dec trigonometry).
   3. **Optimized (Rot):** Path using manually fused rotation matrices to map between native spheres directly.
-- **Goal:** Demonstrates the speedup achievable by avoiding trigonometric conversions.
+- **Goal:** Measures the paths without attributing every timing difference to a single optimization; report the backend and JIT policy.
 
 ### 3. `benchmark_precision.py`
 **Tests:** Performance scaling across image resolutions and precision modes, plus an accuracy comparison.
 - **Comparison:** `Tan`/`Sin` with `precision="f64"` vs. `precision="mixed"` vs. `Reprojector` (`f32`/`f64`) across resolutions (512x512 to 8192x8192), plus a separate accuracy check that includes offset-form absolute output (`absolute_from_offset`/`offset_from_absolute`).
-- **Goal:** Evaluates how each precision strategy scales with data volume, and quantifies the speed/accuracy tradeoff of each -- not speed alone. Run once with the default backend and once with `JAX_PLATFORMS=cpu` to compare GPU vs CPU (JAX picks its backend at process start and can't switch mid-process). Recorded results: `docs/benchmarks/precision_results.md`.
+- **Measurement:** eager JAX f64 and explicitly jitted f64/mixed/Reprojector paths, warm medians with complete output-tree synchronization. Reference is JAX f64, not NumPy ground truth. CLI supports `--sizes`, `--warmups`, `--repeats`, `--json`, `--markdown`. Preserve producer `offset_scale()` in host composition. [Corrected Stage 5 evidence](../docs/benchmarks/precision_results_stage5_2026-11-07.md); August results remain historical.
 
 ### 4. `benchmark_accuracy.py`
 **Tests:** Accuracy against astropy, no timing.
 - **Comparison:** mapprojax (`jax`, `offset_host`, `jax_mixed`) vs. `astropy.wcs` on every case in `tests/accuracy_reference.py` (header fixtures in `tests/data/`, synthetic near-pole and RA-wrap fields), plus the real SPHEREx pair through `Reprojector` with an astropy-derived ICRS↔Galactic rotation and a transposed-rotation negative control.
-- **Goal:** Generates the published table `docs/benchmarks/accuracy_results.md` and exits non-zero on any regression. `--write-baselines` regenerates the regression caps in `tests/data/accuracy_baselines.json`; it refuses if a result exceeds its old cap unless `--allow-cap-increase` is given.
+- **Goal:** Generates the published table `docs/benchmarks/accuracy_results.md` and exits non-zero on any budget/cap regression. Stage 5 never uses `--write-baselines` or `--allow-cap-increase`; committed caps and the reference report remain frozen.
+
+### Other validation scripts
+
+`benchmark_stage3.py` measures warm/lowering/compile/cold subprocess workloads; `compare_stage3.py` checks matched result pairs and budgets. `benchmark_sip.py` measures SIP paths. `compare_reprojax_pixel_map.py` checks downstream capability equivalence and `sweep_reprojector_gradients.py` records scale-aware finite-difference sweeps. Stage 3/4 canonical evidence is indexed by the append-only closure files in `benchmarks/results/`; do not overwrite old result files.
 
 ## How to Run
 Run any script directly using `python3`:
@@ -40,7 +41,13 @@ JAX_PLATFORMS=cpu python3 benchmarks/benchmark_precision.py # forced CPU
 
 ## Results
 
-### AMD Strix Halo (2026-11-01)
+### Current 0.3.0 precision evidence (2026-11-07)
+
+The [new report](../docs/benchmarks/precision_results_stage5_2026-11-07.md) links corrected CPU/ROCm raw timings (512²–4096², three warmups, ten measured repeats) and the realistic 4096² plate-scale/separation envelope. Sampled f32 Reprojector maxima are 5.28e-4–8.44e-3 px against the JAX f64 absolute path, not an independent accuracy guarantee. The 8192² CPU attempt exited 137 before reporting; no 8192² timing is claimed on either backend. All timing paths' actual JIT status and transfer exclusions are recorded. No causal hardware/speedup attribution is made from these measurements alone.
+
+### Historical AMD Strix Halo (2026-11-01, pre-Stage 3)
+
+The following tables and observations are retained historical text. Script definitions and labels have since changed; these are not current 0.3.0 comparisons or validated explanations of current performance.
 
 - **Machine:** AMD Ryzen AI MAX+ PRO 395 (16 cores / 32 threads) with integrated Radeon 8060S GPU, 30 GB RAM visible to the OS (memory shared between CPU and GPU)
 - **Software:** Linux 7.0, ROCm 7.2.3, Python 3.12, jax/jaxlib 0.11.1 with `jax-rocm7-plugin` (`uv sync --extra rocm`)

@@ -1,297 +1,325 @@
+"""Warm JAX pixel-mapping timings and synthetic precision comparisons.
+
+The reference is explicit JAX f64 TAN->SIN, not an independent NumPy or
+Astropy oracle. Setup, transfers and compilation are excluded from timings.
+Run CPU and ROCm in separate processes; use ROCm preallocation=false on a
+shared-memory device. Defaults retain the production 512..8192 size sweep.
 """
-Benchmark: Performance Scaling with Resolution, and Precision-Mode Comparison
 
-Tests:
-    How JAX-accelerated geometric mapping scales with data volume compared to
-    standard NumPy implementations across image resolutions from 512x512 to
-    8192x8192, across the precision strategies this package now offers:
-
-    - WCS f64: ``Tan``/``Sin`` with precision="f64" (this script enables
-      jax_enable_x64), the correctness reference.
-    - WCS mixed: precision="mixed" -- fp64 rotation, fp32 everything else
-      (see DEVELOPER.md's Precision Strategy section).
-    - Reprojector (f32) [fo64_report_and_plan.md Phase 1]: composes the two
-      WCSes' relative rotation once, in true float64, on the host -- then
-      runs the *entire* per-pixel path in float32. No jax_enable_x64 needed
-      at all, unlike every mode above.
-    - Reprojector (f64): same code path, matrix_precision="f64" -- included
-      to isolate Reprojector's own overhead from the fp32-vs-fp64 accuracy
-      question.
-
-    Offset-form absolute output (``unproj_offset``/``proj_offset`` composed
-    with ``absolute_from_offset``/``offset_from_absolute`` on the host) is
-    reported separately in the accuracy section below, not the per-size
-    timing table -- it answers a different question ("give me true RA/Dec
-    without global fp64", a host-side NumPy epilogue) than the others here
-    ("map a pixel in one WCS to a pixel in another").
-
-    f32x2 (Phase 1's proposed hi/lo matrix split) and a df64 rotation
-    variant (Phase 3) are NOT included: f32x2 was implemented and measured
-    during Phase 1 and found not to work as described (see
-    mapprojax.reproject.Reprojector's docstring) -- a plain float32 add of
-    the hi/lo products rounds the correction away regardless of matrix
-    precision, so there is nothing distinct to benchmark. Phase 3 (a real
-    double-single/df64 rotation) was never implemented.
-
-Run twice to compare backends -- JAX picks its backend at process start and
-does not support switching mid-process:
-
-    python benchmarks/benchmark_precision.py                  # default backend (GPU if present)
-    JAX_PLATFORMS=cpu python benchmarks/benchmark_precision.py # forced CPU
-
-Accuracy, not just speed, is reported once (accuracy does not depend on
-image resolution, only on the WCS pair): a speed number without an
-accompanying accuracy number is not a fair comparison for this workload,
-since the whole point of the faster modes is a documented accuracy
-tradeoff, not a free lunch.
-"""
+import argparse
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import hashlib
+from importlib import metadata
+import json
+import os
+from pathlib import Path
+import platform
+import shlex
+import subprocess
+import sys
 import time
 
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-# Enable x64 globally for JAX -- needed for the "JAX Std (f64)" and
-# "JAX Mixed" baselines and for the NumPy/Reprojector(f64) ground truth;
-# Reprojector(f32) and offset-form are the two modes in this file that do
-# NOT depend on this being set (see the accuracy section's explicit check).
-jax.config.update("jax_enable_x64", True)
-
-from mapprojax.reproject import Reprojector
 from mapprojax import absolute_from_offset, offset_from_absolute
-from mapprojax.wcs import Tan as ReprojectTan, Sin as ReprojectSin
-
-
-def Tan(*args, **kwargs):
-    return ReprojectTan(*args, precision=kwargs.pop("precision", "f64"), **kwargs)
-
-
-def Sin(*args, **kwargs):
-    return ReprojectSin(*args, precision=kwargs.pop("precision", "f64"), **kwargs)
+from mapprojax.reproject import Reprojector
+from mapprojax.wcs import Tan, Sin
 
 CRPIX = [100.0, 100.0]
 CD = [[-0.001, 0.0], [0.0, 0.001]]
 CRVAL_SRC = [45.0, 30.0]
-# A genuine (if modest) pointing difference from CRVAL_SRC, not the same
-# point -- a zero-separation src/tgt pair would make M_rel exactly the
-# identity, which is the one case where every precision mode looks
-# identical and the whole point of this benchmark (how each mode handles
-# a *real* reprojection) goes untested.
 CRVAL_TGT = [45.5, 30.3]
+DEFAULT_SIZES = (512, 1024, 2048, 4096, 8192)
+SAMPLE_COUNT = 5000
+DETECTOR_SIZE = 4096
+DETECTOR_CRPIX = [2048.0, 2048.0]
+PLATE_CASES = tuple(("cross-field", p, 1800.0) for p in (3.6, 0.1, 0.05)) + tuple(
+    ("same-pointing", p, s)
+    for p in (0.1, 0.05, 0.02) for s in (1.0, 10.0, 60.0, 300.0)
+)
+LABELS = {
+    "wcs_eager_f64": "eager JAX WCS f64",
+    "wcs_jit_f64": "jitted JAX WCS f64",
+    "wcs_jit_mixed": "jitted JAX WCS mixed",
+    "rp_jit_f32": "jitted Reprojector f32",
+    "rp_jit_f64": "jitted Reprojector f64",
+}
+REFERENCE = "JAX WCS f64 TAN unproj -> SIN proj with float64 coordinates (not independent truth)"
 
 
-def run_timing_benchmark():
-    sizes = [512, 1024, 2048, 4096, 8192]
-
-    print(f"backend={jax.default_backend()} devices={jax.devices()}\n")
-    print(f"{'Size':<12} | {'WCS (f64)':<15} | {'WCS mixed':<15} | {'WCS Mix (Opt)':<15} | "
-          f"{'Reprojector f32':<16} | {'Reprojector f64':<16}")
-    print("-" * 108)
-
-    proj2_std_jit = jax.jit(lambda ws, wt, x, y: (wt.proj(*ws.unproj(x, y))))
-    proj2_mix_jit = jax.jit(lambda ws, wt, x, y: (wt.proj(*ws.unproj(x, y))))
-
-    # Reprojector doesn't depend on image size -- built once, outside the
-    # loop, like the jit wrappers above.
-    wcs_src_reproj = ReprojectTan(CRPIX, CD, CRVAL_SRC, precision="f64")
-    wcs_tgt_reproj = ReprojectSin(CRPIX, CD, CRVAL_TGT, precision="f64")
-    rp_f32 = Reprojector(wcs_src_reproj, wcs_tgt_reproj, matrix_precision="f32")
-    rp_f64 = Reprojector(wcs_src_reproj, wcs_tgt_reproj, matrix_precision="f64")
-    rp_f32_jit = jax.jit(rp_f32.pix_to_pix)
-    rp_f64_jit = jax.jit(rp_f64.pix_to_pix)
-
-    for N in sizes:
-        y_np, x_np = np.indices((N, N), dtype=np.float64)
-        y_jax, x_jax = jnp.array(y_np, dtype=jnp.float32), jnp.array(x_np, dtype=jnp.float32)
-        y_jax64, x_jax64 = jnp.array(y_np, dtype=jnp.float64), jnp.array(x_np, dtype=jnp.float64)
-
-        # --- NumPy ---
-        wcs_src_std_np = Tan(CRPIX, CD, CRVAL_SRC)
-        wcs_tgt_std_np = Sin(CRPIX, CD, CRVAL_TGT)
-        start = time.time()
-        ra_np, dec_np = wcs_src_std_np.unproj(x_np, y_np)
-        _ = wcs_tgt_std_np.proj(ra_np, dec_np)
-        t_np = (time.time() - start) * 1000
-
-        # --- JAX Standard ---
-        wcs_src_std = ReprojectTan(CRPIX, CD, CRVAL_SRC, precision="f64")
-        wcs_tgt_std = ReprojectSin(CRPIX, CD, CRVAL_TGT, precision="f64")
-        out_std = proj2_std_jit(wcs_src_std, wcs_tgt_std, x_jax, y_jax)
-        out_std[0].block_until_ready()
-        start = time.time()
-        out_std = proj2_std_jit(wcs_src_std, wcs_tgt_std, x_jax, y_jax)
-        out_std[0].block_until_ready()
-        t_std = (time.time() - start) * 1000
-
-        # --- JAX Mixed ---
-        wcs_src_mix = ReprojectTan(CRPIX, CD, CRVAL_SRC, precision="mixed")
-        wcs_tgt_mix = ReprojectSin(CRPIX, CD, CRVAL_TGT, precision="mixed")
-        out_mix = proj2_mix_jit(wcs_src_mix, wcs_tgt_mix, x_jax, y_jax)
-        out_mix[0].block_until_ready()
-        start = time.time()
-        out_mix = proj2_mix_jit(wcs_src_mix, wcs_tgt_mix, x_jax, y_jax)
-        out_mix[0].block_until_ready()
-        t_mix = (time.time() - start) * 1000
-
-        # --- Reprojector f32 ---
-        out_rp32 = rp_f32_jit(x_jax, y_jax)
-        out_rp32[0].block_until_ready()
-        start = time.time()
-        out_rp32 = rp_f32_jit(x_jax, y_jax)
-        out_rp32[0].block_until_ready()
-        t_rp32 = (time.time() - start) * 1000
-
-        # --- Reprojector f64 ---
-        out_rp64 = rp_f64_jit(x_jax64, y_jax64)
-        out_rp64[0].block_until_ready()
-        start = time.time()
-        out_rp64 = rp_f64_jit(x_jax64, y_jax64)
-        out_rp64[0].block_until_ready()
-        t_rp64 = (time.time() - start) * 1000
-
-        print(f"{N}x{N:<7} | {t_np:<15.2f} | {t_std:<15.2f} | {t_mix:<15.2f} | {t_rp32:<16.2f} | {t_rp64:<16.2f}")
-
-
-def report_accuracy():
-    print("\n=== Accuracy (max pixel error over 5000 random points, vs NumPy f64 ground truth) ===")
-    rng = np.random.default_rng(0)
-    x = rng.uniform(0, 8192, 5000)
-    y = rng.uniform(0, 8192, 5000)
-
-    wcs_src_np = Tan(CRPIX, CD, CRVAL_SRC)
-    wcs_tgt_np = Sin(CRPIX, CD, CRVAL_TGT)
-    wcs_tgt_f32 = Sin(CRPIX, CD, CRVAL_TGT, precision="f32")
-    src_scale = wcs_src_np.offset_scale()
-    tgt_scale = wcs_tgt_np.offset_scale()
-    tgt_scale_f32 = wcs_tgt_f32.offset_scale()
-    ra_ref, dec_ref = wcs_src_np.unproj(x, y)
-    x_ref, y_ref = wcs_tgt_np.proj(ra_ref, dec_ref)
-
-    def max_err(x_out, y_out):
-        return np.max(np.hypot(np.asarray(x_out, dtype=np.float64) - x_ref, np.asarray(y_out, dtype=np.float64) - y_ref))
-
-    wcs_src_mix = ReprojectTan(CRPIX, CD, CRVAL_SRC, precision="mixed")
-    wcs_tgt_mix = ReprojectSin(CRPIX, CD, CRVAL_TGT, precision="mixed")
-    ra_m, dec_m = wcs_src_mix.unproj(jnp.asarray(x, dtype=jnp.float32), jnp.asarray(y, dtype=jnp.float32))
-    x_m, y_m = wcs_tgt_mix.proj(ra_m, dec_m)
-    err_mix = max_err(x_m, y_m)
-
-    wcs_src_reproj = ReprojectTan(CRPIX, CD, CRVAL_SRC, precision="f64")
-    wcs_tgt_reproj = ReprojectSin(CRPIX, CD, CRVAL_TGT, precision="f64")
-    rp_f32 = Reprojector(wcs_src_reproj, wcs_tgt_reproj, matrix_precision="f32")
-    x_rp32, y_rp32 = rp_f32.pix_to_pix(x, y)
-    err_rp32 = max_err(x_rp32, y_rp32)
-
-    rp_f64 = Reprojector(wcs_src_reproj, wcs_tgt_reproj, matrix_precision="f64")
-    x_rp64, y_rp64 = rp_f64.pix_to_pix(x, y)
-    err_rp64 = max_err(x_rp64, y_rp64)
-
-    # Offset-form (Phase 2): a different question -- absolute (RA, Dec)
-    # output -- but round-tripping src -> (ra, dec) -> tgt through it
-    # gives a directly comparable pixel-space number.
-    ra_off, dec_off = absolute_from_offset(
-        wcs_src_np.unproj_offset(x, y),
-        crval=wcs_src_np.crval,
-        offset_scale=src_scale,
-    )
-    x_off, y_off = wcs_tgt_np.proj_offset(
-        *offset_from_absolute(
-            (ra_off, dec_off), crval=wcs_tgt_np.crval, offset_scale=tgt_scale
-        )
-    )
-    err_off = max_err(x_off, y_off)
-
-    # Same, but with unproj_offset's bulk math actually run in float32
-    # with jax_enable_x64 off, to demonstrate the "no x64 needed" claim
-    # rather than just asserting it.
-    prev_x64 = jax.config.jax_enable_x64
-    jax.config.update("jax_enable_x64", False)
+@contextmanager
+def x64_mode(enabled):
+    previous = jax.config.jax_enable_x64
     try:
-        wcs_src_jax32 = ReprojectTan(jnp.asarray(CRPIX), jnp.asarray(CD), jnp.asarray(CRVAL_SRC), precision="f32")
-        dalpha_cosdec, ddelta = wcs_src_jax32.unproj_offset(jnp.asarray(x), jnp.asarray(y))
-        dec0 = np.radians(CRVAL_SRC[1])
-        dalpha = np.asarray(dalpha_cosdec, dtype=np.float64) / np.cos(dec0)
-        ddelta = np.asarray(ddelta, dtype=np.float64)
-        ra_off32 = np.radians(CRVAL_SRC[0]) + dalpha
-        dec_off32 = dec0 + ddelta
-        x_off32, y_off32 = wcs_tgt_f32.proj_offset(
-            *offset_from_absolute(
-                (ra_off32, dec_off32),
-                crval=wcs_tgt_f32.crval,
-                offset_scale=tgt_scale_f32,
-            )
-        )
-        err_off32 = max_err(x_off32, y_off32)
+        jax.config.update("jax_enable_x64", enabled)
+        yield
     finally:
-        jax.config.update("jax_enable_x64", prev_x64)
-
-    print(f"  JAX Mixed (fp64 rotation + fp32 rest):                     {err_mix:.3e} px")
-    print(f"  Reprojector (f32, no jax_enable_x64 needed):               {err_rp32:.3e} px")
-    print(f"  Reprojector (f64):                                         {err_rp64:.3e} px")
-    print(f"  Offset-form (absolute_from_offset/offset_from_absolute):     {err_off:.3e} px")
-    print(f"  Offset-form's unproj_offset in fp32, jax_enable_x64=False: {err_off32:.3e} px")
+        jax.config.update("jax_enable_x64", previous)
 
 
-def report_plate_scale_sensitivity():
-    """Reprojector(f32) accuracy as a function of plate scale and
-    field-center separation, on a realistic large-detector WCS pair.
+def wcs_pair(precision, crpix=CRPIX, cd=CD, src=CRVAL_SRC, tgt=CRVAL_TGT):
+    # Retain concrete host float64 reference points, including in x64-off mode.
+    return (Tan(crpix, cd, np.asarray(src, dtype=np.float64), precision=precision),
+            Sin(crpix, cd, np.asarray(tgt, dtype=np.float64), precision=precision))
 
-    Motivation: the accuracy numbers in report_accuracy() above use a
-    coarse 3.6"/px plate scale. Real instruments increasingly go finer
-    than that (sub-0.1"/px), and pixel error for a given *angular* error
-    scales inversely with plate scale -- so a number measured at 3.6"/px
-    does not, by itself, tell you what to expect at 0.05"/px. This
-    measures it directly instead of extrapolating.
 
-    Two regimes, since they behave differently:
-      - "same-pointing" (separation << field of view): dithers,
-        re-registration, coaddition of exposures from one survey/pointing.
-      - "cross-field" (separation >= field of view): reprojecting between
-        genuinely different pointings/frames (e.g. an ICRS <-> Galactic
-        mosaicking template pair, as in reprojax's real SPHEREx case).
-    """
-    crpix = [2048.0, 2048.0]  # a realistic large modern detector
+def build_paths(src, tgt, mixed_src, mixed_tgt):
+    def absolute(ws, wt, x, y):
+        return wt.proj(*ws.unproj(x, y))
 
-    def make_wcs(cls, crval_deg, plate_arcsec):
-        plate_deg = plate_arcsec / 3600.0
-        cd = [[-plate_deg, 0.0], [0.0, plate_deg]]
-        return cls(crpix, cd, crval_deg, precision="f64")
+    eager = lambda x, y: absolute(src, tgt, x, y)
+    mixed = lambda x, y: absolute(mixed_src, mixed_tgt, x, y)
+    rp32 = Reprojector(src, tgt, matrix_precision="f32")
+    rp64 = Reprojector(src, tgt, matrix_precision="f64")
+    return {
+        "wcs_eager_f64": (eager, "float64"),
+        "wcs_jit_f64": (jax.jit(eager), "float64"),
+        "wcs_jit_mixed": (jax.jit(mixed), "float32"),
+        "rp_jit_f32": (jax.jit(rp32.pix_to_pix), "float32"),
+        "rp_jit_f64": (jax.jit(rp64.pix_to_pix), "float64"),
+    }
 
-    def max_median_err(plate_arcsec, sep_arcsec, matrix_precision):
-        sep_deg = sep_arcsec / 3600.0
-        wcs_src = make_wcs(ReprojectTan, [180.0, 30.0], plate_arcsec)
-        wcs_tgt = make_wcs(ReprojectSin, [180.0, 30.0 + sep_deg], plate_arcsec)
 
-        rng = np.random.default_rng(0)
-        x = rng.uniform(0, 2 * crpix[0], 5000)
-        y = rng.uniform(0, 2 * crpix[1], 5000)
+def coordinates(x, y, dtype):
+    return jax.block_until_ready((jnp.asarray(x, dtype=dtype), jnp.asarray(y, dtype=dtype)))
 
-        ra_ref, dec_ref = wcs_src.unproj(x, y)
-        x_ref, y_ref = wcs_tgt.proj(ra_ref, dec_ref)
 
-        rp = Reprojector(wcs_src, wcs_tgt, matrix_precision=matrix_precision)
-        x_out, y_out = rp.pix_to_pix(x, y)
-        err = np.hypot(np.asarray(x_out, dtype=np.float64) - x_ref, np.asarray(y_out, dtype=np.float64) - y_ref)
-        return np.max(err), np.median(err)
+def measure_warm(function, args, warmups, repeats):
+    """Wait for the complete returned PyTree on every call, eager included."""
+    if warmups < 1 or repeats < 1:
+        raise ValueError("warmups and repeats must be positive")
+    jax.block_until_ready(args)
+    for _ in range(warmups):
+        jax.block_until_ready(function(*args))
+    samples = []
+    for _ in range(repeats):
+        start = time.perf_counter()
+        output = jax.block_until_ready(function(*args))
+        samples.append((time.perf_counter() - start) * 1000.0)
+    return {
+        "median_ms": float(np.median(samples)),
+        "min_ms": min(samples), "max_ms": max(samples),
+        "std_ms": float(np.std(samples)), "samples_ms": samples,
+        "warmups": warmups, "repeats": repeats,
+    }, output
 
-    print("\n=== Reprojector(f32) accuracy vs plate scale (2048x2048 detector, TAN->SIN) ===")
-    print("--- cross-field: 0.5 deg field-center separation ---")
-    print(f"{'plate (arcsec/px)':>18} | {'f32 max (px)':>13} | {'f32 median (px)':>16} | {'f64 max (px)':>13}")
-    for plate in (3.6, 0.1, 0.05):
-        e_max32, e_med32 = max_median_err(plate, 1800.0, "f32")
-        e_max64, _ = max_median_err(plate, 1800.0, "f64")
-        print(f"{plate:>18.2f} | {e_max32:>13.3e} | {e_med32:>16.3e} | {e_max64:>13.3e}")
 
-    print("\n--- same-pointing: dithers / re-registration / coaddition ---")
-    print(f"{'plate (arcsec/px)':>18} | {'sep (arcsec)':>12} | {'f32 max (px)':>13} | {'f32 median (px)':>16} | {'f64 max (px)':>13}")
-    for plate in (0.1, 0.05, 0.02):
-        for sep_arcsec in (1.0, 10.0, 60.0, 300.0):
-            e_max32, e_med32 = max_median_err(plate, sep_arcsec, "f32")
-            e_max64, _ = max_median_err(plate, sep_arcsec, "f64")
-            print(f"{plate:>18.2f} | {sep_arcsec:>12.1f} | {e_max32:>13.3e} | {e_med32:>16.3e} | {e_max64:>13.3e}")
+def error_stats(output, reference):
+    x, y = (np.asarray(v, dtype=np.float64) for v in output)
+    rx, ry = (np.asarray(v, dtype=np.float64) for v in reference)
+    if not (x.shape == y.shape == rx.shape == ry.shape) or not x.size:
+        raise ValueError("empty or mismatched coordinate shapes")
+    ref_valid = np.isfinite(rx) & np.isfinite(ry)
+    valid = np.isfinite(x) & np.isfinite(y)
+    overlap = ref_valid & valid
+    counts = {"n_samples": int(x.size), "n_reference_finite": int(ref_valid.sum()),
+              "n_output_finite": int(valid.sum()), "n_overlap": int(overlap.sum())}
+    if not np.all(overlap):
+        raise ValueError(f"unexpected invalid samples: {counts}")
+    error = np.hypot(x - rx, y - ry)
+    if not np.all(np.isfinite(error)):
+        raise ValueError("non-finite pixel error")
+    return {**counts, "max_px": float(error.max()), "median_px": float(np.median(error))}
+
+
+def output_dtypes(output):
+    return [str(v.dtype) for v in output]
+
+
+def run_timing_benchmark(sizes, warmups, repeats, paths):
+    rows = []
+    for size in sizes:
+        y, x = np.indices((size, size), dtype=np.float64)
+        inputs = {dtype: coordinates(x, y, dtype) for dtype in ("float32", "float64")}
+        del x, y
+        # The explicit f64 reference and transfers are outside all timed regions.
+        reference = jax.block_until_ready(paths["wcs_jit_f64"][0](*inputs["float64"]))
+        error_stats(reference, reference)
+        for name, (function, dtype) in paths.items():
+            timing, output = measure_warm(function, inputs[dtype], warmups, repeats)
+            rows.append({"size": size, "path": name, "label": LABELS[name],
+                         "input_dtype": dtype, "output_dtypes": output_dtypes(output),
+                         **timing, "accuracy": error_stats(output, reference)})
+            del output
+        del inputs, reference
+    return rows
+
+
+def offset_mapping(src, tgt, x, y, src_reference, tgt_reference):
+    absolute = absolute_from_offset(
+        src.unproj_offset(x, y), crval=src_reference, offset_scale=src.offset_scale())
+    offset = offset_from_absolute(
+        absolute, crval=tgt_reference, offset_scale=tgt.offset_scale())
+    return tgt.proj_offset(*offset)
+
+
+def offset_f32_without_x64(x, y):
+    # Save originals before disabling x64; never reconstruct a producer's cosine.
+    src_reference = np.asarray(CRVAL_SRC, dtype=np.float64)
+    tgt_reference = np.asarray(CRVAL_TGT, dtype=np.float64)
+    with x64_mode(False):
+        src, tgt = wcs_pair("f32", crpix=jnp.asarray(CRPIX, dtype=jnp.float32),
+                            cd=jnp.asarray(CD, dtype=jnp.float32),
+                            src=src_reference, tgt=tgt_reference)
+        inputs = coordinates(x, y, "float32")
+        return jax.block_until_ready(offset_mapping(
+            src, tgt, *inputs, src_reference, tgt_reference))
+
+
+def report_accuracy(paths, sample_count=SAMPLE_COUNT):
+    rng = np.random.default_rng(0)
+    x = rng.uniform(0, 8192, sample_count)
+    y = rng.uniform(0, 8192, sample_count)
+    inputs = {dtype: coordinates(x, y, dtype) for dtype in ("float32", "float64")}
+    reference = jax.block_until_ready(paths["wcs_jit_f64"][0](*inputs["float64"]))
+    rows = []
+    for name, (function, dtype) in paths.items():
+        output = jax.block_until_ready(function(*inputs[dtype]))
+        rows.append({"path": name, "label": LABELS[name], "input_dtype": dtype,
+                     "output_dtypes": output_dtypes(output), **error_stats(output, reference)})
+    src, tgt = wcs_pair("f64")
+    output = jax.block_until_ready(offset_mapping(
+        src, tgt, *inputs["float64"], np.asarray(CRVAL_SRC, dtype=np.float64),
+        np.asarray(CRVAL_TGT, dtype=np.float64)))
+    rows.append({"path": "offset_host_f64", "label": "f64 offsets + host absolute helpers",
+                 "input_dtype": "float64", "output_dtypes": output_dtypes(output),
+                 **error_stats(output, reference)})
+    output = offset_f32_without_x64(x, y)
+    rows.append({"path": "offset_host_f32_x64_off",
+                 "label": "f32 offsets (x64 off) + host f64 absolute helpers",
+                 "input_dtype": "float32", "output_dtypes": output_dtypes(output),
+                 **error_stats(output, reference)})
+    return rows
+
+
+def detector_samples(sample_count):
+    rng = np.random.default_rng(0)
+    return (rng.uniform(0, DETECTOR_SIZE, sample_count),
+            rng.uniform(0, DETECTOR_SIZE, sample_count))
+
+
+def report_plate_scale_sensitivity(sample_count=SAMPLE_COUNT):
+    x, y = detector_samples(sample_count)
+    inputs = {dtype: coordinates(x, y, dtype) for dtype in ("float32", "float64")}
+    rows = []
+    for regime, plate, separation in PLATE_CASES:
+        deg = plate / 3600.0
+        src, tgt = wcs_pair("f64", crpix=DETECTOR_CRPIX,
+                            cd=[[-deg, 0.0], [0.0, deg]], src=[180.0, 30.0],
+                            tgt=[180.0, 30.0 + separation / 3600.0])
+        reference = jax.block_until_ready(tgt.proj(*src.unproj(*inputs["float64"])))
+        for precision, dtype in (("f32", "float32"), ("f64", "float64")):
+            rp = Reprojector(src, tgt, matrix_precision=precision)
+            output = jax.block_until_ready(rp.pix_to_pix(*inputs[dtype]))
+            rows.append({"regime": regime, "plate_arcsec_per_px": plate,
+                         "separation_arcsec": separation, "matrix_precision": precision,
+                         "input_dtype": dtype, "output_dtypes": output_dtypes(output),
+                         **error_stats(output, reference)})
+    return rows
+
+
+def report_metadata(argv):
+    script = Path(__file__).resolve()
+    revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=script.parent,
+                              capture_output=True, text=True, check=False)
+    deps = {}
+    for package in ("mapprojax", "jax", "jaxlib", "numpy", "jax-rocm7-plugin", "jax-rocm7-pjrt"):
+        try:
+            deps[package] = metadata.version(package)
+        except metadata.PackageNotFoundError:
+            deps[package] = None
+    return {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "revision": revision.stdout.strip() if revision.returncode == 0 else None,
+        "script": script.name, "script_sha256": hashlib.sha256(script.read_bytes()).hexdigest(),
+        "command": shlex.join([sys.executable, str(script), *argv]),
+        "python": sys.version, "os": platform.platform(), "dependencies": deps,
+        "backend": jax.default_backend(), "devices": [str(d) for d in jax.devices()],
+        "device_kinds": [d.device_kind for d in jax.devices()],
+        "platform_version": getattr(jax.devices()[0].client, "platform_version", None),
+        "rocm_runtime": os.environ.get("ROCM_VERSION"),
+        "environment": {k: os.environ.get(k) for k in
+                        ("JAX_PLATFORMS", "XLA_PYTHON_CLIENT_PREALLOCATE", "ROCM_PATH")},
+        "reference": REFERENCE,
+        "dtypes": {"reference": "float64", "f64_coordinates": "float64",
+                   "mixed_and_f32_coordinates": "float32", "host_absolute_helpers": "float64"},
+        "sampling": {"seed": 0, "random_samples_per_case": SAMPLE_COUNT,
+                     "accuracy_span_px": [0, 8192], "accuracy_crpix": CRPIX,
+                     "accuracy_cd_deg_per_px": CD, "accuracy_crval_src_deg": CRVAL_SRC,
+                     "accuracy_crval_tgt_deg": CRVAL_TGT,
+                     "detector_shape": [DETECTOR_SIZE, DETECTOR_SIZE],
+                     "detector_span_px": [0, DETECTOR_SIZE], "detector_crpix": DETECTOR_CRPIX,
+                     "detector_src_crval_deg": [180.0, 30.0],
+                     "detector_target_separation_axis": "declination",
+                     "projection_pair": "TAN->SIN", "plate_cases": PLATE_CASES,
+                     "timing_grid": "integer pixel coordinates [0,size) on each axis"},
+        "units": {"timing": "ms", "error": "px", "plate_scale": "arcsec/px",
+                  "separation": "arcsec"},
+        "timing_policy": "perf_counter warm median; complete input/output tree waits; "
+                         "setup, transfers and compilation excluded; no cold timing",
+    }
+
+
+def render_markdown(report):
+    lines = ["# Precision benchmark", "", report["metadata"]["reference"], "",
+             "Warm median milliseconds; setup, transfers and compilation excluded.", "",
+             "| Size | Path | Input | Median ms | Min ms | Max ms |",
+             "|---|---|---|---:|---:|---:|"]
+    for row in report["timings"]:
+        lines.append(f"| {row['size']}x{row['size']} | {row['label']} | {row['input_dtype']} | "
+                     f"{row['median_ms']:.6g} | {row['min_ms']:.6g} | {row['max_ms']:.6g} |")
+    lines += ["", "| Accuracy path | Max px | Median px | Finite overlap / samples |",
+              "|---|---:|---:|---:|"]
+    for row in report["accuracy"]:
+        lines.append(f"| {row['label']} | {row['max_px']:.6g} | {row['median_px']:.6g} | "
+                     f"{row['n_overlap']} / {row['n_samples']} |")
+    lines += ["", "## Plate scale: 4096x4096 detector, CRPIX 2048, seed 0", "",
+              "| Regime | arcsec/px | Separation arcsec | Matrix | Max px | Median px | Overlap / samples |",
+              "|---|---:|---:|---|---:|---:|---:|"]
+    for row in report["plate_scale"]:
+        lines.append(f"| {row['regime']} | {row['plate_arcsec_per_px']} | {row['separation_arcsec']} | "
+                     f"{row['matrix_precision']} | {row['max_px']:.6g} | {row['median_px']:.6g} | "
+                     f"{row['n_overlap']} / {row['n_samples']} |")
+    lines += ["", "## Metadata", "", "```json", json.dumps(report["metadata"], indent=2), "```", ""]
+    return "\n".join(lines)
+
+
+def positive_int(value):
+    result = int(value)
+    if result < 1:
+        raise argparse.ArgumentTypeError("must be positive")
+    return result
+
+
+def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--sizes", nargs="+", type=positive_int, default=list(DEFAULT_SIZES))
+    parser.add_argument("--repeats", type=positive_int, default=10)
+    parser.add_argument("--warmups", type=positive_int, default=3)
+    parser.add_argument("--json", type=Path)
+    parser.add_argument("--markdown", type=Path)
+    args = parser.parse_args(argv)
+    with x64_mode(True):
+        src, tgt = wcs_pair("f64")
+        mixed_src, mixed_tgt = wcs_pair("mixed")
+        paths = build_paths(src, tgt, mixed_src, mixed_tgt)
+        report = {"metadata": report_metadata(argv),
+                  "timings": run_timing_benchmark(args.sizes, args.warmups, args.repeats, paths),
+                  "accuracy": report_accuracy(paths),
+                  "plate_scale": report_plate_scale_sensitivity()}
+        report["metadata"].update(sizes=args.sizes, warmups=args.warmups, repeats=args.repeats)
+    text = render_markdown(report)
+    if args.json:
+        args.json.write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
+    if args.markdown:
+        args.markdown.write_text(text)
+    print(text)
+    return report
 
 
 if __name__ == "__main__":
-    run_timing_benchmark()
-    report_accuracy()
-    report_plate_scale_sensitivity()
+    main()
