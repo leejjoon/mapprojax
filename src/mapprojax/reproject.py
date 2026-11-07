@@ -43,11 +43,14 @@ class Reprojector:
         per-pixel ``pix_to_native``/``native_to_pix`` legs:
 
         - ``"f32"`` (default): plain float32 throughout the per-pixel
-          path, independent of ``jax_enable_x64``. Accurate to ~1e-4 px
-          for overlapping fields (separations up to a few degrees at
-          arcsecond plate scales); error grows with field-center
-          separation and with finer plate scales -- see
-          ``fo64_report_and_plan.md``.
+          path, independent of ``jax_enable_x64``. Sampled maxima on
+          Strix Halo CPU/ROCm span 5.28e-4--8.44e-3 px against the JAX
+          f64 absolute path across 4096-square plate-scale/separation
+          cases (5000 samples, f32 coordinates). This is not a universal
+          bound; see ``docs/benchmarks/precision_results_stage5_2026-11-07.md``.
+          Separately, the real-pair Astropy agreement maxima are
+          2.49e-4 / 2.03e-4 px on 1009 / 320 overlapping samples, not
+          every pixel (``docs/benchmarks/accuracy_results.md``).
         - ``"f64"``: float64 throughout; requires
           ``jax_enable_x64``.
 

@@ -19,11 +19,10 @@ def xyz_to_radec(x, y, z, xp=np):
     Convert unit vector (x, y, z) to RA/Dec (radians).
 
     ``dec = atan2(z, hypot(x, y))`` rather than ``arcsin(z / |v|)``: near the
-    poles the arcsin form loses precision (1.5e-4 to 2.0e-4 mas at dec +/-
-    89.9) because it differentiates the whole sphere through one coordinate,
-    while atan2 keeps the full precision of z against the small transverse
-    component. The degenerate (0, 0, 0) input returns NaN instead of a valid
-    sky position.
+    poles the arcsin form is sensitive to rounding as its argument
+    approaches +/-1. The atan2 form uses z and the transverse component
+    directly, without an angular-accuracy guarantee. The degenerate
+    (0, 0, 0) input returns NaN instead of a valid sky position.
     """
     dist = xp.sqrt(x*x + y*y + z*z)
     dec = xp.arctan2(z, xp.hypot(x, y))
@@ -44,7 +43,7 @@ def rotation_matrix(lon_rad, lat_rad, xp=np):
     
     Defined by CRVAL = (lon, lat) in radians.
     
-    From implementation.md:
+    From docs/notes/implementation.md (historical derivation):
     M = [
       [ cosP cosL,  cosP sinL, sinP],
       [-sinL,       cosL,      0   ],
@@ -74,26 +73,14 @@ def rotation_matrix(lon_rad, lat_rad, xp=np):
     m21 = -sin_p * sin_l
     m22 = cos_p
     
-    # Shape: (3, 3) or (..., 3, 3) if input is array
-    # Constructing assuming scalar first, we can optimize for arrays later 
-    # if we want this util to handle arrays.
-    # For WCSArray, lon_deg/lat_deg will be arrays.
-    
-    # Use np.stack to build the matrix.
-    # If inputs are scalars, result is (3,3).
-    # If inputs are shape (N,), result is (3, 3, N) -> need to transpose to (N, 3, 3)?
-    # Let's align with what we need.
-    
-    # If we construct it simply:
+    # Scalar inputs produce shape (3, 3); input shape S produces (3, 3, *S).
     mat = xp.array([
         [m00, m01, m02],
         [m10, m11, m12],
         [m20, m21, m22]
     ])
     
-    # If inputs were arrays of shape S, mat has shape (3, 3, S).
-    # We usually want (S, 3, 3) for matmul? Or we just handle it manually.
-    # Let's return (3, 3, ...) and handle axes in usage.
+    # Rotation helpers below index the two leading matrix axes directly.
     return mat
 
 def apply_rotation(matrix, x, y, z):
@@ -187,9 +174,9 @@ def compose_relative_rotation(wcs_src, wcs_tgt, frame_rotation=None, *,
     absolute celestial unit vector on the per-pixel path: with ``M_rel``
     precomputed once here, the bulk per-pixel work is
     ``pix_to_native -> apply M_rel -> native_to_pix``, which stays in the
-    field-relative regime throughout and is safe in fp32 (see DEVELOPER.md's
-    Precision Strategy section for why the celestial<->native rotation is
-    otherwise the one fp64-mandatory step).
+    field-relative regime throughout. This supports an fp32 per-pixel path,
+    but does not guarantee an error bound for arbitrary fields or inputs;
+    see docs/user_manual.md for the precision modes.
 
     Parameters
     ----------

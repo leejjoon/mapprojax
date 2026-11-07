@@ -4,7 +4,9 @@
 
 ## Conventions and installation
 
-Install with `pip install mapprojax` (or `pip install .` from a source checkout). A WCS uses 0-based pixel coordinates, stores `crpix` in pixels and `crval` in degrees, and takes/returns sky coordinates in radians in `(longitude, latitude)` order. `proj(lon, lat)` maps sky to pixels; `unproj(x, y)` maps pixels to sky.
+Once 0.3.0 is published, install with `pip install mapprojax`; until then use `pip install .` from a source checkout. Supported Python/JAX/NumPy minima are declared in [pyproject.toml](../pyproject.toml). The Linux `rocm` extra requires Python 3.12 or newer and matching JAX/jaxlib/ROCm plugin versions; use `uv sync --extra test --extra rocm` with the supported ROCm runtime, not a generic GPU installation. Record interpreter, driver/runtime and actual device separately from dependency constraints.
+
+A WCS uses 0-based pixel coordinates, stores `crpix` in pixels and `crval` in degrees, and takes/returns sky coordinates in radians in `(longitude, latitude)` order. `proj(lon, lat)` maps sky to pixels; `unproj(x, y)` maps pixels to sky.
 
 Use `mapprojax.wcs_utils.load_wcs_params_from_header` to extract the supported parameters from an Astropy FITS header. It converts FITS `CRPIX` to the package's 0-based pixel convention.
 
@@ -27,6 +29,8 @@ sin = Sin(crpix, cd, crval, precision="f64")
 x, y = tan.proj(jnp.radians(jnp.asarray([45.1, 45.2])),
                 jnp.radians(jnp.asarray([30.1, 30.2])))
 lon, lat = tan.unproj(x, y)
+assert jnp.allclose(jnp.degrees(lon), jnp.array([45.1, 45.2]), atol=1e-5)
+assert jnp.allclose(jnp.degrees(lat), jnp.array([30.1, 30.2]), atol=1e-5)
 ```
 
 | `precision` | Native/pixel pipeline | Celestial rotation | Use |
@@ -44,14 +48,25 @@ TAN is valid on the forward hemisphere and has no finite inverse-plane radius li
 Pass a `Sip` instance to either projection. Coefficients may be supplied as arrays; the SIP object and its coefficient shapes are part of the WCS PyTree structure.
 
 ```python
+import jax
+import jax.numpy as jnp
 import numpy as np
 from mapprojax import Tan
 from mapprojax.sip import Sip
 
+jax.config.update("jax_enable_x64", True)
+crpix = [2.0, 2.0]
+cd = [[-0.001, 0.0], [0.0, 0.001]]
+crval = [45.0, 30.0]
 a = np.zeros((3, 3))
 a[2, 0] = 1.5e-6
 sip = Sip(a=a)
 wcs = Tan(crpix, cd, crval, sip=sip, precision="mixed")
+x, y = jnp.array([1.0, 3.0]), jnp.array([2.0, 3.0])
+lon, lat = wcs.unproj(x, y)
+x_back, y_back = wcs.proj(lon, lat)
+assert jnp.allclose(x_back, x, atol=1e-3)
+assert jnp.allclose(y_back, y, atol=1e-3)
 ```
 
 SIP inverse refinement is controlled by the `Sip.inverse_steps` value. Use matching SIP shapes and `inverse_steps` when batching WCS objects.
@@ -65,15 +80,20 @@ import jax
 import jax.numpy as jnp
 from mapprojax import Tan
 
+jax.config.update("jax_enable_x64", True)
+crpix = [2.0, 2.0]
+cd = [[-0.001, 0.0], [0.0, 0.001]]
 wcses = [
     Tan(crpix, cd, [45.0, 30.0], precision="mixed"),
     Tan(crpix, cd, [50.0, 31.0], precision="mixed"),
 ]
 stacked = jax.tree_util.tree_map(lambda *leaves: jnp.stack(leaves), *wcses)
-x = jnp.arange(100.0)
-y = jnp.arange(100.0)
+x = jnp.arange(3.0)
+y = jnp.arange(3.0)
 # Shared pixel grid: outputs have shape (pixels, centres).
 lon, lat = jax.vmap(lambda w: w.unproj(x, y), in_axes=0, out_axes=1)(stacked)
+assert lon.shape == lat.shape == (3, 2)
+assert jnp.all(jnp.isfinite(lon)) and jnp.all(jnp.isfinite(lat))
 ```
 
 One WCS also accepts ordinary broadcastable coordinate arrays. For paired WCSes and pixel samples, use `jax.vmap` with the WCS and pixel arrays on axis 0.
@@ -83,15 +103,24 @@ One WCS also accepts ordinary broadcastable coordinate arrays. For paired WCSes 
 `unproj_offset(x, y)` returns `(Δlongitude · cos(latitude₀), Δlatitude)` in radians relative to `crval`; `proj_offset` is its inverse. These methods avoid materializing absolute sky coordinates in the native per-pixel calculation. For a host-side absolute result, pass the producer's offset scale (without recomputing it) to the exported helpers:
 
 ```python
+import jax
 import numpy as np
-from mapprojax import absolute_from_offset
+from mapprojax import Tan, absolute_from_offset, offset_from_absolute
 
+jax.config.update("jax_enable_x64", False)
+wcs = Tan([2.0, 2.0], [[-0.001, 0.0], [0.0, 0.001]],
+          [45.0, 30.0], precision="f32")
+x, y = np.array([1.0, 3.0], dtype=np.float32), np.array([2.0, 3.0], dtype=np.float32)
 lon_offset, lat_offset = wcs.unproj_offset(x, y)
 lon, lat = absolute_from_offset(
     (lon_offset, lat_offset),
     crval=wcs.crval,
     offset_scale=wcs.offset_scale(),
 )
+offsets = offset_from_absolute(
+    (lon, lat), crval=wcs.crval, offset_scale=wcs.offset_scale()
+)
+np.testing.assert_allclose(offsets, (lon_offset, lat_offset), atol=1e-10)
 ```
 
 `crval` and `offset_scale` are keyword-only, so a coordinate pair cannot be passed in their place by position. The helpers are host-only and not JIT- or autodiff-compatible. Their inputs must retain the dtypes returned by the offset-producing WCS: a float32 producer's offsets must come with its float32 `offset_scale()`, and a Python float scale means float64. Longitude is wrapped to `[0, 2π)`. `offset_from_absolute((lon, lat), crval=..., offset_scale=...)` performs the inverse conversion and returns offsets in the scale's dtype; absolute float64 coordinates are accepted with a float32 scale. If the scale passed is exactly zero, the longitude is undefined and returned as NaN. A reference at a pole does not by itself give zero: the producer's cosine of 90° rounds to about 6e-17 in float64 and -4e-8 in float32, and the helpers divide by that same rounded value.
@@ -101,12 +130,18 @@ lon, lat = absolute_from_offset(
 `Reprojector(src, tgt)` composes two supported WCS pipelines and maps source pixels to target pixels. Use `pix_to_pix(x, y)` for map coordinates; it returns NaN where a projection leg is invalid. Use `pixel_map(x, y, *, bounds_shape=None)` when a separate validity mask and finite coordinates are needed. `matrix_precision="f32"` is the default and keeps the per-pixel path, including the relative rotation, in float32; use `"f64"` (requires x64) when that measured precision trade-off is unsuitable. `Reprojector` maps coordinates only; it does not interpolate image data.
 
 ```python
+import jax
+import jax.numpy as jnp
 from mapprojax import Reprojector, Tan, Sin
 
+jax.config.update("jax_enable_x64", False)
+crpix = [2.0, 2.0]
+cd = [[-0.001, 0.0], [0.0, 0.001]]
 src = Tan(crpix, cd, [45.0, 30.0], precision="f32")
 tgt = Sin(crpix, cd, [45.1, 30.05], precision="f32")
 rp = Reprojector(src, tgt)  # default matrix_precision="f32"
-x_tgt, y_tgt = rp.pix_to_pix(jnp.arange(10.0), jnp.arange(10.0))
+x_tgt, y_tgt = rp.pix_to_pix(jnp.arange(3.0), jnp.arange(3.0))
+assert jnp.all(jnp.isfinite(x_tgt)) and jnp.all(jnp.isfinite(y_tgt))
 ```
 
 `pixel_map` has the same source-to-target direction and broadcasting as `pix_to_pix`, and returns `(x_mapped, y_mapped, valid)`. Coordinates use the Reprojector's kernel dtype and are finite everywhere; invalid entries have zero stand-ins, with `valid=False`. `pix_to_pix` is unchanged and continues to return NaN for invalid samples.
@@ -118,34 +153,79 @@ For resampling, map each output pixel into the input image's pixel grid by const
 ```python
 import jax
 import jax.numpy as jnp
-from mapprojax import Reprojector
+from mapprojax import Reprojector, Tan
 
+jax.config.update("jax_enable_x64", False)
+input_image = jnp.ones((4, 4), dtype=jnp.float32)
+output_ny, output_nx = 2, 3
+input_wcs = Tan([1.0, 1.0], [[-0.001, 0.0], [0.0, 0.001]],
+                [45.0, 30.0], precision="f32")
+output_wcs = Tan([1.0, 1.0], [[-0.001, 0.0], [0.0, 0.001]],
+                 [45.0, 30.0], precision="f32")
 input_ny, input_nx = input_image.shape
 rp = Reprojector(output_wcs, input_wcs)
 yy, xx = jnp.indices((output_ny, output_nx), dtype=jnp.float32)
 x_in, y_in, valid = rp.pixel_map(
     xx, yy, bounds_shape=(input_ny, input_nx)
 )
+assert x_in.shape == y_in.shape == valid.shape == (2, 3)
+assert jnp.all(valid)
+assert jnp.allclose(x_in, xx, atol=1e-4)
+assert jnp.allclose(y_in, yy, atol=1e-4)
 ```
 
 Tiles, broadcastable coordinate arrays, and sparse samples can be passed directly; no grid helper is required. Compatible Reprojectors can be stacked as PyTrees and mapped over with an explicit `jax.vmap` axis:
 
 ```python
+import jax
+import jax.numpy as jnp
+from mapprojax import Reprojector, Tan
+
+jax.config.update("jax_enable_x64", False)
+input_ny, input_nx = 4, 4
+src = Tan([1.0, 1.0], [[-0.001, 0.0], [0.0, 0.001]],
+          [45.0, 30.0], precision="f32")
+tgt = Tan([1.25, 1.0], [[-0.001, 0.0], [0.0, 0.001]],
+          [45.0, 30.0], precision="f32")
+reprojectors = [Reprojector(src, src), Reprojector(src, tgt)]
+yy, xx = jnp.indices((2, 3), dtype=jnp.float32)
 stacked = jax.tree_util.tree_map(lambda *leaves: jnp.stack(leaves), *reprojectors)
 x_in, y_in, valid = jax.vmap(
     lambda r: r.pixel_map(xx, yy, bounds_shape=(input_ny, input_nx)),
     in_axes=0,
 )(stacked)
+assert x_in.shape == y_in.shape == valid.shape == (2, 2, 3)
+assert jnp.all(valid)
+assert jnp.allclose(x_in[1] - x_in[0], 0.25, atol=1e-4)
 ```
 
 Apply validity before nonlinear loss operations. If downstream evaluation can be unsafe at invalid coordinates, substitute a regular in-domain value before evaluating it as well:
 
 ```python
+import jax
+import jax.numpy as jnp
+from mapprojax import Reprojector, Tan
+
+jax.config.update("jax_enable_x64", False)
+wcs = Tan([1.0, 1.0], [[-0.001, 0.0], [0.0, 0.001]],
+          [45.0, 30.0], precision="f32")
+rp = Reprojector(wcs, wcs)
+x_in, y_in, valid = rp.pixel_map(
+    jnp.array([1.0, 20.0]), jnp.array([1.0, 20.0]), bounds_shape=(4, 4)
+)
+safe_x, safe_y = 1.0, 1.0  # log is regular and differentiable here.
+observed = jnp.array([0.5, 0.0])
+
+def model(x, y):
+    return jnp.log(x) + jnp.log(y)
+
 x_safe = jnp.where(valid, x_in, safe_x)
 y_safe = jnp.where(valid, y_in, safe_y)
 prediction = model(x_safe, y_safe)
 residual = jnp.where(valid, prediction - observed, 0.0)
 loss = jnp.sum(residual ** 2)
+assert jnp.array_equal(valid, jnp.array([True, False]))
+assert jnp.isfinite(loss) and jnp.allclose(loss, 0.25, atol=1e-4)
 ```
 
 `safe_x` and `safe_y` must be values where the downstream model is regular. Masking only after a nonlinear operation can still allow invalid values or singular derivatives to contaminate gradients.
@@ -162,9 +242,14 @@ The host matrix is the same as `compose_relative_rotation(src, tgt, frame_rotati
 A WCS that has passed through a JAX transformation may no longer carry its original `crval`: with x64 off, `jax.jit` returns its float64 leaves as float32, and inside a trace `crval` is a tracer. `Reprojector(src, tgt)` then refuses to build the host matrix rather than silently losing precision. Keep the original host references and compose with them:
 
 ```python
+import jax
+import jax.numpy as jnp
 import numpy as np
-from mapprojax import Reprojector, compose_relative_rotation
+from mapprojax import Reprojector, Tan, Sin, compose_relative_rotation
 
+jax.config.update("jax_enable_x64", False)
+crpix = [2.0, 2.0]
+cd = [[-0.001, 0.0], [0.0, 0.001]]
 host_src = np.asarray([45.0, 30.0])
 host_tgt = np.asarray([45.1, 30.05])
 src = Tan(crpix, cd, host_src, precision="f32")
@@ -173,6 +258,9 @@ tgt = Sin(crpix, cd, host_tgt, precision="f32")
 src_t, tgt_t = jax.jit(lambda s, t: (s, t))(src, tgt)  # crval may now be float32
 m = compose_relative_rotation(src_t, tgt_t, crval_src=host_src, crval_tgt=host_tgt)
 rp = Reprojector.from_matrix(src_t, tgt_t, m, matrix_precision="f32")
+assert src_t.crval.dtype == tgt_t.crval.dtype == jnp.float32
+x, y = rp.pix_to_pix(jnp.array([1.0, 2.0]), jnp.array([1.0, 2.0]))
+assert jnp.all(jnp.isfinite(x)) and jnp.all(jnp.isfinite(y))
 ```
 
 `crval_src` and `crval_tgt` are keyword-only and validated like a WCS `crval`: concrete, finite, shape `(2,)` and already float64. Nothing can prove that an override describes the intended frame, so keeping the right originals is the caller's responsibility. A changed reference or frame needs a new composition. Host composition is outside autodiff; to differentiate with respect to `crval`, build the matrix inside the traced function from the live references and pass it to `from_matrix`.
@@ -201,10 +289,26 @@ Serialize the precision-aware numerical state with `to_dict()` and standard JSON
 
 ```python
 import json
+import jax
+import jax.numpy as jnp
+import numpy as np
 from mapprojax import Tan
+from mapprojax.sip import Sip
 
+jax.config.update("jax_enable_x64", True)
+a = np.zeros((3, 3))
+a[2, 0] = 1.5e-6
+wcs = Tan([2.0, 2.0], [[-0.001, 0.0], [0.0, 0.001]],
+          np.array([45.0, 30.0], dtype=np.float64),
+          sip=Sip(a=a, inverse_steps=3), precision="mixed")
 payload = json.dumps(wcs.to_dict())
 restored = Tan.from_dict(json.loads(payload))
+assert restored.precision == wcs.precision
+assert restored.crval.dtype == wcs.crval.dtype
+assert restored.sip.inverse_steps == wcs.sip.inverse_steps
+np.testing.assert_array_equal(restored.sip.a, wcs.sip.a)
+assert jnp.allclose(jnp.array(restored.unproj(1.0, 2.0)),
+                    jnp.array(wcs.unproj(1.0, 2.0)), atol=1e-12)
 ```
 
 The serialized contract includes the projection type, precision, reference dtype, and SIP coefficients and inverse-step count. Loading through a different projection class or loading the former untyped dictionary format is rejected. ASDF conversion and the old undocumented `to_bytes`/`from_bytes` methods are not supported.

@@ -28,8 +28,8 @@ def _require_x64(what):
     ``jnp.asarray(x, dtype=jnp.float64)`` does not fail without x64; it
     returns float32 (JAX only emits a generic truncation warning). A class
     whose contract is "rotation in float64" cannot honour that contract
-    there, and the measured error is large enough to matter: 93 mas on an
-    ordinary field, 107 mas on the L2 header.
+    there. Rotation errors depend on the field and inputs; this guard
+    enforces the requested dtype rather than an angular-error bound.
     """
     if not jax.config.jax_enable_x64:
         raise ValueError(
@@ -43,9 +43,9 @@ def _require_x64(what):
 def _effective_f64(value):
     """True when ``value`` really is float64, not just nominally cast.
 
-    With x64 off every jnp array is float32 regardless of the requested
-    dtype, and a float64 leaf built while x64 was on is truncated by any
-    operation once it is off, so both the dtype and the flag matter. Both
-    are static, so this is safe under ``jit``.
+    With x64 off, JAX converts requested float64 arrays to float32; this
+    does not mean that arrays of other dtypes become float32. Check both
+    the x64 flag and the dtype returned by ``jnp.asarray(value)``. Both
+    checks are static, so this is safe under ``jit``.
     """
     return jax.config.jax_enable_x64 and jnp.asarray(value).dtype == jnp.float64

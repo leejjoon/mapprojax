@@ -73,8 +73,8 @@ def _check_lonpole(header, crval2):
     WCSLIB's default depends on the reference declination: 180 at
     ``CRVAL2 = -90`` (accepted), 0 at ``CRVAL2 = +90`` (rejected unless the
     header says 180 explicitly), and 180 elsewhere. A rotation built for 180
-    against a header whose effective value is 0 is wrong by an amount that
-    grows with field size (141" on a 101 px field, 2828" at 1201^2).
+    against a header whose effective value is 0 uses a different orientation
+    and can misplace off-reference coordinates.
     """
     if "LONPOLE" in header:
         lonpole = float(header["LONPOLE"])

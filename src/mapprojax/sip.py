@@ -4,9 +4,8 @@ import numpy as np
 from dataclasses import dataclass, field
 from typing import Optional, Tuple, Any
 
-#: Newton steps used for the SIP inverse. Two reach the fp64 floor from either
-#: seed on the full SPHEREx detector (7.3e-9 then 3.1e-11 px from AP/BP,
-#: 8.8e-3 then 4.5e-10 px from the identity), so 3 leaves one spare step.
+#: Default Newton step count for the SIP inverse. Convergence depends on the
+#: coefficients, coordinates and dtype; the inverse checks the final residual.
 DEFAULT_INVERSE_STEPS = 3
 
 
@@ -54,14 +53,14 @@ class Sip:
 
         Nested division-free evaluation: for each row ``p`` the polynomial in
         ``v`` is evaluated by Horner, then those row results are combined by
-        Horner in ``u``. That is O(order) multiplies per point instead of the
-        O(order^2) power-table broadcast, which materialised
-        ``u[..., None] ** p_range`` and dominated the whole transform on a
-        real frame (498 ms vs 8.4 ms eager at 1201x1201, order 4).
+        Horner in ``u``. This avoids materialising coordinate power tables;
+        evaluating a dense coefficient matrix still takes O(m * n) work per
+        point for matrix shape (m, n).
 
-        Coefficient indexing, broadcasting, an absent coefficient matrix and
-        the input dtype are all preserved; the two forms agree to ~1e-13
-        relative (floating-point association order differs, so not bitwise).
+        An absent coefficient matrix returns zeros shaped and typed like
+        ``u``; otherwise arithmetic follows the backend's broadcasting and
+        dtype rules. Floating-point association differs from an explicit
+        power sum, so results need not be bitwise identical.
         """
         # Follow the array's backend rather than the `xp` default: under
         # `jax.jit` the coefficients are tracers, and `np.asarray(tracer)`
@@ -108,9 +107,8 @@ class Sip:
         """d/dv (axis=1) or d/du (axis=0) of ``_evaluate_poly``.
 
         Differentiates the coefficient matrix rather than the nested Horner
-        expression: the powers of the untouched variable collapse to a
-        weighted sum of rows, which keeps the O(order^2) work out of the
-        per-Newton-step cost when the caller is JAX.
+        expression, using a weighted sum of rows. The loops depend on the
+        coefficient shape, not on the coordinate values.
         """
         xp = _backend(xp, coeffs, u, v)
         if coeffs is None:
@@ -158,7 +156,7 @@ class Sip:
 
         The seed is AP/BP when present (they are SIP's own approximation of
         this inverse), otherwise the identity. AP/BP are only a seed: using
-        them as the answer is 2.9e-2 px off on the full L2 detector.
+        them as the answer need not solve the forward A/B equations.
 
         Points that do not converge, or where the Jacobian is singular or
         non-finite (the inverse has no usable derivative there), return NaN
@@ -216,8 +214,8 @@ class Sip:
         # dtype comes from a primal value, never np.asarray on a tracer.
         eps = jnp.finfo(uu.dtype).eps
         tol = 64 * eps * (1 + xp.abs(u) + xp.abs(v))
-        # A fold of the forward map (det -> 0) has a root but no inverse
-        # derivative; |det| ~ 1 for any real SIP, so 64 eps is far from it.
+        # A fold of the forward map (det -> 0) can have a root but no inverse
+        # derivative; reject determinants within the dtype-scaled threshold.
         valid = ((xp.abs(r_u) <= tol) & (xp.abs(r_v) <= tol)
                  & xp.isfinite(uu) & xp.isfinite(vv)
                  & xp.isfinite(det) & (xp.abs(det) > 64 * eps))
