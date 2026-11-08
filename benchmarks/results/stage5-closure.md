@@ -128,3 +128,84 @@ Operator statement dated 2026-11-07: PyPI account `lee_j_joon` has configured a 
 Read-only starting checks confirmed remote main and `rocm-extra` both at `3d2c62c253e7fcf6ab57a13848c78f8f5b943356`, no local or remote tags, and no tracked/staged changes. The bounded authorization permits only the four-file arming commit, a newly produced candidate's full validation, one appended evidence closure and guarded promotion of that green closure to main. No tags, protected publish approval, upload, settings changes, PyPI install verification, downstream edits or additional closure appends are authorized. Publication remains pending.
 
 <!-- stage5-new-candidate -->
+
+## 2026-11-08 — armed candidate exact-byte validation closure
+
+**Status: candidate validated; closure CI, main promotion and publication pending.** This appended entry supersedes the preceding pending-candidate selection without changing any historical bytes. It records the tested producer, not its own future closure commit SHA.
+
+Commit A is `d6bb72e400c973500142811ed3e15d134ff9569f`, parent `3d2c62c253e7fcf6ab57a13848c78f8f5b943356`. Its four explicitly staged paths arm the protected upload condition, update that assertion and disabled-upload guidance, and append the operator setup/new-candidate request. The local release-workflow suite passed **92 tests**; producer [CI 42369336825](https://github.com/leejjoon/mapprojax/actions/runs/42369336825), attempt 1, passed all three jobs and built/uploaded a new original artifact rather than reusing the old one.
+
+The first local preparation attempt stopped on 2026-11-07: an uncompressed Git archive was passed to the gzip-only extractor before any local suite began. The operator explicitly authorized resumption on the same candidate on 2026-11-08. That failed `source.tar` remains untouched at `/var/tmp/mapprojax-stage5-arming-cycle/source.tar`, SHA-256 `a14b27cf02a30ee82953152c36641302000ca4aac3a8e4a417fa5dc599c9eb4a`. The resumed gate used fresh absolute OUT `/var/tmp/mapprojax-stage5-resume-26cyrfi5`, fresh per-step outputs and correctly prefixed gzip archives. No preparation retry or verification failure occurred during this resumed gate.
+
+### Archives and original artifact identity
+
+| Archive | SHA-256 |
+|---|---|
+| `source.tar.gz`, `git archive --format=tar.gz --prefix=mapprojax/` at Commit A | `888ef02cbf08f4816e4077051853828bcf00062dc3ebbbdfcd2b47802ee654c8` |
+| `reprojax.tar.gz`, exact preserved rooted gzip archive at `79ee7299b209a83c6f247a1fe2e6f208f50baac6` | `f2113834691e120761e9fa2a34e3af02f0d688120af8809c7593f392e5e7b8fd` |
+
+Original `release-original` artifact **13573590400** was downloaded again by immutable ID into fresh OUT. Its container digest, per-file sizes/hashes, canonical input digest, successful producer run/SHA and actual unexpired API metadata were checked before use and again after all local gates. Actual creation is `2026-11-07T11:52:15Z`; actual expiry is `2027-02-05T11:42:56Z` (2027-02-05 20:42:56 UTC+09:00). Those API timestamps, rather than a requested retention period or the host clock alone, govern availability. No locally built distribution substituted for either original file. The sdist install/comparison builds were limited to the approved installation and RECORD/content checks, not replacement publication artifacts.
+
+```stage5-artifact-json
+{
+  "schema_version": 1,
+  "repository": "leejjoon/mapprojax",
+  "version": "0.3.0",
+  "producer_sha": "d6bb72e400c973500142811ed3e15d134ff9569f",
+  "input_sha256": "932d4842a4f356aa8917330b5228cefaadbb7c3054b05889899968b859717882",
+  "run_id": 42369336825,
+  "run_attempt": 1,
+  "artifact_id": 13573590400,
+  "artifact_name": "release-original",
+  "artifact_digest": "sha256:dbb47436bd75e7b6496f006a2c1d94a0d371db4ac6f6057ee9643480141ba624",
+  "created_at": "2026-11-07T11:52:15Z",
+  "expires_at": "2027-02-05T11:42:56Z",
+  "expired": false,
+  "deleted": false,
+  "manifest": {
+    "schema_version": 1,
+    "project": "mapprojax",
+    "version": "0.3.0",
+    "artifacts": {
+      "mapprojax-0.3.0-py3-none-any.whl": {
+        "size": 31303,
+        "sha256": "504296da0cea2c03cb1e058e5096310616fd92a2cafb3a20650bd0aa0b34aa8d"
+      },
+      "mapprojax-0.3.0.tar.gz": {
+        "size": 95921,
+        "sha256": "61a8958d9796fe2154eb5a7f28b857335a5f829302d3e51b391eeb2be8b5bf9f"
+      }
+    }
+  }
+}
+```
+
+### Restarted full local gate
+
+| Gate | Ordinary result |
+|---|---|
+| Clean committed mapprojax source, reference CPU | 949 passed, 1 warning |
+| Clean committed mapprojax source, reference ROCm | 949 passed, 1 warning |
+| Original CI wheel, reference CPU | 949 passed, 1 warning |
+| Original CI sdist, reference CPU | 949 passed, 1 warning |
+| Original CI wheel, reference ROCm | 949 passed, 1 warning |
+| Exact reprojax source pair, CPU | 100 passed, 2 GPU-only skips |
+| Exact reprojax source pair, ROCm | 102 passed |
+| Exact reprojax installed consumer, CPU | 100 passed, 2 GPU-only skips |
+| Exact reprojax installed consumer, ROCm | 102 passed |
+
+The source suites resolved mapprojax from the clean Commit A archive with explicit source provenance. Their environments used the original CI wheel for matching distribution metadata/dependencies, not a locally rebuilt release. Downstream source probes resolved both mapprojax and reprojax into their exact archives; installed downstream probes resolved the original wheel and installed consumer into purelib. Reprojax's archive was not edited or re-pinned.
+
+Each of the five full mapprojax suites includes **11 literal README/manual examples**, each in its own fresh CPU process, including when the parent suite uses ROCm. Example children clear source PYTHONPATH and use the original wheel in their environment; all nine wheel modules were independently byte-equal to the clean archive sources. Installed parent/child origin audits passed through both unchanged original helpers. Both shadow-PYTHONPATH controls failed specifically with the expected mapprojax-origin AssertionError. The sdist-derived comparison wheel matched the original direct wheel's contents and normalized RECORD; no third full comparison-wheel suite was run.
+
+All **165 protected file hashes** matched the preserved pre-extraction manifest in the checkout and extracted archive, including after source tests. All **nine executable module ASTs**, after docstring stripping, equalled baseline `e5b588afb4965a27803ffe752d0cfb3e27712dc2`; both original subprocess helper source segments were identical. Existing numerical CLI budgets passed on reference CPU and ROCm. The complete regenerated reference-CPU markdown was byte-identical to `docs/benchmarks/accuracy_results.md`; no non-reference rendered-row comparison, cap edit or tolerance change was used.
+
+Reference environments: Python **3.12.13**, JAX/jaxlib **0.11.1**, NumPy **2.5.1**, Astropy **8.0.2**, pytest **9.1.1**; ROCm plugins **0.11.1**. Actual ROCm backend is `gpu`, device `AMD Radeon Graphics`, client `PJRT C API\nrocm 70253211`, not CUDA. Original build constraints remain unchanged and pinned. The retained warning is the existing x64-off truncation warning; CPU downstream skips are exactly the two existing GPU-only batch cases. ROCm SMI/bandwidth diagnostics remained visible. No new skip, xfail or warning suppression was introduced.
+
+### Reconfirmed operator protection and remaining boundary
+
+Fresh dated authenticated `gh api --include` responses on 2026-11-08, with server HTTP Date headers and separately labelled observation times, reconfirmed the setup recorded in Commit A: pypi required reviewer `leejjoon`, self-review prevention off, administrator bypass off, and exactly one `tag` deployment policy `v*`; both active no-bypass rulesets and all three effective GitHub Actions checks on main were unchanged. Main ruleset remains `26754429`, tag ruleset `26754613`, environment `26561854210`. Repository description/topics and default branch `main` were unchanged. Remote main remained the preceding closure `3d2c62c253e7fcf6ab57a13848c78f8f5b943356`, remote candidate was Commit A, with no tags or tracked/staged changes at restart.
+
+The operator's 2026-11-07 PyPI pending-publisher statement and inspected screenshot remain the evidence for account `lee_j_joon`, project `mapprojax`, owner `leejjoon`, repository `mapprojax`, workflow `publish.yml`, environment `pypi`. This is not a fresh authenticated PyPI publisher API query or proof of upload. No repository/PyPI setting, description/topic, downstream source or excluded tracked file was changed during resumption.
+
+OUT retains archive identities, original ZIP/bundle, producer record, dated API evidence, runtime/origin observations, individual full logs and `local-gate-receipt.json`. That receipt records the completed gates without claiming closure or main CI has already passed. The authorized next steps are this single append-only closure commit/candidate push, green exact-closure CI reusing artifact 13573590400 with candidate build/original-distribution upload skipped, guarded normal main promotion/local-ref update, and green main-push reuse CI. Thereafter stop before tags. The armed workflow does not itself authorize any tag, protected publish approval or PyPI upload; publication and post-publication verification remain separately gated. No further closure append is authorized by this cycle.
