@@ -209,3 +209,37 @@ Fresh dated authenticated `gh api --include` responses on 2026-11-08, with serve
 The operator's 2026-11-07 PyPI pending-publisher statement and inspected screenshot remain the evidence for account `lee_j_joon`, project `mapprojax`, owner `leejjoon`, repository `mapprojax`, workflow `publish.yml`, environment `pypi`. This is not a fresh authenticated PyPI publisher API query or proof of upload. No repository/PyPI setting, description/topic, downstream source or excluded tracked file was changed during resumption.
 
 OUT retains archive identities, original ZIP/bundle, producer record, dated API evidence, runtime/origin observations, individual full logs and `local-gate-receipt.json`. That receipt records the completed gates without claiming closure or main CI has already passed. The authorized next steps are this single append-only closure commit/candidate push, green exact-closure CI reusing artifact 13573590400 with candidate build/original-distribution upload skipped, guarded normal main promotion/local-ref update, and green main-push reuse CI. Thereafter stop before tags. The armed workflow does not itself authorize any tag, protected publish approval or PyPI upload; publication and post-publication verification remain separately gated. No further closure append is authorized by this cycle.
+
+## 2026-11-09 — post-publication verification evidence
+
+This single evidence-only append follows separate operator authorization after publication. All existing bytes and selection fences above remain historical and unchanged. The immutable lightweight tag **`v0.3.0`** resolves to **`a714f1cc6dc11ce2ebf0da5f0a99fe5b1fc8722f`**. The completed [Publish run 42484721264](https://github.com/leejjoon/mapprojax/actions/runs/42484721264) reports success. Its actual review-history response records **`leejjoon`**, state **`approved`**, environment **`pypi`** (ID **26561854210**), with comment “Approve mapprojax 0.3.0 release,  a714f1c, artifact 13573590400.” The upload log records both original filenames and successful HTTP 200 responses. This verification did not approve a deployment or perform an upload.
+
+### Public release identity
+
+Both project and version JSON were read from PyPI. **0.3.0 was the only release**, and **neither file was yanked**. Both files were downloaded from their public `files.pythonhosted.org` URLs into fresh OUT `/var/tmp/mapprojax-stage5-postpublication-e5h5w1nj`; actual byte lengths and SHA-256 values matched the approved original files:
+
+| Public filename | Bytes | SHA-256 | PyPI upload time (UTC, as returned) |
+|---|---:|---|---|
+| `mapprojax-0.3.0-py3-none-any.whl` | 31303 | `504296da0cea2c03cb1e058e5096310616fd92a2cafb3a20650bd0aa0b34aa8d` | `2026-11-09T03:47:02.326010Z` |
+| `mapprojax-0.3.0.tar.gz` | 95921 | `61a8958d9796fe2154eb5a7f28b857335a5f829302d3e51b391eeb2be8b5bf9f` | `2026-11-09T03:47:03.640281Z` |
+
+Those upload times are 2026-11-09 **12:47:02.326010** and **12:47:03.640281 UTC+09:00**, respectively. Both PyPI integrity endpoints `/integrity/mapprojax/0.3.0/<filename>/provenance` returned **HTTP 200 with JSON records**. Provenance records therefore exist for both files; this records their presence and retained content, not a separate cryptographic attestation-verification claim.
+
+### Independent public-index installations
+
+Two fresh standard-library venvs used the local-gate reference **Python 3.12.13**, with **system site-packages disabled**. All install, audit and quick-start processes ran outside both repositories, from `OUT/A-wheel-cwd` or `OUT/B-sdist-cwd`. `PYTHONPATH` and `PYTHONHOME` were absent. `PIP_CONFIG_FILE=/dev/null`, an explicit sole index `https://pypi.org/simple`, no cache, no extra index, no find-links and no local source were used; inherited pip settings were removed. Pip reports and command/environment records were saved separately for each installation.
+
+| Environment | Public-index selection | pip / JAX / NumPy | Result |
+|---|---|---|---|
+| `OUT/A-wheel` | `pip install --only-binary mapprojax mapprojax==0.3.0` | 25.0.1 / 0.12.0.1 / 2.5.4 | Install, file/origin audit and exact quick start passed |
+| `OUT/B-sdist` | `pip install --no-binary mapprojax mapprojax==0.3.0` | 25.0.1 / 0.12.0.1 / 2.5.4 | Install, file/origin audit and exact quick start passed |
+
+Both reports selected exactly the corresponding verified public URL and approved SHA-256; all reported download URLs were public `files.pythonhosted.org` URLs. The sdist's ordinary isolated installation build did not replace or rebuild a release artifact. `importlib.metadata` reported **0.3.0** in both venvs, and each `mapprojax.__file__` resolved to that venv's own `lib/python3.12/site-packages/mapprojax/__init__.py`. Both audits verified **nine package files** byte-for-byte against the downloaded wheel and sdist, **25 installed RECORD entries**, matching metadata requirements/license, and the **CPU backend**. The wheel install additionally matched all original wheel members other than the install-rewritten RECORD. No source-path fallback was used.
+
+The README **Quick start** Python fence was extracted from immutable commit `a714f1cc6dc11ce2ebf0da5f0a99fe5b1fc8722f` and executed exactly as written, unchanged, in a fresh process in each venv with `JAX_PLATFORMS=cpu`. Both completed successfully, including the block's own finite-coordinate assertion. These are two public-install smoke checks and provenance/content audits, not new full-suite counts.
+
+### Observation and closure boundary
+
+Individual API/download observation times are retained in `OUT/observations.json`; approval JSON, upload log, both public/provenance responses, both downloaded distributions, pip reports/logs, runtime audits and quick-start outputs are retained alongside them. The two quick starts completed at `2026-11-09T04:01:49.753325Z` and `2026-11-09T04:01:51.280183Z`. Pre-edit checks completed at **`2026-11-09T04:02:35.150159Z`** (**13:02:35.150159 UTC+09:00**): both remote branches and the tag were still at the immutable release commit, tracked files/index were clean, and the closure bytes equalled the committed file (SHA-256 `abb9d469a5201c36bd2da6a9df470bcb2fa38423c390a1efb22e3db204e74139`). Untracked/user-owned files were left untouched.
+
+The original CI artifact **13573590400** remained live and selected for reuse; canonical input digest remained **`932d4842a4f356aa8917330b5228cefaadbb7c3054b05889899968b859717882`**. This append introduces no artifact-selection fence or candidate request. CI for the new evidence commit and its guarded main promotion is **not yet claimed** here. No further append is authorized by this cycle, and `v0.3.0` must remain on the immutable release commit. No upload, yank/delete, GitHub Release, tag alteration, workflow rerun, settings change, downstream re-pin or other tracked-file edit was performed by this verification.
