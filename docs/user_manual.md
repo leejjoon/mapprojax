@@ -4,7 +4,7 @@
 
 ## Conventions and installation
 
-Once 0.3.0 is published, install with `pip install mapprojax`; until then use `pip install .` from a source checkout. Supported Python/JAX/NumPy minima are declared in [pyproject.toml](../pyproject.toml). The Linux `rocm` extra requires Python 3.12 or newer and matching JAX/jaxlib/ROCm plugin versions; use `uv sync --extra test --extra rocm` with the supported ROCm runtime, not a generic GPU installation. Record interpreter, driver/runtime and actual device separately from dependency constraints.
+Install with `pip install mapprojax`, or with `pip install .` from a source checkout. Supported Python/JAX/NumPy minima are declared in [pyproject.toml](../pyproject.toml). The Linux `rocm` extra requires Python 3.12 or newer and matching JAX/jaxlib/ROCm plugin versions; use `uv sync --extra test --extra rocm` with the supported ROCm runtime, not a generic GPU installation. Record interpreter, driver/runtime and actual device separately from dependency constraints.
 
 A WCS uses 0-based pixel coordinates, stores `crpix` in pixels and `crval` in degrees, and takes/returns sky coordinates in radians in `(longitude, latitude)` order. `proj(lon, lat)` maps sky to pixels; `unproj(x, y)` maps pixels to sky.
 

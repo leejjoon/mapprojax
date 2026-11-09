@@ -4,7 +4,7 @@
 
 ## Install
 
-The PyPI command becomes available once 0.3.0 is published; publication may still be pending:
+Install the released package from PyPI:
 
 ```bash
 pip install mapprojax

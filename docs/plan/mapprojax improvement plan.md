@@ -4,6 +4,8 @@ Nov 1, 2026 · @이재준 · revised after a two-reviewer committee review (Clau
 
 ## Where it stands
 
+*Nov 1 snapshot. v0.3.0 shipped on Nov 9 2026; see "Stage 5 closure — Nov 9 2026" at the end.*
+
 mapprojax v0.2.0 is a ~1,200-line WCS core: two projections (TAN, SIN), SIP distortion, NumPy and JAX classes built from shared mixins, PyTree registration, the fp64-free `Reprojector`, and the offset-form `unproj_offset`/`proj_offset` APIs. 89 tests pass. It has no README, no CI, no release, and 0 stars.
 
 The Oct 31 draft overstated two things and missed several bugs:
@@ -429,40 +431,40 @@ Revised Nov 6 2026 against the repository at the end of Stage 4 (mapprojax `26b6
 
 **Items**
 
-- [ ] **1. Repair the precision harness, then re-measure on the release hardware.**
+- [x] **1. Repair the precision harness, then re-measure on the release hardware.**
   - First correct `benchmark_precision.py`'s labels, reference calculation (an explicit f64 reference, named as such), offset reconstruction (use `offset_scale()`), timing synchronization (`block_until_ready` on every timed path; say which paths are under `jit`) and the plate-scale size label, and remove the x64-truncation warning. Library arithmetic does not change.
   - Then run it on Strix Halo, CPU and ROCm, and commit the corrected harness with a new dated results file under `docs/benchmarks/`. `precision_results.md` stays as the labelled Aug 2026 historical record.
   - Rewrite `benchmarks/benchmarks.md`'s script descriptions for the 0.3.0 scripts and append a dated 0.3.0 results section; keep the Nov 1 tables, labelled historical.
   - Record commands, JAX/ROCm versions and device. Every number used by items 2-3 comes from these files or from `accuracy_results.md`.
-- [ ] **2. Reconcile the precision numbers.**
+- [x] **2. Reconcile the precision numbers.**
   - **Headline:** the realistic-size synthetic and plate-scale/separation envelope from item 1. **Worked example, reported separately:** the sampled real-pair agreement with astropy from `accuracy_results.md` (one geometry, 1009 / 320 overlapping samples, not every pixel). Distinguish WCS f32/mixed/f64 from `Reprojector` f32/f64, and state for each figure the operation, reference, coordinate dtype, sampling, backend and units. Regression caps are not measured errors.
   - Apply it in three places: the `Reprojector` docstring (replace "~1e-4 px" with the item 1 envelope, cite the real-pair row as the example, point at the results file instead of `fo64_report_and_plan.md`); DEVELOPER.md's precision contract (add the headline numbers to the existing links); the README (item 3).
   - Document the mixed-mode envelope as a limitation, not a bug: per-case fp32 caps from `tests/data/accuracy_baselines.json` (forward 0.17-17 mas across the fixtures, worst on the 240″/px `1904-66_*` fields), labelled as caps. Mixed provides absolute `proj`/`unproj`; only f32 lacks them.
-- [ ] **3. Finish the README** (final content before any release build).
+- [x] **3. Finish the README** (final content before any release build).
   - The precision table from item 2: no round-trip figures, no "fp64-grade", each row linking its source file.
   - A short comparison with jax-galsim `GSFitsWCS`, dfreproject and astropy `reproject`: scope, backend and precision design, stated factually with versions checked at writing time.
   - Install: the release commit's README lists `pip install mapprojax` (available once 0.3.0 is on PyPI) and the git-checkout alternative. If publication does not happen, Stage 5 closes as "release-ready, publication pending" and the README is not changed again.
   - Timing claims, if any, name the backend and say they are under `jit`.
-- [ ] **4. Retire stale documents** (`git mv` and edits only; no user-owned files). Search all references rather than assuming a count.
+- [x] **4. Retire stale documents** (`git mv` and edits only; no user-owned files). Search all references rather than assuming a count.
   - `fo64_report_and_plan.md` → `docs/notes/`, status changed to "implemented in 0.3.0 (`Reprojector`, offset form)". Update the references in `reproject.py`, `benchmark_precision.py` and `tests/test_reproject_relative.py`; `precision_results.md` keeps its text and gets a one-line relocation pointer.
   - `GEMINI.md`: per D2.
   - `docs/implementation.md` → `docs/notes/` with a one-line historical banner; `docs/jax_migration.md` (already bannered) moves with it; label `docs/benchmarks/optimization_results.md` historical.
-- [ ] **5. Packaging.**
+- [x] **5. Packaging.**
   - `description`: "Differentiable JAX coordinate kernel for FITS TAN/SIN WCS with SIP". Add `license` to `[project]` and a LICENSE file per D1, with attribution if required. Add `project.urls` (repository, issues). Optional: `__version__` via `importlib.metadata`.
   - `requires-python`, `jax`/`jaxlib` and `numpy` floors set from the passing CI minimum job (item 6), then refresh `uv.lock`. Document the `rocm` extra as Linux-only with version-pinned ROCm plugins.
   - **Installed-artifact check:** build an sdist and a wheel from a clean `git archive`; validate the metadata and that both contain LICENSE; install each into a fresh venv. Run from a directory outside the checkout with `PYTHONPATH` cleared and assert that `mapprojax` (including in subprocess tests) resolves to the installed environment. Supply the committed tests, `tests/data` and `benchmarks/compare_stage3.py` separately. Run the README quick start and the full suite, then reprojax's full suite against the same installed wheel.
-- [ ] **6. CI on GitHub Actions** (CPU only; ROCm stays a documented local gate).
+- [x] **6. CI on GitHub Actions** (CPU only; ROCm stays a documented local gate).
   - Full-suite jobs on explicitly pinned minimum Python/JAX/jaxlib/NumPy versions (D3) and on a recorded latest-compatible combination. Let the existing fixtures control x64; do not force `JAX_ENABLE_X64` globally, since `tests/test_x64_policy.py:25` asserts it is off at import.
   - A separate-process smoke job explicitly with x64 off: import without warning, `Reprojector` f32 including `pixel_map`, the offset APIs, and no f64 in the jaxpr.
   - A packaging job that builds the distributions and runs the item 5 installed-artifact check.
   - Matrix jobs check numerical budgets. Byte-identical regeneration of `accuracy_results.md` happens only in the recorded reference environment (item 7), because the report embeds dependency versions.
   - A publish workflow triggered only by a `v*` tag and gated by the protected environment (D5), committed inert.
-- [ ] **7. Release gate and closure.**
+- [x] **7. Release gate and closure.**
   - Local gate from clean `git archive`s of mapprojax and reprojax, in the recorded reference environment: both full suites on CPU and ROCm, `accuracy_results.md` regenerated byte-identical, protected and Stage 4 pair rows unchanged, README and manual examples run, the item 5 installed-artifact check passes.
   - Record it in a new `benchmarks/results/stage5-closure.md`, append-only, with the tested runtime pair recorded separately from the closure commit; the closure never cites itself.
   - **The release commit is the closure-record commit.** Pushing it is authorized separately; CI must be green on that exact SHA before tagging.
-- [ ] **8. Version and changelog.** Add `CHANGELOG.md` with a 0.3.0 entry: the breaking API changes and the migration pointer, `pixel_map`, the differentiability contract and the precision envelope. The version stays 0.3.0.
-- [ ] **9. Publish (operator-gated, last).** Each step is outward-facing and irreversible and needs explicit operator authorization at the time; authorizing one does not authorize the next.
+- [x] **8. Version and changelog.** Add `CHANGELOG.md` with a 0.3.0 entry: the breaking API changes and the migration pointer, `pixel_map`, the differentiability contract and the precision envelope. The version stays 0.3.0.
+- [x] **9. Publish (operator-gated, last).** Each step is outward-facing and irreversible and needs explicit operator authorization at the time; authorizing one does not authorize the next.
   - GitHub description and topics (D4).
   - Configure the PyPI trusted publisher (a pending publisher for this repository, workflow and environment).
   - Tag `v0.3.0` on the release commit and push the tag.
@@ -970,3 +972,22 @@ Fable and Astra reviewed the draft Stage 5 revision against the repository. Both
 
 - **Fable:** corrected the reference counts and stale-document list, the `benchmarks.md` description and `__version__`; added the `license` field and port attribution, the inert publish workflow and pending publisher, the definition of the release commit, the floor's first attempt, the `PYTHONPATH`-cleared install check, and reprojax against the wheel; recommended deleting `GEMINI.md`; raised repository visibility and the floor as operator decisions.
 - **Astra:** found that `benchmark_precision.py` mislabels its timing columns and reference and needs repair before it produces headline numbers; separated the general envelope from the sampled real-pair example and caps from measured errors; added NumPy to the floor, the x64 handling in CI, reference-environment-only byte-identical regeneration, the installed-artifact data dependencies, the release-SHA and publish gating with a protected environment, and a "publication pending" completion state; aligned the stale-document wording with historical preservation.
+
+### Stage 5 closure — Nov 9 2026
+
+**Released.** mapprojax 0.3.0 is on PyPI. Tag `v0.3.0` is on the release commit `a714f1c`, the closure-record commit, and is protected by the `v*` tag ruleset. Publish run 42484721264 uploaded the original wheel and sdist from CI artifact 13573590400 through trusted publishing after operator approval of the `pypi` environment:
+
+| File | Bytes | SHA-256 |
+| --- | ---: | --- |
+| `mapprojax-0.3.0-py3-none-any.whl` | 31,303 | `504296da0cea2c03cb1e058e5096310616fd92a2cafb3a20650bd0aa0b34aa8d` |
+| `mapprojax-0.3.0.tar.gz` | 95,921 | `61a8958d9796fe2154eb5a7f28b857335a5f829302d3e51b391eeb2be8b5bf9f` |
+
+**Verified after publication** (evidence commit `1cadea0`): the public files match these hashes, provenance records exist for both, and fresh public-index installs of the wheel and the sdist each pass the README quick start. CI was green on `1cadea0` on `rocm-extra` and `main`. The full evidence, including the local CPU/ROCm gate (949 passed per mapprojax run; reprojax `79ee729` 100 passed and 2 skipped on CPU, 102 passed on ROCm), is in `benchmarks/results/stage5-closure.md`.
+
+**Commits.** Harness and results `5a10836`; precision reconciliation and README `2c5f015`; stale documents `21a0133`; packaging, LICENSE and CHANGELOG `4f505db`; CI and the inert publish workflow `b3d1132`, `24a8e33`; original-artifact record `3d2c62c`; arming and fresh candidate `d6bb72e`; release commit `a714f1c`; post-publication evidence `1cadea0`.
+
+**Held back until after the release**, because they change the release inputs: dating the CHANGELOG entry, the README's "publication may still be pending" line, these checkboxes and this record, and the DEVELOPER.md definitions of the local-gate archive inputs. They land together in the first post-release commit. That commit also moves the version to `0.3.1.dev0` and appends the new-candidate marker to the closure file, so CI builds fresh development candidates until the next release records its own artifact fence.
+
+**Remaining.**
+- reprojax: it already declares `mapprojax>=0.3.0,<0.4` with no source override, so the re-pin is a check that it resolves from PyPI. Its own PyPI release (0.2.0) is separate work with its own setup and gates.
+- Optional: a GitHub Release for `v0.3.0`; update pinned actions to versions that declare Node.js 24; existing jobs passed under the runner's forced Node.js 24 migration.

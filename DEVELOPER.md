@@ -82,9 +82,16 @@ Commits and pushes require their own authorization. CI runs on `rocm-extra` and 
 
 To renew a candidate after closure exists, append the whole-line marker `<!-- stage5-new-candidate -->` **after** its last artifact fence, and obtain the applicable commit/push authorization. This selects a fresh CI producer without deleting historical closure evidence. Download, tag validation and publication reject the pending state rather than falling back to old bytes. After full CI/local validation, append a new complete `stage5-artifact-json` record after the marker. Only the latest record is operative; an invalid latest record never falls back to historical ones. Recheck the new exact closure SHA on CI and main before any separately authorized tag/publication.
 
-`scripts/release_artifact.py provenance` generates the fixed `stage5-artifact-json` record for the closure from actual upload/API evidence; no placeholder record belongs in a closure. After downloading that exact artifact, run the bounded installer with its `manifest.json` and `dist/`:
+`scripts/release_artifact.py provenance` generates the fixed `stage5-artifact-json` record for the closure from actual upload/API evidence; no placeholder record belongs in a closure. After downloading that exact artifact, run the bounded installer with its `manifest.json` and `dist/`. Run the commands from the repository root; all paths are absolute. The inputs are:
+
+- `$MAP_SHA`: the producer commit the artifact was built from; `$REPROJAX_SHA`: the downstream revision selected for this gate and subsequently recorded in its closure;
+- `$BUNDLE`: a fresh extraction directory for the selected successful producer's original CI artifact, containing `inputs.json`, `manifest.json` and `dist/`. While a new-candidate request is pending, download by immutable run/artifact ID, verify producer identity and the API-reported container digest, then extract and verify the distribution manifest. `release_artifact.py download --root . --destination "$BUNDLE"` is available only after a complete closure record selects reuse mode; it rejects pending candidates;
+- `$MAP_ARCHIVE`: an **extracted directory** of the clean `$MAP_SHA` archive (`--source-root` takes a directory, not a tarball; the path must not exist yet). It must be the producer commit: the installer validates the distributions' metadata and licence against its `pyproject.toml` and `LICENSE`, and copies the test payload from it;
+- `$REPROJAX_TAR`: a **gzip-compressed** tarball with a single root directory (`extract_source` opens `r:gz` only and requires one root, so keep `--format=tar.gz --prefix=reprojax/`; a plain `--format=tar` archive is rejected);
+- `$OUT`: a parent directory outside both source trees; each `--output-dir` must not exist yet.
 
 ```bash
+mkdir "$MAP_ARCHIVE" && git archive "$MAP_SHA" | tar -x -C "$MAP_ARCHIVE"
 git -C ../reprojax archive --format=tar.gz --prefix=reprojax/ --output="$REPROJAX_TAR" "$REPROJAX_SHA"
 python scripts/check_installed_artifacts.py verify --dist-dir "$BUNDLE/dist" --manifest "$BUNDLE/manifest.json"
 python scripts/check_installed_artifacts.py check --dist-dir "$BUNDLE/dist" --manifest "$BUNDLE/manifest.json" --source-root "$MAP_ARCHIVE" --output-dir "$OUT/cpu" --constraints ci/reference-cpu.txt --build-constraints ci/build.txt --backend cpu --reprojax-archive "$REPROJAX_TAR"

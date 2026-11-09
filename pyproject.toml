@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mapprojax"
-version = "0.3.0"
+version = "0.3.1.dev0"
 description = "Differentiable JAX coordinate kernel for FITS TAN/SIN WCS with SIP"
 readme = "README.md"
 license = "MIT"
