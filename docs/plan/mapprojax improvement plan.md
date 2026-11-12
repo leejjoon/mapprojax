@@ -4,7 +4,7 @@ Nov 1, 2026 · @이재준 · revised after a two-reviewer committee review (Clau
 
 ## Where it stands
 
-*Nov 1 snapshot. v0.3.0 shipped on Nov 9 2026; see "Stage 5 closure — Nov 9 2026" at the end.*
+*Nov 1 snapshot. v0.3.0 shipped on Nov 9 2026; see "Stage 5 closure — Nov 9 2026" at the end. Next: "Milestone v0.4.0: `from_astropy`", planned Nov 12 2026.*
 
 mapprojax v0.2.0 is a ~1,200-line WCS core: two projections (TAN, SIN), SIP distortion, NumPy and JAX classes built from shared mixins, PyTree registration, the fp64-free `Reprojector`, and the offset-form `unproj_offset`/`proj_offset` APIs. 89 tests pass. It has no README, no CI, no release, and 0 stars.
 
@@ -493,11 +493,124 @@ Revised Nov 6 2026 against the repository at the end of Stage 4 (mapprojax `26b6
 
 | Item | Why | Notes |
 | --- | --- | --- |
-| `from_astropy(wcs)` | Lets users and reprojax pass astropy WCS objects directly | Accept TAN/SIN(+SIP), normalise CD/PC+CDELT through astropy, refuse everything else clearly. `to_header` later |
+| `from_astropy(wcs)` | Lets users and reprojax pass astropy WCS objects directly | Planned for v0.4.0; see "Milestone v0.4.0: `from_astropy`" below. `to_header` later |
 | TPV | Standard in SCAMP/SWarp output (DES, DECaLS, Pan-STARRS) | A distortion step like SIP, so no new projection class; shares the Newton inverse from Stage 2. Watch the radial terms' non-differentiable `r` at the origin |
 | Astrometric-fit example | The demo for the gradient story | Fit CD + SIP to Gaia matches; compare with `astropy.wcs.utils.fit_wcs_from_points` |
 | ZEA, STG, ARC | Zenithal family, cheap once the restructure is done | Add when a dataset needs them |
 | Research note | Makes the precision work citable | RNAAS length, built on realistic-size numbers. The contribution is the measured envelope and the offset form; composing M_tgt·M_srcᵀ itself is standard |
+
+## Milestone v0.4.0: `from_astropy`
+
+Nov 12, 2026 · planned by a two-member committee (Fable, Astra) with one reconciliation round; approved by the owner. Not started. mapprojax `main` is at `6d86905` (`0.3.1.dev0`); reprojax 0.2.0 requires `mapprojax>=0.3.0,<0.4`.
+
+The goal: let users and reprojax build a mapprojax kernel straight from an `astropy.wcs.WCS`, with the same refusals as the header loader, and without making astropy a runtime dependency. The release also fixes a SIP parsing defect in the existing header loader.
+
+### Decisions
+
+| | Decision |
+| --- | --- |
+| **V1** | Release as mapprojax **0.4.0**, then reprojax **0.3.0** requiring `mapprojax>=0.4.0,<0.5`. reprojax's `<0.4` cap has to move anyway, so it moves once. |
+| **V2** | Cubes: require a two-axis celestial WCS. Callers pass `wcs.celestial` themselves; the function never drops axes. Automatic extraction can be added later without breaking this contract. |
+| **V3** | Frame conversion stays in reprojax. A mapprojax frame helper would be a separate, explicitly approved scope addition. |
+| **V4** | astropy is an optional extra, `mapprojax[astropy]`, with `astropy>=7.2.0`. |
+| **V5** | `to_header` / `to_astropy` stay deferred. They need their own decisions on frame metadata, pole conventions and lossless versus canonical output. |
+| **V6** | The `parse_sip_matrix` fix ships in 0.4.0 as its own commit. |
+
+### API
+
+`mapprojax.from_astropy(wcs, *, precision, inverse_steps=3) -> Tan | Sin`, in a new module `src/mapprojax/astropy.py`, exported lazily from `mapprojax/__init__.py` so that `import mapprojax` never imports astropy. There are no `Tan.from_astropy` / `Sin.from_astropy` classmethods: dispatching on CTYPE avoids a class-mismatch contract.
+
+- **Input:** an `astropy.wcs.WCS` with exactly two pixel and two world axes, longitude first. Not a Header, filename, low-level WCS API object or GWCS.
+- **`precision`:** required, with the existing `"f32"` / `"mixed"` / `"f64"` meaning (`wcs.py:119`). It never enables JAX x64. In `"f32"` absolute `proj`/`unproj` are still unavailable; the manual points to the offset methods and `Reprojector`.
+- **`inverse_steps`:** passed to the SIP Newton inverse; the default stays `DEFAULT_INVERSE_STEPS` (`sip.py:9`).
+- **Output:** an ordinary `Tan` or `Sin` in the input WCS's own celestial frame. RADESYS, EQUINOX, MJD and observation keywords are ignored, not applied and not kept, and the manual says so: "Conversion preserves the numerical pixel-to-coordinate mapping but not the frame identity or observation metadata; keep the original astropy WCS when composing different frames." `to_dict` / `from_dict` round-trip the result unchanged.
+- **Errors:** `TypeError` for a wrong input type; `ImportError` naming `pip install 'mapprojax[astropy]'` when astropy is missing; `ValueError` naming the offending property (for example `effective LONPOLE=0`, `cpdis1 is unsupported`), chaining any astropy exception.
+
+`load_wcs_params_from_header` stays public and keeps its behaviour, apart from the SIP fix below. The manual documents `from_astropy` as the preferred entry point, because astropy normalises CROTA, units and alternate-version cards that the raw loader refuses.
+
+### Conversion rules
+
+1. **Work on a copy.** `copy.deepcopy(wcs)`, then `wcs.wcs.set()` on the copy. The caller's object is never changed, and returned arrays never alias astropy's.
+2. **Numbers come from attributes**, never from header text: `wcs.wcs.crval`, `wcs.wcs.crpix - 1` (exactly once), `wcs.pixel_scale_matrix`, and `wcs.sip.a/b/ap/bp`. Attributes keep the header's floats bit for bit; `to_header()` was measured to change a 17-significant-digit CRVAL, which already exceeds the 0.1 µas forward budget. `pixel_scale_matrix` covers CD, PC+CDELT, unequal scales and CROTA with astropy's precedence rules, so mapprojax does not reimplement them. CRVAL stays a host float64 array even for `"f32"`, because `Reprojector` needs it.
+3. **Units.** Convert each celestial axis's CRVAL and the matching row of the matrix to degrees from its effective `wcs.wcs.cunit`. This covers `preserve_units=True`, where attributes and the re-serialized header both stay in, for example, arcseconds. Refuse non-angular units. CRPIX and SIP coefficients are in pixels and are not touched. The header passed to `_check_cunit` must describe the converted values, not just relabelled CUNIT cards.
+4. **Policy checks reuse the existing helpers** in `wcs_utils.py` (`_parse_ctype`, `_check_lonpole`, `_check_pv`) instead of a second copy of the rules. The effective values come from the initialised copy: LONPOLE (only 180 is accepted, and CRVAL2 = +90 without LONPOLE is refused because WCSLIB resolves it to 0), PV terms (SIN accepts only absent or zero PV2_1/PV2_2), CTYPE with `lng`/`lat`.
+5. **Hidden distortions.** For a TPV header astropy reports `ctype == 'RA---TAN'`, `get_pv() == []` and `has_distortion == False`, yet `all_pix2world` applies the distortion (11″ in the committee's probe). `to_header(relax=True)` is the one place the TPV suffix and PV cards reappear, so it is used to find unsupported distortion conventions (TPV, TPD, `-TAB`) and run `_parse_ctype` on the CTYPE strings it reports. Classification never relies on `wcs.wcs.ctype`, `get_pv()` or `has_distortion` alone.
+6. **Refused:**
+   - `cpdis1`, `cpdis2`, `det2im1`, `det2im2` (any lookup table);
+   - TPV, TPD, `-TAB` and other unsupported distortion conventions;
+   - an effective LONPOLE other than 180, and CRVAL2 = +90 without LONPOLE;
+   - nonzero SIN slant parameters, and other PV or PS parameters;
+   - swapped axes (latitude first), rather than silently permuting the matrix rows and SIP polynomials;
+   - a WCS that is not two-dimensional, with the message "pass `wcs.celestial`";
+   - projection codes other than TAN and SIN;
+   - non-finite parameters;
+   - a SIP reference pixel that differs from CRPIX (mapprojax has one shared reference pixel);
+   - nonzero SIP coefficients outside the triangular order astropy evaluates (`i + j > order`). astropy already zeroes them, so this is a cheap guard against mapprojax's rectangular evaluator activating them;
+   - a `-SIP` CTYPE with no SIP object.
+7. **Accepted:**
+   - RA/DEC, GLON/GLAT and ELON/ELAT pairs;
+   - ICRS, FK5 and Galactic labels;
+   - SIP coefficients without the `-SIP` suffix, matching what astropy applies;
+   - LATPOLE as astropy initialises it;
+   - CRVAL2 = −90 with effective LONPOLE 180;
+   - alternate WCS versions that the supplied object did not select.
+8. **SIP inverse.** A/B are used as given. AP/BP, when present, are only the starting guess for the existing Newton solve (`sip.py:151`). No inverse is fitted.
+
+This converts the semantics of the materialised WCS object, not an audit of the original FITS file: cards astropy has already discarded cannot be recovered or refused.
+
+### SIP fix in the header loader
+
+`parse_sip_matrix` (`wcs_utils.py:113`) reads every `{prefix}_{i}_{j}` with `i, j <= order`. The SIP convention, and astropy, define only `i + j <= order`; astropy zeroes and ignores the rest. A header carrying, for example, `A_2_2` with `A_ORDER = 2` therefore makes `load_wcs_params_from_header` disagree with astropy, and the mapprojax evaluator applies a term astropy does not.
+
+- Read only `i + j <= order`, ignoring higher terms exactly as astropy does, so the loader and astropy agree on the same header.
+- Test: a header with a nonzero off-triangle term, compared against `all_pix2world` and `all_world2pix`, plus a check that existing fixtures (all triangular) parse unchanged.
+- CHANGELOG: list it under fixes as a behaviour change of the public loader.
+
+### Validation
+
+One new test module, plus the SIP-fix test in `tests/test_wcs_utils.py`. Comparisons use `all_pix2world(..., 0)` and converged `all_world2pix`, measured as angular separation and radial pixel error, not raw longitude differences across the wrap.
+
+- **Corpus:** parametrised over `tests/accuracy_reference.py` `cases()` and the SPHEREx header fixtures, with the existing f64 budgets and per-fixture mixed/f32 caps from `test_astropy_reference.py`. No frozen baseline is loosened.
+- **Linear forms:** CD; PC + unequal CDELT with rotation; off-diagonal-only CD; CROTA.
+- **Units:** degrees, radians and arcseconds, with `preserve_units` both off and on.
+- **Frames:** Galactic and FK5 headers convert and agree with astropy in their own frame.
+- **SIP:** A/B only; A/B + AP/BP; missing `-SIP` suffix; mismatched SIP CRPIX (refused); off-triangle coefficient (refused).
+- **Poles and edges:** CRVAL2 = ±90 cases, longitude wrap, projection boundaries and validity masks.
+- **Equivalence:** for headers the raw loader accepts, `from_astropy(WCS(h))` equals `load_wcs_params_from_header(h)` leaf for leaf.
+- **Refusals:** one test per refused case, asserting the message, including TPV hidden behind an apparent TAN, a separable cube passed without `.celestial`, swapped axes and a wrong input type.
+- **Behaviour:** the caller's WCS is unchanged and arrays don't alias it; `from_dict(to_dict(...))` round-trips; the result works under `jax.jit` and as a PyTree; `"f32"` with x64 off emits no truncation warnings; `import mapprojax` works and stays quiet without astropy (`test_import_is_quiet_with_x64_off` remains the guard); calling `from_astropy` without astropy raises the `ImportError` above.
+
+### reprojax follow-up (after mapprojax 0.4.0 is on PyPI)
+
+- **Use the new function.** Replace the parameter extraction and provider dispatch in `src/reprojax/_astropy_wcs.py` with `mapprojax.from_astropy`. reprojax then gains the TPV, lookup-table, LONPOLE and PV refusals; today `_astropy_wcs.py:25-27` reads `wcs.wcs.ctype` and silently treats TPV as TAN.
+- **Fix frame equivalence.** `_astropy_wcs.py:65` treats matching frame names as the identity, which is wrong for FK5 J2000 against FK5 B1950. The fix:
+  - compare frames with `is_equivalent_frame`;
+  - allow only pairs known to be rigid rotations: ICRS, FK5 with explicit equinoxes, and Galactic. Defer FK4 (E-terms are not a rotation) and the ecliptic frames until each is reviewed; refuse unsupported pairs explicitly;
+  - check the rotation built from transformed basis vectors is orthonormal with determinant +1, and test extra directions against `SkyCoord`.
+- **Cache.** Derive the cache key (`transform.py:46-50`, used at `:203`) from the validated `from_astropy` result plus the frame attributes, so an unvalidated WCS can never be served from the cache.
+- **Metadata.** Depend on `mapprojax[astropy]>=0.4.0,<0.5`; keep `astropy>=7.2.0`. Update `tests/test_batch.py:20-22`, which imports `wcs_params_from_astropy` (replaced) alongside `frame_rotation_matrix` (kept). Reword `core.py:4-7`, which mentions an astropy `pure_callback` fallback as a possible future provider; none exists, and unsupported projections raise.
+
+### Stages
+
+| Stage | Work | Done when |
+| --- | --- | --- |
+| 1 | Version `0.3.1.dev0` → `0.4.0.dev0`. SIP fix in `parse_sip_matrix` with its test (own commit). | Off-triangle test agrees with astropy; full suite unchanged otherwise |
+| 2 | `src/mapprojax/astropy.py`, lazy export, `[astropy]` extra (and the `test` extra's floor aligned to `astropy>=7.2.0`), user-manual section | Every corpus fixture converts; every refusal has a test asserting its message |
+| 3 | The validation matrix above | Agreement within existing budgets; minimum and latest CPU stacks and local ROCm pass with no loosened caps |
+| 4 | CHANGELOG; release mapprojax 0.4.0 through the existing produce-mode pipeline and gates | 0.4.0 on PyPI with provenance; fresh install verified |
+| 5 | reprojax migration, frame-equivalence fix, cache-key change | The SPHEREx numerical and validity contracts still pass; unsupported inputs cannot bypass validation |
+| 6 | Release reprojax 0.3.0 through its existing gates | First upload through reprojax's trusted publisher succeeds, with attestations |
+
+Size: roughly 150–350 lines of library code and 300–500 lines of tests, plus documentation and the reprojax change; about 3–5 working days plus release gates. No new release machinery.
+
+### Risks
+
+- **Silently missed distortion:** an astropy-hidden convention other than TPV. Mitigation: the `to_header(relax=True)` audit plus the lookup-table attribute checks, and running the full corpus early.
+- **`to_header` drift** between astropy versions. Mitigation: it is used only for classification, and `ci/minimum.txt` / `ci/latest.txt` pin both ends.
+- **Unit scaling errors.** Mitigation: per-axis conversion and tests with `preserve_units` on and off.
+- **Lost frame context:** users composing kernels from different frames without `frame_rotation`. Mitigation: the manual's warning; reprojax keeps the original WCS for frame handling.
+- **Cache bypass in reprojax.** Mitigation: the cache key comes only from validated output.
+- **SIP fix behaviour change:** headers with off-triangle terms change results. Mitigation: these headers already disagreed with astropy; the CHANGELOG names the change.
 
 ## Cut or deferred
 
