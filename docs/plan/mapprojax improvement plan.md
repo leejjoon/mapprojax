@@ -990,4 +990,5 @@ Fable and Astra reviewed the draft Stage 5 revision against the repository. Both
 
 **Remaining.**
 - reprojax: it already declares `mapprojax>=0.3.0,<0.4` with no source override, so the re-pin is a check that it resolves from PyPI. Its own PyPI release (0.2.0) is separate work with its own setup and gates.
+  - *Closed Nov 11 2026.* reprojax 0.2.0 is on PyPI (wheel `e0fb9a88aa584361813c91bfcb833f603c0a4a8279a19dc04b0304327c54fc6c`, sdist `531e0bce0952fa05b1e68d249ec88225e92b29969ded45c8183ddc966c0fa719`) and requires `mapprojax>=0.3.0,<0.4`. Its post-publication check installed `reprojax==0.2.0` into a fresh environment from the public index, which resolved `mapprojax==0.3.0` from PyPI with no source override. No dependency-range edit was needed. Evidence: `docs/release/0.2.0.md` in reprojax (commit `db67008`, corrections through `19cbcf8`).
 - Optional: a GitHub Release for `v0.3.0`; update pinned actions to versions that declare Node.js 24; existing jobs passed under the runner's forced Node.js 24 migration.
