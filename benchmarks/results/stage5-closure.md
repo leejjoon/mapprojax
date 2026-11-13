@@ -304,3 +304,9 @@ The complete operative producer record follows. Its timestamps are retained exac
   }
 }
 ```
+
+### Superseded request
+
+The candidate above was produced from `f2029c4`, but a following commit `b1aad1f` fixed a duplicated `## 0.3.0` heading in `CHANGELOG.md`, which is a release input. The recorded `input_sha256` therefore no longer matches HEAD, so those bytes cannot be published as 0.4.0. A fresh candidate is requested below; the record above stays as tested history and is not rewritten.
+
+<!-- stage5-new-candidate -->
