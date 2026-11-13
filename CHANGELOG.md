@@ -9,8 +9,6 @@
 
 ## 0.3.0 — 2026-11-09
 
-## 0.3.0 — 2026-11-09
-
 - Breaking: the public `Tan` and `Sin` classes are JAX PyTrees with required `precision="f32"`, `"mixed"` or `"f64"`. Retired NumPy, `*Array`, `*Jax` and `*Mixed` class families have no compatibility aliases.
 - Replace array classes with stacked compatible PyTrees and `jax.vmap`. Absolute `proj`/`unproj` require mixed or f64 precision and JAX x64; f32 uses offset methods and producer-typed host composition helpers.
 - JSON `to_dict`/`from_dict` is the serialization contract; ASDF and undocumented byte methods are removed. See the [migration table](docs/user_manual.md#migration-from-the-retired-api).
