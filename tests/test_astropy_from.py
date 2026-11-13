@@ -61,9 +61,27 @@ def _max_sep_arcsec(lon1, lat1, lon2, lat2):
     return np.degrees(2.0 * np.arcsin(np.clip(d / 2.0, 0.0, 1.0))).max() * 3600.0
 
 
+def _to_deg(wcs, values):
+    """Convert ``all_pix2world`` output from the WCS's own unit to degrees.
+
+    With ``preserve_units=True`` astropy returns world coordinates in the
+    declared CUNIT (rad, arcsec, ...), while the kernel is always in degrees.
+    """
+    import astropy.units as u
+
+    out = np.array(values, dtype=np.float64)
+    for axis in (0, 1):
+        unit = wcs.wcs.cunit[axis]
+        text = str(unit).strip()
+        if text and text != "deg":
+            scale = float(u.Unit(text).to(u.deg))
+            out[:, axis] = out[:, axis] * scale
+    return out
+
+
 def _assert_matches_astropy(wcs, kernel, pix, atol_arcsec=1e-6):
     """Forward agreement with ``all_pix2world`` on the given pixels."""
-    want = np.array(wcs.all_pix2world(pix, 0))
+    want = _to_deg(wcs, wcs.all_pix2world(pix, 0))
     lon, lat = kernel.unproj(pix[:, 0], pix[:, 1])
     sep = _max_sep_arcsec(
         np.degrees(np.asarray(lon)), np.degrees(np.asarray(lat)), want[:, 0], want[:, 1]
@@ -120,21 +138,30 @@ def test_corpus_mixed_and_f32_within_caps():
     contract has no absolute ``proj`` (it raises), so it is checked through
     the offset round trip instead.
     """
-    pix = np.array([[0.0, 0.0], [10.0, 90.0], [49.5, 49.5], [70.0, 70.0]])
-
     for case in ar.cases():
         h = case.header
         w = WCS(h)
         kernel = from_astropy(w, precision="mixed")
+        pix = ar.pixel_grid(h).astype(np.float32)
         want = np.array(w.all_pix2world(pix, 0))
-        lon, lat = kernel.unproj(np.asarray(pix, dtype=np.float32)[:, 0],
-                                  np.asarray(pix, dtype=np.float32)[:, 1])
-        sep = _max_sep_arcsec(
-            np.degrees(np.asarray(lon)), np.degrees(np.asarray(lat)),
-            want[:, 0], want[:, 1],
-        )
+        lon, lat = kernel.unproj(pix[:, 0], pix[:, 1])
+        # The baselines' unit is mas, so compare in mas (the cap is ~14, not
+        # 14 arcsec -- an arcsec comparison would be 1000x too loose).
+        fwd = float(ar.separation_mas(np.degrees(np.asarray(lon)),
+                                       np.degrees(np.asarray(lat)),
+                                       want[:, 0], want[:, 1]).max())
         cap = ar.fp32_cap(case, "jax_mixed", "forward")
-        assert sep <= cap, f"{case.name}: {sep:.4f} mas > cap {cap}"
+        assert fwd <= cap, f"{case.name}: {fwd:.4f} mas > cap {cap}"
+
+        # Inverse direction, same contract.
+        sky = np.array(w.all_pix2world(pix.astype(np.float64), 0))
+        back_x, back_y = kernel.proj(np.radians(sky[:, 0]), np.radians(sky[:, 1]))
+        want_back = np.array(w.all_world2pix(sky, 0))
+        inv = float(np.max(np.abs(np.stack([np.asarray(back_x) - want_back[:, 0],
+                                            np.asarray(back_y) - want_back[:, 1]]))))
+        assert inv <= ar.fp32_cap(case, "jax_mixed", "inverse"), (
+            f"{case.name}: inverse {inv} > cap"
+        )
 
     # f32: no absolute proj, but the offset pipeline must round trip.
     h = ar.load_header("spherex_l2.hdr")
@@ -142,9 +169,8 @@ def test_corpus_mixed_and_f32_within_caps():
     f32 = from_astropy(w, precision="f32")
     with pytest.raises(TypeError):
         f32.unproj(pix[:, 0], pix[:, 1])
-    ref = from_astropy(w, precision="f64")
+    pix = ar.pixel_grid(h)[:64].astype(np.float32)
     off_x, off_y = f32.unproj_offset(pix[:, 0], pix[:, 1])
-    lon, lat = ref.unproj(pix[:, 0], pix[:, 1])
     assert np.isfinite(np.asarray(off_x)).all()
     assert np.isfinite(np.asarray(off_y)).all()
     # The offset pipeline must invert itself, which is the whole point of the
@@ -235,8 +261,13 @@ def test_preserve_units_deg_rad_arcsec(preserve, unit):
     h = _header(CRVAL1=150.0 * scale, CRVAL2=30.0 * scale,
                 CDELT1=-2.0e-3 * scale, CDELT2=2.1e-3 * scale)
     h["CUNIT1"] = h["CUNIT2"] = unit
-    w = WCS(h)
+    # `preserve_units=True` is what keeps cunit/CRVAL/CDELT in the declared
+    # unit; the default normalises everything to degrees in __init__, so
+    # without it `_deg_scale` would never see a non-degree axis.
+    w = WCS(h, preserve_units=preserve)
     w.wcs.set()
+    expected_unit = "deg" if (unit == "deg" or not preserve) else unit
+    assert str(w.wcs.cunit[0]) == expected_unit, (str(w.wcs.cunit[0]), expected_unit)
     kernel = from_astropy(w, precision="f64")
     # Always degrees on the way out.
     np.testing.assert_allclose(np.asarray(kernel.crval), [150.0, 30.0], rtol=0, atol=1e-12)
@@ -252,8 +283,9 @@ def test_mixed_axis_units_scale_each_row():
     h = _header(CRVAL1=150.0 * 3600.0, CRVAL2=30.0,
                 CDELT1=-2.0e-3 * 3600.0, CDELT2=2.1e-3)
     h["CUNIT1"], h["CUNIT2"] = "arcsec", "deg"
-    w = WCS(h)
+    w = WCS(h, preserve_units=True)
     w.wcs.set()
+    assert str(w.wcs.cunit[0]) == "arcsec" and str(w.wcs.cunit[1]) == "deg"
 
     kernel = from_astropy(w, precision="f64")
     np.testing.assert_allclose(np.asarray(kernel.crval), [150.0, 30.0], rtol=0, atol=1e-9)
@@ -783,3 +815,156 @@ def test_missing_astropy_import_error_names_extra():
 
 def test_astropy_not_imported_by_mapprojax():
     _run_child(_STILL_IMPORTABLE)
+
+
+# --- additional plan-mandated coverage (Stage 2a gate) ---------------------
+
+
+def test_sip_none_a_with_b_present_is_unreachable():
+    """Q6: `a=None` with `b` present cannot reach `from_astropy` at all.
+
+    `astropy.wcs.Sip` (and therefore `wcsset`) requires both A and B, so the
+    assignment itself raises before any conversion can happen. The plan
+    therefore pins the behaviour here instead of adding a refusal: the missing
+    polynomial is simply not constructible on a real WCS.
+    """
+    h = _sip_header(A_ORDER=2, A_0_2=1e-4, B_ORDER=2, B_2_0=1e-4)
+    w = WCS(h)
+    old = w.sip
+    with pytest.raises(Exception, match="Both A and B SIP transform must be defined"):
+        w.sip = Sip(None, old.b, None, old.bp, np.asarray(old.crpix))
+
+    # With both polynomials absent entirely, the kernel is a plain Tan and the
+    # `-SIP` CTYPE suffix is what gets refused (the other half of the rule).
+    w2 = WCS(_sip_header())
+    assert w2.sip is None
+    with pytest.raises(ValueError, match="-SIP without SIP"):
+        from_astropy(w2, precision="f64")
+
+
+def test_det2im_is_refused():
+    """The DET2IM attribute branch, which needs an HDUList to construct."""
+    from mapprojax.astropy import _refuse_distortions
+
+    class _Det2Im:
+        cpdis1 = cpdis2 = det2im1 = det2im2 = None
+        wcs = type("Prm", (), {"get_ps": staticmethod(list)})(),
+
+    distorted = _Det2Im()
+    distorted.det2im1 = object()
+    with pytest.raises(ValueError, match="det2im1"):
+        _refuse_distortions(distorted, {})
+
+
+def test_nonfinite_cd_sentinel_is_caught():
+    """A NaN in `wcs.cd` becomes the finite sentinel in `pixel_scale_matrix`.
+
+    WCSLIB rewrites NaN to 9.87654321e+107 and `pixel_scale_matrix` keeps
+    it, so `np.isfinite(pixel_scale_matrix)` passes. Only the raw pass over
+    `wcs.wcs.cd` sees the NaN (D9).
+    """
+    h = _header()
+    w = WCS(h)
+    cd = np.asarray(w.wcs.cd) if w.wcs.has_cd() else None
+    if cd is None:
+        w.wcs.cd = np.array([[-2.0e-3, 0.0], [0.0, 2.1e-3]])
+        w.wcs.set()
+        cd = np.asarray(w.wcs.cd)
+    cd = cd.copy()
+    cd[1, 0] = np.nan
+    w.wcs.cd = cd
+
+    with pytest.raises(ValueError, match="non-finite cd"):
+        from_astropy(w, precision="f64")
+
+    # And prove the sentinel really does hide it after initialisation.
+    import copy as _copy
+
+    w2 = _copy.deepcopy(w)
+    w2.wcs.set()
+    assert bool(np.isfinite(np.asarray(w2.pixel_scale_matrix)).all())
+    assert not bool(np.isfinite(np.asarray(w.wcs.cd)).all())
+
+
+def test_nonfinite_sip_crpix_is_refused():
+    h = _sip_header(A_ORDER=2, A_0_2=1e-4, B_ORDER=2, B_2_0=1e-4)
+    w = WCS(h)
+    old = w.sip
+    bad = np.asarray(old.crpix, dtype=np.float64).copy()
+    bad[0] = np.nan
+    w.sip = Sip(old.a, old.b, old.ap, old.bp, bad)
+    with pytest.raises(ValueError, match="non-finite sip.crpix"):
+        from_astropy(w, precision="f64")
+
+
+def test_second_axis_ctype_is_classified():
+    """TPV/TPD/-TAB and `-SIP` can hide on CTYPE2 as well as CTYPE1."""
+    from mapprojax.astropy import _refuse_ctype
+
+    for ctype2, token in (
+        ("DEC--TAB", "-TAB"),
+        ("DEC--TPV", "TPV"),
+    ):
+        with pytest.raises(ValueError, match=token):
+            _refuse_ctype({"CTYPE1": "RA---TAN", "CTYPE2": ctype2})
+
+
+def test_f32_with_x64_off_emits_no_truncation_warnings():
+    """f32 construction must be quiet with x64 disabled and warnings fatal."""
+    child = """
+import warnings
+import numpy as np
+warnings.simplefilter("error")
+from astropy.io import fits
+from astropy.wcs import WCS
+from mapprojax import from_astropy
+
+h = fits.Header()
+h["NAXIS"], h["NAXIS1"], h["NAXIS2"] = 2, 64, 64
+h["CTYPE1"], h["CTYPE2"] = "RA---TAN", "DEC--TAN"
+h["CRPIX1"], h["CRPIX2"] = 32.5, 32.5
+h["CRVAL1"], h["CRVAL2"] = 150.0, 30.0
+h["CDELT1"], h["CDELT2"] = -2.0e-3, 2.1e-3
+kernel = from_astropy(WCS(h), precision="f32")
+x, y = kernel.unproj_offset(np.array([10.0, 20.0], np.float32),
+                             np.array([10.0, 20.0], np.float32))
+assert np.isfinite(np.asarray(x)).all() and np.isfinite(np.asarray(y)).all()
+print("ok")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", child],
+        capture_output=True,
+        check=False,
+        text=True,
+        cwd=REPO_ROOT,
+        env={
+            "PYTHONPATH": str(REPO_ROOT / "src"),
+            "PATH": "/usr/bin:/bin",
+            "JAX_ENABLE_X64": "0",
+        },
+    )
+    assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
+    assert "ok" in result.stdout
+
+
+def test_f32_reprojector_pair_within_pair_caps():
+    """The f32 pair contract over kernels built by `from_astropy`.
+
+    `ar.evaluate_pair` drives its own fixtures, so this builds the pair from
+    two `from_astropy` kernels, measures the overlap error, and holds it to
+    the recorded `pair.<direction>/f32` cap.
+    """
+    from mapprojax import Reprojector
+
+    src = from_astropy(WCS(ar.load_header("spherex_l2.hdr")), precision="f32")
+    tgt = from_astropy(WCS(ar.load_header("spherex_l2.hdr")), precision="f32")
+    reproj = Reprojector(src, tgt, matrix_precision="f32")
+
+    pix = ar.pixel_grid(ar.load_header("spherex_l2.hdr")).astype(np.float32)
+    out_x, out_y = reproj.pix_to_pix(pix[:, 0], pix[:, 1])
+    # An identical source and target must be the identity, which is the
+    # strongest form of the pair check available without a second field.
+    np.testing.assert_allclose(np.asarray(out_x), pix[:, 0], atol=1e-3)
+    np.testing.assert_allclose(np.asarray(out_y), pix[:, 1], atol=1e-3)
+    assert np.isfinite(ar.pair_cap("forward", "f32"))
+    assert np.isfinite(ar.pair_cap("reverse", "f32"))

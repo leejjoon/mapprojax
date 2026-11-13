@@ -30,6 +30,8 @@ third-party package because Python 3 imports are absolute, so the sibling
 module name does not shadow it.
 """
 
+import warnings
+
 from .sip import DEFAULT_INVERSE_STEPS, Sip
 from .wcs import Sin, Tan
 from .wcs_utils import _check_lonpole, _check_pv, _parse_ctype
@@ -142,7 +144,11 @@ def _raw_finiteness(wcs):
     _finite("crval", prm.crval)
     if prm.has_cd():
         _finite("cd", prm.cd)
-    else:
+    # `pc`/`cdelt` may coexist with `cd`, and astropy prefers them when they
+    # do, so a NaN there would still reach `pixel_scale_matrix`. Reading
+    # `cdelt` next to `cd` warns, which is not the caller's business here.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
         _finite("cdelt", prm.cdelt)
         if prm.has_pc():
             _finite("pc", prm.pc)
@@ -154,10 +160,8 @@ def _raw_finiteness(wcs):
         _finite("sip.crpix", wcs.sip.crpix)
     # An angular unit is required on every celestial axis. `_deg_scale`
     # performs the conversion; here we only fail early and precisely.
-    for axis, (code, ctype) in enumerate(
-        ((_LON_CODES, prm.ctype[0]), (_LAT_CODES, prm.ctype[1])), start=1
-    ):
-        if str(ctype)[:4] in code:
+    for axis in (1, 2):
+        if str(prm.ctype[axis - 1])[:4] in (_LON_CODES | _LAT_CODES):
             _deg_scale(prm.cunit[axis - 1], axis)
 
 
@@ -177,13 +181,15 @@ def _refuse_distortions(wcs, header):
 
 
 def _refuse_ctype(header):
-    """Refuse unsupported projection conventions named by CTYPE."""
-    ctype1 = str(header.get("CTYPE1", ""))
-    for token in ("TPV", "TPD", "-TAB"):
-        if token in ctype1:
-            raise ValueError(
-                f"from_astropy: {token} is unsupported (CTYPE1 = {ctype1!r})"
-            )
+    """Refuse unsupported projection conventions named by either CTYPE."""
+    for axis in (1, 2):
+        card = f"CTYPE{axis}"
+        ctype = str(header.get(card, ""))
+        for token in ("TPV", "TPD", "-TAB"):
+            if token in ctype:
+                raise ValueError(
+                    f"from_astropy: {token} is unsupported ({card} = {ctype!r})"
+                )
 
 
 def _ctype_cards(header):
@@ -307,11 +313,13 @@ def from_astropy(wcs, *, precision, inverse_steps=DEFAULT_INVERSE_STEPS):
     _refuse_distortions(w, header)
 
     cards = _ctype_cards(header)
-    if cards["CTYPE1"].endswith("-SIP") and w.sip is None:
-        raise ValueError(
-            "from_astropy: -SIP without SIP is unsupported "
-            f"(CTYPE1 = {cards['CTYPE1']!r} but the WCS carries no SIP coefficients)"
-        )
+    if w.sip is None:
+        for card in ("CTYPE1", "CTYPE2"):
+            if cards[card].endswith("-SIP"):
+                raise ValueError(
+                    "from_astropy: -SIP without SIP is unsupported "
+                    f"({card} = {cards[card]!r} but the WCS carries no SIP coefficients)"
+                )
     _refuse_ctype(cards)
 
     # 9. Units. `_deg_scale` is the unit rule; the loader's own
@@ -334,7 +342,7 @@ def from_astropy(wcs, *, precision, inverse_steps=DEFAULT_INVERSE_STEPS):
     try:
         proj = _parse_ctype(cards)
     except ValueError as exc:
-        raise ValueError(f"from_astropy: projection <CODE> is unsupported ({exc})") from exc
+        raise ValueError(f"from_astropy: projection is unsupported ({exc})") from exc
     try:
         _check_pv(header, proj)
         _check_pv(cards, proj)
