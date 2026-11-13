@@ -420,3 +420,53 @@ This record supersedes both earlier 0.4.0 candidates. The complete operative pro
 The committee implementation review found blocking defects that change files the release is built from: the x64-off subprocess test did not pin the CPU backend, several acceptance tests were looser than the agreed contract, and the manual's SIP order 0/1 row contradicted astropy. `cef12a9` applies them, so the candidate from `89f68562` no longer matches HEAD. A fresh candidate is requested below; all earlier records stay as tested history.
 
 <!-- stage5-new-candidate -->
+
+Producer CI `43416389659` (attempt 1, branch `rocm-extra`, push) rebuilt from `8dda086d` after the committee review fixes; all jobs passed and its `inputs.json` equals `input_sha256` `b880bb4a...`. Gate on these original bytes, `--reprojax-archive` omitted (D11):
+
+| Check | Constraints | Result |
+|---|---|---|
+| `check --backend cpu` | `ci/reference-cpu.txt` | exit 0, 1039 passed (direct wheel and sdist-derived wheel) |
+| `check --backend rocm` | `ci/reference-rocm.txt` | exit 0, 1039 passed, device `AMD Radeon Graphics` |
+
+The count is 1039: the review fixes tightened existing tests and added the real `DistortionLookupTable` and SIN-horizon cases.
+
+| Artifact | Bytes | SHA-256 |
+|---|---:|---|
+| `mapprojax-0.4.0-py3-none-any.whl` | 37640 | `84a4c73055fcf5fc38efb3012c60a4c6149ed28fab1e54d8e9731350f6ab57ae` |
+| `mapprojax-0.4.0.tar.gz` | 114565 | `165e0684b4d16410461886b9f536ac38d5be9f15bf740ba58b7d8e53e282e66f` |
+
+This record supersedes all earlier 0.4.0 candidates. The complete operative producer record follows.
+
+```stage5-artifact-json
+{
+  "schema_version": 1,
+  "repository": "leejjoon/mapprojax",
+  "version": "0.4.0",
+  "producer_sha": "8dda086d7562e0d2144489e8cd61337d0f52badd",
+  "input_sha256": "b880bb4a30a81ce2d0a41679f2b733a0f081427185c5e6da4139c7caed2d6440",
+  "run_id": 43416389659,
+  "run_attempt": 1,
+  "artifact_id": 14032566368,
+  "artifact_name": "release-original",
+  "artifact_digest": "sha256:70fcfb458852e9ac071128980ad399126dd846dd99195abaa89674929abc5d2a",
+  "created_at": "2026-11-13T11:27:45Z",
+  "expires_at": "2027-02-11T11:21:20Z",
+  "expired": false,
+  "deleted": false,
+  "manifest": {
+    "schema_version": 1,
+    "project": "mapprojax",
+    "version": "0.4.0",
+    "artifacts": {
+      "mapprojax-0.4.0-py3-none-any.whl": {
+        "size": 37640,
+        "sha256": "84a4c73055fcf5fc38efb3012c60a4c6149ed28fab1e54d8e9731350f6ab57ae"
+      },
+      "mapprojax-0.4.0.tar.gz": {
+        "size": 114565,
+        "sha256": "165e0684b4d16410461886b9f536ac38d5be9f15bf740ba58b7d8e53e282e66f"
+      }
+    }
+  }
+}
+```
