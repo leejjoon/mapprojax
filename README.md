@@ -1,6 +1,6 @@
 # mapprojax
 
-`mapprojax` is a differentiable JAX coordinate kernel for FITS TAN and SIN WCS projections, including SIP distortion. It provides a precision-explicit PyTree API, projection-domain validity, offset coordinate methods, and source-to-target pixel maps. It does not parse arbitrary FITS WCS or interpolate image data: use Astropy for general WCS support and `reprojax` for image resampling.
+`mapprojax` is a differentiable JAX coordinate kernel for FITS TAN and SIN WCS projections, including SIP distortion. It provides a precision-explicit PyTree API, projection-domain validity, offset coordinate methods, and source-to-target pixel maps. `from_astropy` converts an existing `astropy.wcs.WCS` into this kernel, refusing anything it cannot reproduce exactly rather than approximating it. It does not parse arbitrary FITS files itself or interpolate image data: use Astropy for general WCS support and `reprojax` for image resampling.
 
 ## Install
 
@@ -10,7 +10,7 @@ Install the released package from PyPI:
 pip install mapprojax
 ```
 
-For a checkout, use `pip install '.[test]'`. Supported Python/JAX/NumPy minima are declared in [pyproject.toml](pyproject.toml), based on the tested minimum environment. The `rocm` extra is for Linux ROCm installations with Python 3.12 or newer and version-matched JAX/jaxlib/ROCm plugins; it is not a generic GPU extra. See the [manual](docs/user_manual.md).
+`from_astropy` needs Astropy: install with `pip install 'mapprojax[astropy]'`. The kernel itself never imports it, so plain `pip install mapprojax` stays Astropy-free. For a checkout, use `pip install '.[test]'`. Supported Python/JAX/NumPy minima are declared in [pyproject.toml](pyproject.toml), based on the tested minimum environment. The `rocm` extra is for Linux ROCm installations with Python 3.12 or newer and version-matched JAX/jaxlib/ROCm plugins; it is not a generic GPU extra. See the [manual](docs/user_manual.md).
 
 ## Quick start
 

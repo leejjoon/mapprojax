@@ -111,10 +111,31 @@ FIXTURES = ["1904-66_TAN.hdr", "1904-66_SIN.hdr", "spherex_l2.hdr", "spherex_tem
 
 @pytest.mark.parametrize("case", ar.cases(), ids=lambda c: c.name)
 def test_corpus_converts_and_matches_astropy(case):
+    """The fp64 corpus contract: FORWARD_MAS forward, INVERSE_PX back.
+
+    Both budgets come from the reference harness rather than local constants,
+    so this cannot drift looser than the recorded accuracy claim.
+    """
     h = case.header
     w = WCS(h)
     kernel = from_astropy(w, precision="f64")
-    _assert_matches_astropy(w, kernel, ar.pixel_grid(h))
+    pix = ar.pixel_grid(h)
+
+    want = _to_deg(w, w.all_pix2world(pix, 0))
+    lon, lat = kernel.unproj(pix[:, 0], pix[:, 1])
+    fwd = float(ar.separation_mas(np.degrees(np.asarray(lon)),
+                                   np.degrees(np.asarray(lat)),
+                                   want[:, 0], want[:, 1]).max())
+    assert fwd <= ar.FORWARD_MAS, f"{case.name}: forward {fwd:.3e} mas > {ar.FORWARD_MAS}"
+
+    # Inverse against a converged all_world2pix, radial error in pixels.
+    sky = np.array(w.all_pix2world(pix, 0), dtype=np.float64)
+    back = np.array(w.all_world2pix(sky, 0, tolerance=ar.ORACLE_TOL,
+                                     maxiter=ar.ORACLE_MAXITER, quiet=False))
+    got_x, got_y = kernel.proj(np.radians(sky[:, 0]), np.radians(sky[:, 1]))
+    radial = np.hypot(np.asarray(got_x) - back[:, 0], np.asarray(got_y) - back[:, 1])
+    inv = float(radial.max())
+    assert inv <= ar.INVERSE_PX, f"{case.name}: inverse {inv:.3e} px > {ar.INVERSE_PX}"
 
 
 def test_wcs_test_data_header_converts():
@@ -153,14 +174,16 @@ def test_corpus_mixed_and_f32_within_caps():
         cap = ar.fp32_cap(case, "jax_mixed", "forward")
         assert fwd <= cap, f"{case.name}: {fwd:.4f} mas > cap {cap}"
 
-        # Inverse direction, same contract.
+        # Inverse direction, same contract: a converged oracle inverse and the
+        # radial error, not the largest single component.
         sky = np.array(w.all_pix2world(pix.astype(np.float64), 0))
+        want_back = np.array(w.all_world2pix(sky, 0, tolerance=ar.ORACLE_TOL,
+                                              maxiter=ar.ORACLE_MAXITER, quiet=False))
         back_x, back_y = kernel.proj(np.radians(sky[:, 0]), np.radians(sky[:, 1]))
-        want_back = np.array(w.all_world2pix(sky, 0))
-        inv = float(np.max(np.abs(np.stack([np.asarray(back_x) - want_back[:, 0],
-                                            np.asarray(back_y) - want_back[:, 1]]))))
+        inv = float(np.hypot(np.asarray(back_x) - want_back[:, 0],
+                              np.asarray(back_y) - want_back[:, 1]).max())
         assert inv <= ar.fp32_cap(case, "jax_mixed", "inverse"), (
-            f"{case.name}: inverse {inv} > cap"
+            f"{case.name}: inverse {inv} px > cap {ar.fp32_cap(case, 'jax_mixed', 'inverse')}"
         )
 
     # f32: no absolute proj, but the offset pipeline must round trip.
@@ -411,6 +434,12 @@ def test_crval2_minus_90_accepted():
     w = WCS(h)
     kernel = from_astropy(w, precision="f64")
     assert kernel is not None
+    # Accepting it is not enough: at a pole the sky position is degenerate, so
+    # the pixels must be checked against astropy rather than just constructed.
+    pix = np.array([[49.5, 49.5], [10.0, 20.0], [80.0, 70.0]])
+    inside = np.isfinite(np.array(w.all_pix2world(pix, 0))).all(axis=1)
+    assert inside.any()
+    _assert_matches_astropy(w, kernel, pix[inside])
 
 
 def test_crval2_plus_90_with_180_accepted():
@@ -418,6 +447,10 @@ def test_crval2_plus_90_with_180_accepted():
     w = WCS(h)
     kernel = from_astropy(w, precision="f64")
     assert kernel is not None
+    pix = np.array([[49.5, 49.5], [10.0, 20.0], [80.0, 70.0]])
+    inside = np.isfinite(np.array(w.all_pix2world(pix, 0))).all(axis=1)
+    assert inside.any()
+    _assert_matches_astropy(w, kernel, pix[inside])
 
 
 def test_crval2_plus_90_without_lonpole_refused():
@@ -430,12 +463,42 @@ def test_crval2_plus_90_without_lonpole_refused():
         from_astropy(w, precision="f64")
 
 
-def test_longitude_wrap_and_projection_edges_match_astropy():
+def test_longitude_wrap_matches_astropy():
     h = _header(CRVAL1=0.2)
     w = WCS(h)
     kernel = from_astropy(w, precision="f64")
     pix = np.array([[0.0, 0.0], [99.0, 99.0], [49.5, 0.0], [0.0, 49.5]])
     _assert_matches_astropy(w, kernel, pix)
+
+
+def test_sin_horizon_validity_mask_matches_astropy():
+    """A SIN count past the unit disc must go NaN exactly where astropy does.
+
+    A small ordinary field never reaches the horizon, so the old test proved
+    nothing about the validity mask. This sweeps a coarse SIN grid across the
+    disc edge and requires both implementations to agree sample for sample,
+    then checks the values still inside the disc.
+    """
+    h = _header(
+        CTYPE1="RA---SIN", CTYPE2="DEC--SIN",
+        CRPIX1=50.5, CRPIX2=50.5, CRVAL1=150.0, CRVAL2=30.0,
+        CDELT1=-0.5, CDELT2=0.5, NAXIS1=400,
+    )
+    w = WCS(h)
+    kernel = from_astropy(w, precision="f64")
+    x = np.linspace(49.5, 300.0, 60)
+    y = np.full_like(x, 50.0)
+    pix = np.column_stack([x, y])
+
+    lon, lat = kernel.unproj(x, y)
+    ours = ~np.isfinite(np.asarray(lon)) | ~np.isfinite(np.asarray(lat))
+    theirs = ~np.isfinite(np.array(w.all_pix2world(pix, 0))).all(axis=1)
+
+    assert ours.any(), "the sweep never left the disc, so it proves nothing"
+    np.testing.assert_array_equal(ours, theirs, err_msg="SIN validity mask differs")
+
+    # Inside the disc the values must still match astropy.
+    _assert_matches_astropy(w, kernel, pix[~ours])
 
 
 # --- equivalence -----------------------------------------------------------
@@ -741,16 +804,35 @@ def test_caller_wcs_and_arrays_are_unchanged():
     assert not np.shares_memory(np.asarray(kernel.crpix), np.asarray(w.wcs.crpix))
 
 
+def _unset_wcs(crval2=30.0):
+    """A WCS built by hand and never `set()`: `lonpole` is still NaN.
+
+    A header-built WCS has already resolved LONPOLE, so it cannot detect the
+    fault this test is named for.
+    """
+    w = WCS(naxis=2)
+    w.wcs.ctype = ["RA---SIN", "DEC--SIN"]
+    w.wcs.crpix = [50.5, 50.5]
+    w.wcs.crval = [150.0, crval2]
+    w.wcs.cdelt = [-2.0e-3, 2.1e-3]
+    return w
+
+
 def test_mutated_unset_caller_wcs_is_unchanged():
     # The axis-role getters run `wcsset` in place, so they must be evaluated
     # on the copy, never on the caller's object.
-    h = _header()
-    w = WCS(h)
-    w.wcs.crval = np.array([150.0, 45.0])  # mutated, deliberately not set()
-    lonpole_before = float(w.wcs.lonpole)
+    w = _unset_wcs()
+    assert not np.isfinite(float(w.wcs.lonpole)), "fixture is already set()"
     from_astropy(w, precision="f64")
-    assert float(w.wcs.lonpole) == lonpole_before
-    np.testing.assert_array_equal(np.asarray(w.wcs.crval), np.array([150.0, 45.0]))
+    assert not np.isfinite(float(w.wcs.lonpole)), "conversion set the caller"
+    np.testing.assert_array_equal(np.asarray(w.wcs.crval), np.array([150.0, 30.0]))
+
+    # The same must hold when the conversion is refused.
+    refused = _unset_wcs(crval2=40.0)
+    refused.wcs.cunit = ["m", "deg"]
+    with pytest.raises(ValueError, match="cunit1"):
+        from_astropy(refused, precision="f64")
+    assert not np.isfinite(float(refused.wcs.lonpole)), "refusal set the caller"
 
 
 def test_key_a_wcs_converts():
@@ -761,14 +843,19 @@ def test_key_a_wcs_converts():
         h[f"CRPIX1{suffix}"] = h[f"CRPIX2{suffix}"] = 50.5
         h[f"CRVAL1{suffix}"] = 150.0
         h[f"CRVAL2{suffix}"] = 30.0
-        h[f"CDELT1{suffix}"] = -2.0e-3
-        h[f"CDELT2{suffix}"] = 2.1e-3
+        # Distinct alternate values, so the test cannot pass by reading the
+        # primary key twice.
+        h[f"CDELT1{suffix}"] = -2.0e-3 if not suffix else -3.0e-3
+        h[f"CDELT2{suffix}"] = 2.1e-3 if not suffix else 2.7e-3
     w_a = WCS(h, key="A")
     assert w_a.wcs.alt == "A"
     kernel = from_astropy(w_a, precision="f64")
     assert isinstance(kernel, Sin)
-    # The numbers come from the selected key's attributes.
+    # The numbers come from the selected key, so the alternate scale must win
+    # over the primary one.
     np.testing.assert_array_equal(np.asarray(kernel.crpix), np.asarray(w_a.wcs.crpix) - 1.0)
+    assert not np.allclose(np.asarray(kernel.cd), np.diag([-2.0e-3, 2.1e-3]))
+    np.testing.assert_allclose(np.asarray(kernel.cd), np.diag([-3.0e-3, 2.7e-3]))
 
 
 def test_to_dict_from_dict_round_trip():
@@ -855,14 +942,46 @@ def _run_child(code):
         check=False,
         text=True,
         cwd=REPO_ROOT,
-        env={"PYTHONPATH": str(REPO_ROOT / "src"), "PATH": "/usr/bin:/bin", "HOME": str(REPO_ROOT)},
+        env={
+            "PYTHONPATH": str(REPO_ROOT / "src"),
+            "PATH": "/usr/bin:/bin",
+            "HOME": str(REPO_ROOT),
+            # Pin the backend: without it a venv that carries the ROCm plugin
+            # but sees no device fails in the child with HIP_ERROR_NoDevice,
+            # and a venv with a device would silently test the GPU instead.
+            "JAX_PLATFORMS": "cpu",
+            "JAX_PLATFORM_NAME": "cpu",
+        },
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
     assert "ok" in result.stdout
 
 
+# `_NO_ASTROPY` covers the install hint; this shorter child isolates the
+# quiet-import claim, under -W error so any warning is a failure.
+_QUIET_IMPORT = """
+import sys
+
+class Blocker:
+    def find_spec(self, name, path=None, target=None):
+        if name == "astropy" or name.startswith("astropy."):
+            raise ImportError("blocked: " + name)
+        return None
+
+sys.meta_path.insert(0, Blocker())
+
+import warnings
+warnings.simplefilter("error")
+import mapprojax
+import mapprojax.astropy
+assert "astropy" not in sys.modules, sorted(m for m in sys.modules if "astropy" in m)
+assert "from_astropy" in mapprojax.__all__
+print("ok")
+"""
+
+
 def test_import_mapprojax_is_quiet_without_astropy():
-    _run_child(_NO_ASTROPY)
+    _run_child(_QUIET_IMPORT)
 
 
 def test_missing_astropy_import_error_names_extra():
@@ -896,6 +1015,24 @@ def test_sip_none_a_with_b_present_is_unreachable():
     assert w2.sip is None
     with pytest.raises(ValueError, match="-SIP without SIP"):
         from_astropy(w2, precision="f64")
+
+
+def test_real_lookup_table_distortion_is_refused():
+    """A genuine `DistortionLookupTable` through the public entry point.
+
+    The private-helper tests use stand-ins because `_TAB`/`CPDIS` headers
+    cannot be rebuilt from cards; this one proves the attribute path on a real
+    astropy object.
+    """
+    from astropy.wcs import DistortionLookupTable
+
+    w = WCS(_header())
+    f32 = lambda value: np.array(value, dtype=np.float32)
+    w.cpdis1 = DistortionLookupTable(
+        f32(np.zeros((4, 4))), f32([0.0, 0.0]), f32([1.0, 1.0]), f32([1.0, 1.0])
+    )
+    with pytest.raises(ValueError, match=r"cpdis1 is unsupported"):
+        from_astropy(w, precision="f64")
 
 
 def test_det2im_is_refused():
@@ -997,35 +1134,50 @@ print("ok")
             "PYTHONPATH": str(REPO_ROOT / "src"),
             "PATH": "/usr/bin:/bin",
             "JAX_ENABLE_X64": "0",
+            # Same reason as _run_child: the x64-off contract must be proven on
+            # CPU, not on whatever device happens to be visible.
+            "JAX_PLATFORMS": "cpu",
+            "JAX_PLATFORM_NAME": "cpu",
         },
     )
     assert result.returncode == 0, f"stdout={result.stdout}\nstderr={result.stderr}"
     assert "ok" in result.stdout
 
 
-def test_f32_reprojector_pair_within_pair_caps():
+@pytest.mark.parametrize("direction", ["forward", "reverse"])
+def test_f32_reprojector_pair_within_pair_caps(direction):
     """The f32 pair contract over kernels built by `from_astropy`.
 
-    This drives the recorded two-field pair (SPHEREx template <-> SPHEREx L2)
-    with `from_astropy` kernels and holds the overlap error to the recorded
-    `pair.<direction>/f32` cap, rather than reprojecting a field onto itself.
+    Drives the recorded two-field pair (SPHEREx template <-> SPHEREx L2) in
+    both directions with `from_astropy` kernels, holding the overlap error to
+    the recorded `pair.<direction>/f32` cap rather than reprojecting a field
+    onto itself.
+
+    Every expected overlap sample must be finite, matching the harness
+    contract in tests/test_reproject_astropy.py: a NaN or inf inside the
+    overlap is a defect, not a sample to skip with `nanmax`.
     """
     from mapprojax import Reprojector
 
-    src_name, dst_name, _convert, transpose = ar.PAIR_DIRECTIONS["forward"]
+    src_name, dst_name, _convert, transpose = ar.PAIR_DIRECTIONS[direction]
     w_src = from_astropy(WCS(ar.load_header(f"{src_name}.hdr")), precision="f32")
     w_dst = from_astropy(WCS(ar.load_header(f"{dst_name}.hdr")), precision="f32")
     m = ar.galactic_to_icrs_matrix()
     rotation = m if not transpose else m.T
 
     reproj = Reprojector(w_src, w_dst, frame_rotation=rotation, matrix_precision="f32")
-    ref = ar.pair_reference("forward")
+    ref = ar.pair_reference(direction)
     src_pix = ref["src_pix"]
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
         x, y = reproj.pix_to_pix(src_pix[:, 0], src_pix[:, 1])
     got = np.column_stack([np.asarray(x, dtype=float), np.asarray(y, dtype=float)])
-    err = np.hypot(*(got - ref["dst_pix"]).T)[ref["overlap"]]
-    assert np.isfinite(err).any(), "the whole overlap was invalid"
-    cap = ar.pair_cap("forward", "f32")
-    assert float(np.nanmax(err)) <= cap, f"{np.nanmax(err):.3e} px > cap {cap} px"
+    inside = ref["overlap"]
+    assert inside.sum() > 0, f"{direction}: no overlap samples at all"
+    err = np.hypot(*(got - ref["dst_pix"]).T)[inside]
+    assert np.isfinite(err).all(), (
+        f"{direction}: {int((~np.isfinite(err)).sum())} non-finite of "
+        f"{err.size} overlap samples"
+    )
+    cap = ar.pair_cap(direction, "f32")
+    assert float(err.max()) <= cap, f"{direction}: {err.max():.3e} px > cap {cap} px"

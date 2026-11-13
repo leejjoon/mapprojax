@@ -116,15 +116,15 @@ Every refusal is a `ValueError` whose message reads `from_astropy: <property> is
 | `type` | the argument is not an `astropy.wcs.WCS` (`TypeError`) |
 | `axis order` | `naxis != 2` (message names `wcs.celestial`), or the longitude/latitude axes are swapped |
 | `non-celestial axes` | the two axes are not a celestial pair |
-| `CPDIS`, `CQDIS`, `DP`, `DQ` | a lookup-table distortion is present (also reported as `cpdis1`/`cpdis2`) |
+| `CPDIS`, `CQDIS`, `DP`, `DQ` | a `CPDIS`/`CQDIS` card, or a `DP`/`DQ` polynomial (`TPD`), names a distortion convention; real lookup tables are reported as `cpdis1`/`cpdis2` |
 | `det2im1`, `det2im2` | a detector-to-image correction is present |
-| `PS` | SIP `PS` parameters are present |
+| `PS` | WCSLIB string-valued projection parameters are present (`PS` cards are not SIP) |
 | `TPV`, `TPD`, `-TAB` | the CTYPE names a convention this kernel does not reproduce, including one hidden behind an apparent `TAN` |
 | `-SIP without SIP` | the CTYPE names SIP but the WCS carries no coefficients |
 | `projection` | the projection is not TAN or SIN |
 | `PV` | a `PV` parameter other than SIN's no-op `PV2_1`/`PV2_2` is present |
 | `LONPOLE` | `LONPOLE` is not the default 180-degree orientation (`+90` with no card resolves to `0.0`) |
-| `cunit1`, `cunit2` | the axis unit is not angular |
+| `cunit1`, `cunit2` | the axis unit is not a recognised angular unit; spellings astropy would normalise only during `wcsset` (e.g. `DEG`) are refused here rather than silently accepted |
 | `sip.crpix` | the SIP reference pixel disagrees with `CRPIX1`/`CRPIX2` |
 | `sip triangle` | a nonzero SIP coefficient lies outside `i + j <= order` |
 | `non-finite <name>` | `crpix`, `crval`, the scale matrix or a SIP array is not finite |
@@ -138,9 +138,9 @@ The two entry points disagree in both directions, deliberately. Astropy semantic
 | --- | --- | --- |
 | CROTA rotation | accepted (normalised) | refused |
 | `rad` / `arcsec` units | converted to degrees | refused |
-| mixed `CD` with `PC`/`CDELT` | follows astropy: `PC * CDELT` wins | reads the `CD` cards |
+| `CD` with `PC` and/or `CDELT` | follows astropy: `CD` alone wins, but a `PC` card makes `PC * CDELT` win | reads the `CD` cards |
 | `-SIP` CTYPE with no coefficients | refused | accepted, `sip=None` |
-| SIP order 0 or 1 | reads astropy's matrix | reads the `i + j <= order` triangle |
+| SIP order 0 or 1 | no SIP: astropy discards it, and a `-SIP` CTYPE is then refused as `-SIP without SIP` | reads a 2x2 polynomial |
 
 Numerical agreement between the two is therefore claimed only for headers with a single linear representation and card-stable values, which is what the test suite asserts.
 

@@ -76,14 +76,18 @@ def _deg_scale(unit_text, axis):
     if not text:
         return 1.0
     try:
-        unit = u.Unit(text)
+        # `parse_strict="silent"` keeps spellings astropy would normalise only
+        # through `wcsset` (for example 'DEG') out of the parse failure and
+        # into the angular check below, which is the accurate complaint.
+        unit = u.Unit(text, parse_strict="silent")
     except Exception as exc:
         raise ValueError(
             f"from_astropy: {token} is unsupported ({text!r} is not a unit)"
         ) from exc
     if not unit.is_equivalent(u.deg):
         raise ValueError(
-            f"from_astropy: {token} is unsupported ({text!r} is not angular)"
+            f"from_astropy: {token} is unsupported "
+            f"({text!r} is not a recognised angular unit)"
         )
     factor = float(unit.to(u.deg))
     if not factor > 0.0 or not factor < float("inf"):
@@ -344,8 +348,9 @@ def from_astropy(wcs, *, precision, inverse_steps=DEFAULT_INVERSE_STEPS):
     except ValueError as exc:
         raise ValueError(f"from_astropy: projection is unsupported ({exc})") from exc
     try:
+        # `cards` holds only the two CTYPE strings, so applying the PV rule
+        # to it was a no-op; the relaxed header carries the actual PV cards.
         _check_pv(header, proj)
-        _check_pv(cards, proj)
         for axis, index, _value in w.wcs.get_pv():
             card = f"PV{axis}_{index}"
             if proj == "SIN" and card in ("PV2_1", "PV2_2"):

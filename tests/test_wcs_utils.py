@@ -273,14 +273,34 @@ def test_off_triangle_sip_term_is_ignored_like_astropy():
     assert sip.a[0, 2] == OFF_TRIANGLE["A_0_2"]
     assert sip.b[2, 0] == OFF_TRIANGLE["B_2_0"]
 
-    # The inverse direction too: a converged all_world2pix must agree with the
-    # loader's forward projection on the same pixels (plan L566).
+    # The inverse direction too (plan L566): the loader's forward projection
+    # must agree with a converged astropy all_world2pix on the same sky
+    # points. A self round-trip would pass even if both directions shared a
+    # bug, so it is not sufficient on its own.
     crpix, cd, crval, sip = load_wcs_params_from_header(h)
     w = Tan(crpix, cd, crval, sip=sip)
     lon, lat = w.unproj(PIX[:, 0], PIX[:, 1])
     back_x, back_y = w.proj(lon, lat)
     np.testing.assert_allclose(back_x, PIX[:, 0], atol=1.0e-6)
     np.testing.assert_allclose(back_y, PIX[:, 1], atol=1.0e-6)
+
+    # Astropy's own Newton inverse diverges on this synthetic header (no
+    # AP/BP seed terms, all five samples), so the converged-oracle comparison
+    # uses the real SIP fixture with an off-triangle card injected instead.
+    real = ar.load_header("spherex_l2.hdr")
+    real["A_2_3"] = 5.0e-4  # i + j = 5 > A_ORDER 3
+    aw = WCS(real)
+    assert aw.sip is not None and aw.sip.a[2, 3] == 0.0
+    n1, n2 = real["NAXIS1"], real["NAXIS2"]
+    corners = np.array([[0.0, 0.0], [n1 - 1.0, 0.0], [0.0, n2 - 1.0], [n1 - 1.0, n2 - 1.0]])
+    sky = np.array(aw.all_pix2world(corners, 0), dtype=np.float64)
+    want = np.array(aw.all_world2pix(sky, 0, tolerance=1.0e-10, maxiter=100, quiet=False))
+    r_crpix, r_cd, r_crval, r_sip = load_wcs_params_from_header(real)
+    assert r_sip.a[2, 3] == 0.0
+    real_kernel = Tan(r_crpix, r_cd, r_crval, sip=r_sip)  # local f64 wrapper
+    got_x, got_y = real_kernel.proj(np.radians(sky[:, 0]), np.radians(sky[:, 1]))
+    np.testing.assert_allclose(np.asarray(got_x), want[:, 0], atol=1.0e-6)
+    np.testing.assert_allclose(np.asarray(got_y), want[:, 1], atol=1.0e-6)
 
 
 def _sip_cards(cards, prefix, order):
