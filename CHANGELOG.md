@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Development version `0.4.1.dev0`; records the verified PyPI 0.4.0 publication.
+
 ## 0.4.0 — 2026-11-13
 
 - New `mapprojax.from_astropy` converts an `astropy.wcs.WCS` into a `Tan` or `Sin`, reading `crval`, `crpix`, the pixel scale matrix and the SIP coefficients from the WCS rather than from FITS cards. It handles what the raw header loader cannot: CROTA normalisation, non-degree axis units, and astropy's own resolution of competing linear representations. Anything it cannot reproduce exactly is refused with `from_astropy: <property> is unsupported (<detail>)` rather than approximated; see the [refusal table](docs/user_manual.md#refusals) and the [divergence table](docs/user_manual.md#where-it-differs-from-load_wcs_params_from_header). The conversion preserves the pixel-to-coordinate mapping but not the frame identity or observation metadata, and a cube needs an explicit `wcs.celestial`.

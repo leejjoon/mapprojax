@@ -559,3 +559,11 @@ These are public-install smoke checks, not new full-suite counts.
 ### Boundary
 
 No upload, yank or delete, GitHub Release, tag change, workflow rerun, settings change or downstream re-pin was performed. This append adds no artifact-selection fence and no candidate request.
+
+## 2026-11-14 — post-0.4.0 development
+
+mapprojax 0.4.0 is published and verified (section above). The next commit changes tracked release inputs: the development version `0.4.1.dev0` in `pyproject.toml` and `uv.lock`, the CHANGELOG, and the roadmap. The canonical input digest therefore no longer equals the `d03fbf52…` recorded for artifact 14042017965, and reuse mode would fail. The marker below switches CI packaging to produce mode. While this request is pending, each applicable CI run builds and validates fresh development distributions. Only `rocm-extra` push runs emit the provenance record that a future release can use.
+
+These artifacts are development builds, not the published 0.4.0 distributions, and must not be published. Tag `v0.4.0` stays fixed on `f1aaa67fefec6c0557f01f21bbc2975bb9f67264`, and PyPI rejects re-uploads of the existing 0.4.0 file names. Before producing the next publication candidate, set its intended version. After its producer CI succeeds and the required local gate has run on those exact bytes, append its complete artifact record after this marker. All records above remain unchanged.
+
+<!-- stage5-new-candidate -->

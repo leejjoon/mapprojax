@@ -4,7 +4,7 @@ Nov 1, 2026 · @이재준 · revised after a two-reviewer committee review (Clau
 
 ## Where it stands
 
-*Nov 1 snapshot. v0.3.0 shipped on Nov 9 2026; see "Stage 5 closure — Nov 9 2026" at the end. Next: "Milestone v0.4.0: `from_astropy`", planned Nov 12 2026.*
+*Nov 1 snapshot. v0.3.0 shipped on Nov 9 2026; see "Stage 5 closure — Nov 9 2026" at the end. v0.4.0 (`from_astropy`) shipped on Nov 13 2026; see "v0.4.0 closure — Nov 14 2026" at the end. Next: stages 5–6 of that milestone (reprojax 0.3.0).*
 
 mapprojax v0.2.0 is a ~1,200-line WCS core: two projections (TAN, SIN), SIP distortion, NumPy and JAX classes built from shared mixins, PyTree registration, the fp64-free `Reprojector`, and the offset-form `unproj_offset`/`proj_offset` APIs. 89 tests pass. It has no README, no CI, no release, and 0 stars.
 
@@ -493,7 +493,7 @@ Revised Nov 6 2026 against the repository at the end of Stage 4 (mapprojax `26b6
 
 | Item | Why | Notes |
 | --- | --- | --- |
-| `from_astropy(wcs)` | Lets users and reprojax pass astropy WCS objects directly | Planned for v0.4.0; see "Milestone v0.4.0: `from_astropy`" below. `to_header` later |
+| `from_astropy(wcs)` | Lets users and reprojax pass astropy WCS objects directly | Shipped in v0.4.0 (Nov 13 2026); see "Milestone v0.4.0: `from_astropy`" below. `to_header` later |
 | TPV | Standard in SCAMP/SWarp output (DES, DECaLS, Pan-STARRS) | A distortion step like SIP, so no new projection class; shares the Newton inverse from Stage 2. Watch the radial terms' non-differentiable `r` at the origin |
 | Astrometric-fit example | The demo for the gradient story | Fit CD + SIP to Gaia matches; compare with `astropy.wcs.utils.fit_wcs_from_points` |
 | ZEA, STG, ARC | Zenithal family, cheap once the restructure is done | Add when a dataset needs them |
@@ -597,7 +597,7 @@ One new test module, plus the SIP-fix test in `tests/test_wcs_utils.py`. Compari
 | 1 | Version `0.3.1.dev0` → `0.4.0.dev0`. SIP fix in `parse_sip_matrix` with its test (own commit). | Off-triangle test agrees with astropy; full suite unchanged otherwise |
 | 2 | `src/mapprojax/astropy.py`, lazy export, `[astropy]` extra (and the `test` extra's floor aligned to `astropy>=7.2.0`), user-manual section | Every corpus fixture converts; every refusal has a test asserting its message |
 | 3 | The validation matrix above | Agreement within existing budgets; minimum and latest CPU stacks and local ROCm pass with no loosened caps |
-| 4 | CHANGELOG; release mapprojax 0.4.0 through the existing produce-mode pipeline and gates | 0.4.0 on PyPI with provenance; fresh install verified |
+| 4 | CHANGELOG; release mapprojax 0.4.0 through the existing produce-mode pipeline and gates | 0.4.0 on PyPI with provenance; fresh install verified. *Done Nov 13–14 2026; stages 1–3 done with it.* |
 | 5 | reprojax migration, frame-equivalence fix, cache-key change | The SPHEREx numerical and validity contracts still pass; unsupported inputs cannot bypass validation |
 | 6 | Release reprojax 0.3.0 through its existing gates | First upload through reprojax's trusted publisher succeeds, with attestations |
 
@@ -1105,3 +1105,23 @@ Fable and Astra reviewed the draft Stage 5 revision against the repository. Both
 - reprojax: it already declares `mapprojax>=0.3.0,<0.4` with no source override, so the re-pin is a check that it resolves from PyPI. Its own PyPI release (0.2.0) is separate work with its own setup and gates.
   - *Closed Nov 11 2026.* reprojax 0.2.0 is on PyPI (wheel `e0fb9a88aa584361813c91bfcb833f603c0a4a8279a19dc04b0304327c54fc6c`, sdist `531e0bce0952fa05b1e68d249ec88225e92b29969ded45c8183ddc966c0fa719`) and requires `mapprojax>=0.3.0,<0.4`. Its post-publication check installed `reprojax==0.2.0` into a fresh environment from the public index, which resolved `mapprojax==0.3.0` from PyPI with no source override. No dependency-range edit was needed. Evidence: `docs/release/0.2.0.md` in reprojax (commit `db67008`, corrections through `19cbcf8`).
 - Optional: a GitHub Release for `v0.3.0`; update pinned actions to versions that declare Node.js 24; existing jobs passed under the runner's forced Node.js 24 migration.
+
+### v0.4.0 closure — Nov 14 2026
+
+**Released.** mapprojax 0.4.0 is on PyPI. Tag `v0.4.0` is on `f1aaa67`, the closure-record commit, and `main` is at the same commit. Publish run 43445988644 uploaded the original wheel and sdist from CI artifact 14042017965 (producer `88c0d17`, run 43434219124, input digest `d03fbf52…`) after operator approval of the `pypi` environment.
+
+**How it got there.** Stages 1–4 ran as planned: the SIP triangle fix, `from_astropy` with its lazy export and the `[astropy]` extra, the validation matrix, and the release. The plan was revised after a committee review (`committee-review.md`). The implementation then went through two committee reviews, and three candidates were superseded before the final one:
+- A duplicated CHANGELOG heading.
+- Two tests silently deleted in `3b72181` and restored in `94e144d`.
+- The fixes from the committee's implementation and re-review.
+
+The final gates passed 1039 tests on CPU and on ROCm. The accuracy baselines and report are unchanged.
+
+**Verified after publication.**
+- The public wheel and sdist match the approved bytes, and both provenance endpoints return 200.
+- Fresh public-index installs of `mapprojax[astropy]==0.4.0` from each file ran the README and `from_astropy` manual examples, with `import mapprojax` astropy-free. Evidence: the "0.4.0 post-publication verification evidence" section of `benchmarks/results/stage5-closure.md`.
+- The tree has moved to `0.4.1.dev0`, with a new-candidate marker.
+
+**Remaining.**
+- Stages 5–6: the reprojax migration to `from_astropy`, the frame-equivalence fix and the cache key, then the reprojax 0.3.0 release. reprojax 0.2.0 keeps working with mapprojax 0.3.0 through its `<0.4` pin.
+- Open from review: whether the header loader should follow astropy for SIP order 0/1 and for `-SIP` without coefficients. The manual currently documents both differences.
