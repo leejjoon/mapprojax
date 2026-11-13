@@ -251,3 +251,56 @@ mapprojax 0.3.0 is published and verified (sections above). The first post-relea
 These artifacts are development builds, not the published 0.3.0 distributions, and must not be published as 0.3.0. Tag `v0.3.0` is immutable on `a714f1cc6dc11ce2ebf0da5f0a99fe5b1fc8722f` under the `v*` tag ruleset, PyPI rejects re-uploads of the existing 0.3.0 file names, and `release_artifact.py` rejects the pending state for any tag. Before producing the next publication candidate, set its intended version. After successful producer CI and the required local gate on those exact bytes, append its complete artifact record after this marker. All records above remain historical and unchanged.
 
 <!-- stage5-new-candidate -->
+
+## 0.4.0 candidate
+
+Version `0.4.0` was set in `pyproject.toml` and the `from_astropy` work landed on `rocm-extra` before this candidate was requested, so `choose` reports `mode = produce` with `reason = new-candidate-request` and an empty prior closure record for this version. `input_sha256` was computed from the final tracked commit `f2029c46d79265e01cef984da7620536d4b3c8bc` (the CHANGELOG commit) and matches `inputs.json` inside the producer artifact below, so nothing tracked changed between selection and production except this closure file, which the digest excludes.
+
+Producer CI `43357904249` (attempt 1, branch `rocm-extra`, push) built and validated these distributions; all three jobs passed. The local gate ran on the same original bytes with `--reprojax-archive` omitted (D11):
+
+| Check | Constraints | Result |
+|---|---|---|
+| `check_installed_artifacts.py verify` | — | exit 0 |
+| `check --backend cpu` | `ci/reference-cpu.txt` | exit 0, 1031 passed (direct wheel and sdist-derived wheel) |
+| `check --backend rocm` | `ci/reference-rocm.txt` | exit 0, 1031 passed, device `AMD Radeon Graphics` |
+
+| Artifact | Bytes | SHA-256 |
+|---|---:|---|
+| `mapprojax-0.4.0-py3-none-any.whl` | 37328 | `0747ab28af8a444746c63017512fa14fcdba0ba98c9cd926eab118646323fef6` |
+| `mapprojax-0.4.0.tar.gz` | 111649 | `f9477a6b51dc54c8689e4003602049d50a89d72dfb40ba571e89f17710820681` |
+
+The complete operative producer record follows. Its timestamps are retained exactly as returned by the API.
+
+```stage5-artifact-json
+{
+  "schema_version": 1,
+  "repository": "leejjoon/mapprojax",
+  "version": "0.4.0",
+  "producer_sha": "f2029c46d79265e01cef984da7620536d4b3c8bc",
+  "input_sha256": "642b2d5c20e328b4e0de717dca74fab7fd8509327a4215a8267b9ea81766bb83",
+  "run_id": 43357904249,
+  "run_attempt": 1,
+  "artifact_id": 14006509905,
+  "artifact_name": "release-original",
+  "artifact_digest": "sha256:be131e12ec43d92976931a7b388c185e9217b57b5879a34fb1559bed031cdef4",
+  "created_at": "2026-11-13T03:25:33Z",
+  "expires_at": "2027-02-11T03:16:58Z",
+  "expired": false,
+  "deleted": false,
+  "manifest": {
+    "schema_version": 1,
+    "project": "mapprojax",
+    "version": "0.4.0",
+    "artifacts": {
+      "mapprojax-0.4.0-py3-none-any.whl": {
+        "size": 37328,
+        "sha256": "0747ab28af8a444746c63017512fa14fcdba0ba98c9cd926eab118646323fef6"
+      },
+      "mapprojax-0.4.0.tar.gz": {
+        "size": 111649,
+        "sha256": "f9477a6b51dc54c8689e4003602049d50a89d72dfb40ba571e89f17710820681"
+      }
+    }
+  }
+}
+```
