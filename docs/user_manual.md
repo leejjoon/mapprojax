@@ -4,7 +4,7 @@
 
 ## Conventions and installation
 
-Install with `pip install mapprojax`, or with `pip install .` from a source checkout. Supported Python/JAX/NumPy minima are declared in [pyproject.toml](../pyproject.toml). The Linux `rocm` extra requires Python 3.12 or newer and matching JAX/jaxlib/ROCm plugin versions; use `uv sync --extra test --extra rocm` with the supported ROCm runtime, not a generic GPU installation. Record interpreter, driver/runtime and actual device separately from dependency constraints.
+Install with `pip install mapprojax`, or with `pip install .` from a source checkout. `from_astropy` needs astropy: use `pip install 'mapprojax[astropy]'`. The kernel itself does not import astropy. Supported Python/JAX/NumPy minima are declared in [pyproject.toml](../pyproject.toml). The Linux `rocm` extra requires Python 3.12 or newer and matching JAX/jaxlib/ROCm plugin versions; use `uv sync --extra test --extra rocm` with the supported ROCm runtime, not a generic GPU installation. Record interpreter, driver/runtime and actual device separately from dependency constraints.
 
 A WCS uses 0-based pixel coordinates, stores `crpix` in pixels and `crval` in degrees, and takes/returns sky coordinates in radians in `(longitude, latitude)` order. `proj(lon, lat)` maps sky to pixels; `unproj(x, y)` maps pixels to sky.
 
@@ -70,6 +70,79 @@ assert jnp.allclose(y_back, y, atol=1e-3)
 ```
 
 SIP inverse refinement is controlled by the `Sip.inverse_steps` value. Use matching SIP shapes and `inverse_steps` when batching WCS objects.
+
+## Loading from astropy
+
+`mapprojax.from_astropy` builds a `Tan` or `Sin` directly from an `astropy.wcs.WCS`. Prefer it over `load_wcs_params_from_header`: astropy normalises CROTA, units and alternate-version cards that the raw header loader refuses.
+
+```python
+import jax
+import jax.numpy as jnp
+from astropy.io import fits
+from astropy.wcs import WCS
+from mapprojax import from_astropy
+
+jax.config.update("jax_enable_x64", True)
+
+header = fits.Header()
+header["NAXIS"], header["NAXIS1"], header["NAXIS2"] = 2, 1024, 1024
+header["CTYPE1"], header["CTYPE2"] = "RA---TAN-SIP", "DEC--TAN-SIP"
+header["CRPIX1"], header["CRPIX2"] = 512.5, 512.5
+header["CRVAL1"], header["CRVAL2"] = 150.0, 30.0
+header["CD1_1"], header["CD2_2"] = -1.0e-4, 1.0e-4
+header["A_ORDER"], header["B_ORDER"] = 2, 2
+header["A_0_2"] = 2.0e-5
+header["B_2_0"] = 2.0e-5
+
+wcs = WCS(header)
+projection = from_astropy(wcs, precision="f64")
+lon, lat = projection.unproj(jnp.array([0.0, 1023.0]), jnp.array([0.0, 1023.0]))
+x, y = projection.proj(lon, lat)
+print(type(projection).__name__, float(x[0]), float(y[0]))
+```
+
+`precision` is required and behaves exactly as it does on `Tan`/`Sin`: it never enables JAX x64. In `"f32"` the absolute `proj`/`unproj` are unavailable (they raise `TypeError`), so use `unproj_offset`/`proj_offset` or a `Reprojector`. `inverse_steps` forwards the Newton iteration count for the SIP inverse.
+
+For a cube, pass `wcs.celestial` yourself. Automatic axis extraction would hide a caller's cube bug and would silently change which axes the SIP and pixel-scale matrices cover, so a `naxis != 2` WCS is refused.
+
+The returned kernel is in the input WCS's own celestial frame. RADESYS, EQUINOX, MJD and observation keywords are **ignored, not applied and not kept**: the conversion preserves the numerical pixel-to-coordinate mapping but not the frame identity or the observation metadata. Keep the original astropy WCS when composing different frames. In the same spirit, the result describes the materialised `WCS`, not the original FITS file: cards astropy already discarded can be neither recovered nor refused.
+
+### Refusals
+
+Every refusal is a `ValueError` whose message reads `from_astropy: <property> is unsupported (<detail>)`, except a missing astropy (`ImportError`) and a non-`WCS` argument (`TypeError`).
+
+| `<property>` | Refused when |
+| --- | --- |
+| `type` | the argument is not an `astropy.wcs.WCS` (`TypeError`) |
+| `axis order` | `naxis != 2` (message names `wcs.celestial`), or the longitude/latitude axes are swapped |
+| `non-celestial axes` | the two axes are not a celestial pair |
+| `CPDIS`, `CQDIS`, `DP`, `DQ` | a lookup-table distortion is present (also reported as `cpdis1`/`cpdis2`) |
+| `det2im1`, `det2im2` | a detector-to-image correction is present |
+| `PS` | SIP `PS` parameters are present |
+| `TPV`, `TPD`, `-TAB` | the CTYPE names a convention this kernel does not reproduce, including one hidden behind an apparent `TAN` |
+| `-SIP without SIP` | the CTYPE names SIP but the WCS carries no coefficients |
+| `projection` | the projection is not TAN or SIN |
+| `PV` | a `PV` parameter other than SIN's no-op `PV2_1`/`PV2_2` is present |
+| `LONPOLE` | `LONPOLE` is not the default 180-degree orientation (`+90` with no card resolves to `0.0`) |
+| `cunit1`, `cunit2` | the axis unit is not angular |
+| `sip.crpix` | the SIP reference pixel disagrees with `CRPIX1`/`CRPIX2` |
+| `sip triangle` | a nonzero SIP coefficient lies outside `i + j <= order` |
+| `non-finite <name>` | `crpix`, `crval`, the scale matrix or a SIP array is not finite |
+| `init`, `header` | astropy itself rejects the WCS while initialising or serialising it |
+
+### Where it differs from `load_wcs_params_from_header`
+
+The two entry points disagree in both directions, deliberately. Astropy semantics are authoritative for `from_astropy`.
+
+| Case | `from_astropy` | `load_wcs_params_from_header` |
+| --- | --- | --- |
+| CROTA rotation | accepted (normalised) | refused |
+| `rad` / `arcsec` units | converted to degrees | refused |
+| mixed `CD` with `PC`/`CDELT` | follows astropy: `PC * CDELT` wins | reads the `CD` cards |
+| `-SIP` CTYPE with no coefficients | refused | accepted, `sip=None` |
+| SIP order 0 or 1 | reads astropy's matrix | reads the `i + j <= order` triangle |
+
+Numerical agreement between the two is therefore claimed only for headers with a single linear representation and card-stable values, which is what the test suite asserts.
 
 ## Batching with `jax.vmap`
 
