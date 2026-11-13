@@ -358,3 +358,9 @@ This record supersedes the `f2029c4` candidate above. The complete operative pro
   }
 }
 ```
+
+### Superseded request
+
+A later commit `94e144d` restored two tests that `3b72181` had deleted as unintended collateral (the four-fixture round-trip test and the JSON loader-equivalence test). `tests/test_astropy_from.py` is a release input, so the candidate produced from `2f3fd919` no longer matches HEAD. A fresh candidate is requested below; both records above stay as tested history.
+
+<!-- stage5-new-candidate -->
