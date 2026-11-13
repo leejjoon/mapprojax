@@ -414,3 +414,9 @@ This record supersedes both earlier 0.4.0 candidates. The complete operative pro
   }
 }
 ```
+
+### Superseded request
+
+The committee implementation review found blocking defects that change files the release is built from: the x64-off subprocess test did not pin the CPU backend, several acceptance tests were looser than the agreed contract, and the manual's SIP order 0/1 row contradicted astropy. `cef12a9` applies them, so the candidate from `89f68562` no longer matches HEAD. A fresh candidate is requested below; all earlier records stay as tested history.
+
+<!-- stage5-new-candidate -->
