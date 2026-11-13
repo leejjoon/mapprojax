@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mapprojax"
-version = "0.3.1.dev0"
+version = "0.4.0"
 description = "Differentiable JAX coordinate kernel for FITS TAN/SIN WCS with SIP"
 readme = "README.md"
 license = "MIT"
@@ -25,7 +25,10 @@ Repository = "https://github.com/leejjoon/mapprojax"
 Issues = "https://github.com/leejjoon/mapprojax/issues"
 
 [project.optional-dependencies]
-test = ["pytest", "astropy"]
+# `from_astropy` needs astropy; the kernel itself does not. Pinned to the
+# oldest astropy the conversion matrix is validated against.
+astropy = ["astropy>=7.2.0"]
+test = ["pytest", "astropy>=7.2.0"]
 # AMD GPU (ROCm 7) backend; plugin versions must match jaxlib exactly
 rocm = [
     "jax==0.11.1; python_version >= '3.12'",
