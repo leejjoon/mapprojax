@@ -470,3 +470,9 @@ This record supersedes all earlier 0.4.0 candidates. The complete operative prod
   }
 }
 ```
+
+### Superseded request
+
+The re-review left three non-blocking items; `973012c` applies them (a loose `rtol` in the off-triangle inverse, a false convergence comment, and a wrong SIP matrix size in the manual). Two of the three live in `tests/` and the manual, which are release inputs, so the candidate from `8dda086d` no longer matches HEAD. A fresh candidate is requested below; all earlier records stay as tested history.
+
+<!-- stage5-new-candidate -->
