@@ -310,3 +310,51 @@ The complete operative producer record follows. Its timestamps are retained exac
 The candidate above was produced from `f2029c4`, but a following commit `b1aad1f` fixed a duplicated `## 0.3.0` heading in `CHANGELOG.md`, which is a release input. The recorded `input_sha256` therefore no longer matches HEAD, so those bytes cannot be published as 0.4.0. A fresh candidate is requested below; the record above stays as tested history and is not rewritten.
 
 <!-- stage5-new-candidate -->
+
+Producer CI `43361647063` (attempt 1, branch `rocm-extra`, push) rebuilt from `2f3fd919` after the CHANGELOG fix; all three jobs passed and its `inputs.json` equals the new `input_sha256`. The local gate ran on these original bytes with `--reprojax-archive` omitted (D11):
+
+| Check | Constraints | Result |
+|---|---|---|
+| `check --backend cpu` | `ci/reference-cpu.txt` | exit 0, 1031 passed (direct wheel and sdist-derived wheel) |
+| `check --backend rocm` | `ci/reference-rocm.txt` | exit 0, 1031 passed, device `AMD Radeon Graphics` |
+
+| Artifact | Bytes | SHA-256 |
+|---|---:|---|
+| `mapprojax-0.4.0-py3-none-any.whl` | 37328 | `184f170920c94213ede340e5692fd618f0c88c320848b137bbf3a70756c77375` |
+| `mapprojax-0.4.0.tar.gz` | 111626 | `ea8d261826341c50112e4e4f540e4fcffedcaae59e6d43edcd73f32676942d49` |
+
+This record supersedes the `f2029c4` candidate above. The complete operative producer record follows.
+
+```stage5-artifact-json
+{
+  "schema_version": 1,
+  "repository": "leejjoon/mapprojax",
+  "version": "0.4.0",
+  "producer_sha": "2f3fd919af7ec64511f8ec569b10200a57872a41",
+  "input_sha256": "2a3e9eb89fbecff4e1c0eb0dfdb20b0ca1cd7e424606af5ed583f843695798fa",
+  "run_id": 43361647063,
+  "run_attempt": 1,
+  "artifact_id": 14007609778,
+  "artifact_name": "release-original",
+  "artifact_digest": "sha256:b48e5e6da6ae87b2a56e4ba7635fa52987b20b55aff894e08fc873a449b241d5",
+  "created_at": "2026-11-13T03:57:57Z",
+  "expires_at": "2027-02-11T03:50:57Z",
+  "expired": false,
+  "deleted": false,
+  "manifest": {
+    "schema_version": 1,
+    "project": "mapprojax",
+    "version": "0.4.0",
+    "artifacts": {
+      "mapprojax-0.4.0-py3-none-any.whl": {
+        "size": 37328,
+        "sha256": "184f170920c94213ede340e5692fd618f0c88c320848b137bbf3a70756c77375"
+      },
+      "mapprojax-0.4.0.tar.gz": {
+        "size": 111626,
+        "sha256": "ea8d261826341c50112e4e4f540e4fcffedcaae59e6d43edcd73f32676942d49"
+      }
+    }
+  }
+}
+```
