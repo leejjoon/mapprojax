@@ -968,3 +968,59 @@ def test_f32_reprojector_pair_within_pair_caps():
     np.testing.assert_allclose(np.asarray(out_y), pix[:, 1], atol=1e-3)
     assert np.isfinite(ar.pair_cap("forward", "f32"))
     assert np.isfinite(ar.pair_cap("reverse", "f32"))
+
+
+@pytest.mark.parametrize("name", FIXTURES)
+def test_round_trip_fidelity_on_every_fixture(name):
+    """to_dict/from_dict and jit must hold for every D12 fixture, not one."""
+    h = ar.load_header(name)
+    kernel = from_astropy(WCS(h), precision="f64")
+    again = Tan.from_dict(kernel.to_dict()) if isinstance(kernel, Tan) else Sin.from_dict(
+        kernel.to_dict()
+    )
+    for field in ("crpix", "crval", "cd"):
+        np.testing.assert_array_equal(np.asarray(getattr(again, field)),
+                                      np.asarray(getattr(kernel, field)))
+    if kernel.sip is not None:
+        for field in ("a", "b", "ap", "bp"):
+            want = getattr(kernel.sip, field, None)
+            got = getattr(again.sip, field, None)
+            if want is None:
+                assert got is None
+            else:
+                np.testing.assert_array_equal(np.asarray(got), np.asarray(want))
+
+    pix_x = np.array([10.0, 40.0])
+    pix_y = np.array([20.0, 60.0])
+
+    @jax.jit
+    def round_trip(k):
+        lon, lat = k.unproj(pix_x, pix_y)
+        return k.proj(lon, lat)
+
+    out_x, out_y = round_trip(kernel)
+    np.testing.assert_allclose(np.asarray(out_x), pix_x, atol=1e-6)
+    np.testing.assert_allclose(np.asarray(out_y), pix_y, atol=1e-6)
+
+
+def test_wcs_test_data_loader_equivalence():
+    """The JSON fixture joins the D12 leaf-for-leaf set."""
+    raw = json.loads((DATA_DIR / "wcs_test_data.json").read_text())["header_keywords"]
+    h = fits.Header()
+    for key, value in raw.items():
+        h[key] = value
+    h["NAXIS"], h["NAXIS1"], h["NAXIS2"] = 2, 100, 100
+
+    kernel = from_astropy(WCS(h), precision="f64")
+    crpix, cd, crval, sip = load_wcs_params_from_header(h)
+    np.testing.assert_array_equal(np.asarray(kernel.crpix), np.asarray(crpix))
+    np.testing.assert_allclose(np.asarray(kernel.cd), np.asarray(cd), rtol=0, atol=0)
+    np.testing.assert_array_equal(np.asarray(kernel.crval), np.asarray(crval))
+    if sip is not None:
+        for field in ("a", "b", "ap", "bp"):
+            want = getattr(sip, field, None)
+            got = getattr(kernel.sip, field, None)
+            if want is None:
+                assert got is None
+            else:
+                np.testing.assert_array_equal(np.asarray(got), np.asarray(want))
