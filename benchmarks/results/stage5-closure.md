@@ -524,3 +524,38 @@ This record supersedes all earlier 0.4.0 candidates. The complete operative prod
   }
 }
 ```
+
+## 2026-11-14 — 0.4.0 post-publication verification evidence
+
+This evidence-only append follows publication. All records above stay unchanged. The tag **`v0.4.0`** resolves to **`f1aaa67fefec6c0557f01f21bbc2975bb9f67264`**, the closure commit for producer `88c0d17d`, run `43434219124`, artifact `14042017965`. `origin/main` is at the same commit. [Publish run 43445988644](https://github.com/leejjoon/mapprojax/actions/runs/43445988644) on `v0.4.0` (head `f1aaa67f`) reports success. Its approval record shows **`leejjoon`**, state **`approved`**, environment **`pypi`** (ID **26561854210**). This verification did not approve a deployment or upload anything.
+
+### Public release identity
+
+The project and version JSON were read from PyPI. Releases are **0.3.0** and **0.4.0**, and neither 0.4.0 file is yanked. Both files were downloaded from their public `files.pythonhosted.org` URLs. Their byte lengths and SHA-256 values equal the approved original files recorded above for artifact `14042017965`:
+
+| Public filename | Bytes | SHA-256 | PyPI upload time (UTC) |
+|---|---:|---|---|
+| `mapprojax-0.4.0-py3-none-any.whl` | 37640 | `ee4d7ad73f099e3069d539bb8fb94873f9a8e42a94a5999568ba268819714960` | `2026-11-13T15:08:40.095105Z` |
+| `mapprojax-0.4.0.tar.gz` | 114764 | `eb07161b065734c9245bd68f399bf95a166e2e618409b4510207e16e6c6c6218` | `2026-11-13T15:08:41.456297Z` |
+
+PyPI's `requires_dist` lists the `astropy` extra as `astropy>=7.2.0; extra == "astropy"`. Both integrity endpoints, `/integrity/mapprojax/0.4.0/<filename>/provenance`, returned **HTTP 200**. That records that the provenance records exist; it is not a separate cryptographic attestation-verification claim.
+
+### Independent public-index installations
+
+Two fresh standard-library venvs were created with **Python 3.12.13** and system site-packages disabled. Each installed `mapprojax[astropy]==0.4.0` with `PIP_CONFIG_FILE=/dev/null`, `PYTHONPATH`/`PYTHONHOME` unset, no cache, and `https://pypi.org/simple` as the only index:
+
+| Environment | Selection | Selected file (pip report hash) | Result |
+|---|---|---|---|
+| wheel | `--only-binary mapprojax` | `mapprojax-0.4.0-py3-none-any.whl` (`ee4d7ad7…`) | Passed |
+| sdist | `--no-binary mapprojax` | `mapprojax-0.4.0.tar.gz` (`eb07161b…`) | Passed |
+
+All checks ran from a directory outside the repository with `python -I` and `JAX_PLATFORMS=cpu`. In both venvs:
+- `importlib.metadata` reported **0.4.0**, and `mapprojax.__file__` resolved to that venv's own `site-packages`.
+- Under `-W error`, `import mapprojax` left `astropy` out of `sys.modules`, and `from_astropy` was listed in `dir(mapprojax)`.
+- The README Python fence and the user manual's "Loading from astropy" fence, both taken from the tag `v0.4.0`, ran unchanged to completion.
+
+These are public-install smoke checks, not new full-suite counts.
+
+### Boundary
+
+No upload, yank or delete, GitHub Release, tag change, workflow rerun, settings change or downstream re-pin was performed. This append adds no artifact-selection fence and no candidate request.
