@@ -273,6 +273,15 @@ def test_off_triangle_sip_term_is_ignored_like_astropy():
     assert sip.a[0, 2] == OFF_TRIANGLE["A_0_2"]
     assert sip.b[2, 0] == OFF_TRIANGLE["B_2_0"]
 
+    # The inverse direction too: a converged all_world2pix must agree with the
+    # loader's forward projection on the same pixels (plan L566).
+    crpix, cd, crval, sip = load_wcs_params_from_header(h)
+    w = Tan(crpix, cd, crval, sip=sip)
+    lon, lat = w.unproj(PIX[:, 0], PIX[:, 1])
+    back_x, back_y = w.proj(lon, lat)
+    np.testing.assert_allclose(back_x, PIX[:, 0], atol=1.0e-6)
+    np.testing.assert_allclose(back_y, PIX[:, 1], atol=1.0e-6)
+
 
 def _sip_cards(cards, prefix, order):
     """Unmasked rectangular scan of the raw ``{prefix}_{i}_{j}`` cards."""
