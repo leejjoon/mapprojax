@@ -16,7 +16,7 @@ from astropy.io import fits
 from astropy.wcs import WCS
 
 from mapprojax.wcs import Sin as _PrecisionSin, Tan as _PrecisionTan
-from mapprojax.wcs_utils import load_wcs_params_from_header
+from mapprojax.wcs_utils import load_wcs_params_from_header, parse_sip_matrix
 
 import accuracy_reference as ar
 
@@ -232,3 +232,106 @@ def test_fixture_header_loads_like_astropy(name, sep):
     pix = np.array([[0.0, 0.0], [n1 - 1.0, 0.0], [0.0, n2 - 1.0], [n1 - 1.0, n2 - 1.0],
                     [h["CRPIX1"] - 1.0, h["CRPIX2"] - 1.0], [0.3 * n1, 0.7 * n2]])
     _assert_matches_astropy(h, pix)
+
+
+# --- SIP off-triangle terms (parse_sip_matrix) -----------------------------
+
+# SIP defines only terms with ``i + j <= order``; astropy zeroes and ignores
+# the rest. The loader used to read the whole rectangle, so a header with, for
+# example, ``A_2_2`` at ``A_ORDER = 2`` applied a term astropy does not.
+
+OFF_TRIANGLE = dict(
+    A_ORDER=2,
+    A_0_2=1.0e-4,
+    A_2_2=5.0e-4,  # i + j = 4 > order 2: off-triangle
+    B_ORDER=2,
+    B_2_0=1.0e-4,
+    B_1_2=3.0e-4,  # i + j = 3 > order 2: off-triangle
+)
+
+
+def _off_triangle_header():
+    h = _header(CTYPE1="RA---TAN-SIP", CTYPE2="DEC--TAN-SIP", **OFF_TRIANGLE)
+    h["CD1_1"], h["CD2_2"] = -2.0e-3, 2.1e-3
+    return h
+
+
+def test_off_triangle_sip_term_is_ignored_like_astropy():
+    h = _off_triangle_header()
+    _assert_matches_astropy(h)
+
+    # The parsed matrix must equal astropy's own, element for element.
+    _, _, _, sip = load_wcs_params_from_header(h)
+    ref = WCS(h).sip
+    assert ref is not None
+    np.testing.assert_array_equal(sip.a, ref.a)
+    np.testing.assert_array_equal(sip.b, ref.b)
+
+    # And the off-triangle cells specifically are zero, not the header values.
+    assert sip.a[2, 2] == 0.0
+    assert sip.b[1, 2] == 0.0
+    assert sip.a[0, 2] == OFF_TRIANGLE["A_0_2"]
+    assert sip.b[2, 0] == OFF_TRIANGLE["B_2_0"]
+
+
+def _sip_cards(cards, prefix, order):
+    """Unmasked rectangular scan of the raw ``{prefix}_{i}_{j}`` cards."""
+    matrix = np.zeros((order + 1, order + 1))
+    for i in range(order + 1):
+        for j in range(order + 1):
+            key = f"{prefix}_{i}_{j}"
+            if key in cards:
+                matrix[i, j] = cards[key]
+    return matrix
+
+
+def _fixture_cards():
+    """Raw ``(label, card-mapping)`` pairs for every SIP-bearing fixture."""
+    h = ar.load_header("spherex_l2.hdr")
+    yield "spherex_l2.hdr", {k: h[k] for k in h if k.startswith(("A_", "B_", "AP_", "BP_"))}
+
+    import json
+
+    raw = json.loads((DATA_DIR / "wcs_test_data.json").read_text())["header_keywords"]
+    yield "wcs_test_data.json", {
+        k: v for k, v in raw.items() if k.startswith(("A_", "B_", "AP_", "BP_"))
+    }
+
+
+@pytest.mark.parametrize("label, cards", list(_fixture_cards()))
+def test_triangular_fixtures_are_unchanged(label, cards):
+    # Reads the RAW fixture cards, so it cannot be satisfied by the patched
+    # parser simply agreeing with itself.
+    for prefix in ("A", "B", "AP", "BP"):
+        order_key = f"{prefix}_ORDER"
+        if order_key not in cards:
+            continue
+        order = int(cards[order_key])
+        for key, value in cards.items():
+            if not key.startswith(f"{prefix}_") or key == order_key:
+                continue
+            _, i, j = key.split("_")
+            i, j = int(i), int(j)
+            if i + j > order:
+                assert value == 0.0, (
+                    f"{label}: {key} = {value!r} is off-triangle for {order_key} = {order}"
+                )
+
+        # And the masked parse equals the unmasked scan, i.e. the bound change
+        # is a no-op for these fixtures.
+        np.testing.assert_array_equal(
+            parse_sip_matrix(cards, prefix, order_key), _sip_cards(cards, prefix, order)
+        )
+
+
+def test_off_triangle_header_still_round_trips():
+    h = _off_triangle_header()
+    crpix, cd, crval, sip = load_wcs_params_from_header(h)
+    w = Tan(crpix, cd, crval, sip=sip)
+
+    pix_x = np.array([10.0, 40.0, 60.0, 90.0])
+    pix_y = np.array([90.0, 60.0, 40.0, 10.0])
+    lon, lat = w.unproj(pix_x, pix_y)
+    back_x, back_y = w.proj(lon, lat)
+    np.testing.assert_allclose(back_x, pix_x, atol=1.0e-6)
+    np.testing.assert_allclose(back_y, pix_y, atol=1.0e-6)

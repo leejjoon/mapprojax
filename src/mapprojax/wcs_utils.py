@@ -125,11 +125,14 @@ def parse_sip_matrix(header, prefix, order_key):
     if order_key not in header:
         return None
     
-    order = header[order_key]
+    order = int(header[order_key])
     matrix = np.zeros((order + 1, order + 1))
     
+    # SIP defines only terms with i + j <= order; astropy zeroes (and ignores)
+    # the rest. The matrix stays square so the evaluator's static shape is
+    # unchanged.
     for i in range(order + 1):
-        for j in range(order + 1):
+        for j in range(order + 1 - i):
             key = f"{prefix}_{i}_{j}"
             if key in header:
                 matrix[i, j] = header[key]
