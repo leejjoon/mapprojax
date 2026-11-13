@@ -140,7 +140,7 @@ The two entry points disagree in both directions, deliberately. Astropy semantic
 | `rad` / `arcsec` units | converted to degrees | refused |
 | `CD` with `PC` and/or `CDELT` | follows astropy: `CD` alone wins, but a `PC` card makes `PC * CDELT` win | reads the `CD` cards |
 | `-SIP` CTYPE with no coefficients | refused | accepted, `sip=None` |
-| SIP order 0 or 1 | no SIP: astropy discards it, and a `-SIP` CTYPE is then refused as `-SIP without SIP` | reads a 2x2 polynomial |
+| SIP order 0 or 1 | no SIP: astropy discards it, and a `-SIP` CTYPE is then refused as `-SIP without SIP` | reads the declared order's coefficient matrix (1x1 at order 0, 2x2 at order 1) |
 
 Numerical agreement between the two is therefore claimed only for headers with a single linear representation and card-stable values, which is what the test suite asserts.
 
