@@ -612,6 +612,30 @@ Size: roughly 150–350 lines of library code and 300–500 lines of tests, plus
 - **Cache bypass in reprojax.** Mitigation: the cache key comes only from validated output.
 - **SIP fix behaviour change:** headers with off-triangle terms change results. Mitigation: these headers already disagreed with astropy; the CHANGELOG names the change.
 
+### Stage 5 (reprojax) closure — Nov 14 2026
+
+**Landed.** Four commits in reprojax `main`, based on `2431358`: C1 `5ba175d` (version `0.3.0.dev0`, dependency `mapprojax[astropy]>=0.4.0,<0.5`, both CI constraint files to `mapprojax==0.4.0`); C2 `194558a` (the migration, in one bisectable commit); C3 `f8029a5` (README, `core.py`, CHANGELOG). No mapprojax library code changed — `git diff v0.4.0..HEAD -- src/` was empty at the start of the stage.
+
+**Control run.** C1 is the control: the unchanged suite against mapprojax 0.4.0 is **105 passed, 2 skipped** (~41 s), so 0.4.0's SIP-triangle fix does not move the SPHEREx numbers.
+
+**Final gates on C2.** **127 passed, 2 skipped** in the reprojax `.venv` (Py 3.14 free-threaded, astropy 8.0.2, jax 0.12.0.1, mapprojax 0.4.0, reproject 0.21.0) — the 105 baseline plus 22 new tests. No tolerance was edited: `SKY_TOL_UAS=10.0`, `PIX_TOL=1e-4`, f32 caps `6e-4/5e-4`, `_EXPECTED_OVERLAP={False:4673,True:1568}`, interp `rtol=1e-6, atol=0.01`, adaptive `atol=0.005`. `scripts/check_quickstart.py` still prints `quick start OK: (40, 40), 1120 finite pixels`.
+
+**Byte-identity (V8).** The real SPHEREx pair's transform output on a fixed 5000-point grid (`np.random.default_rng(1)`) is **bit-identical** before and after C2, for both `matrix_precision="f64"` and `"f32"`. Tolerances were not the evidence; the bytes were.
+
+**Falsification.** The 22 new tests were run against the pre-change tree: **17 failed, 5 passed**. The failures include `test_tpv_header_is_refused` (`DID NOT RAISE` — a TPV WCS was served the TAN transform), `test_preserve_units_is_honoured` (assertion, the ~250 px unit error), `test_fk5_j1950_vs_j2000_rotation_is_not_identity`, and the two key tests that do not exist pre-change. The 5 that pass are the deliberate regression pins: `test_icrs_pair_is_exact_identity` and `test_icrs_to_fk5_j2000_already_rotates` among them.
+
+**Corrected magnitudes.** Same-name FK5 `EQUINOX=2000` vs `1950`: **2234.6 px** today (2234.9 / 2233.9 / 2233.5 at three probes) → ~1e-10 px against the astropy oracle, matrix orthonormal to ~2e-16 with det 1.0. ICRS↔FK5(J2000) is **retained** 0.2.0 behaviour (`'icrs' != 'fk5'` took the basis path; `max|M−I| = 1.11e-7`, up to 31.67 mas on the sky) — see the premise correction below. `preserve_units=True`: 8.9291 deg → 0.0025 deg (≈250 px at 1"/px). Ecliptic-as-ICRS is probe-dependent: 8.83 deg at `CRVAL=(10,20)`, 11.66 deg at `(180,30)`; a composed pair gave 42,537 px, now refused.
+
+**Cost.** `from_astropy` median 1.50 ms on the SPHEREx header (order-3 SIP) and 0.42 ms on the template header, so 0.84–3.0 ms per `build_transform` — 0.14–0.50% of the 0.602 s warm real-pair `reproject_interp`. The 200² tile (38.9 ms warm) and a synchronised ROCm median were recorded as informational, not gated; the 5.0 ms budget is CPU-only.
+
+**Premise correction (recorded from the committee review).** The post-consensus intent question asked whether to "compute the ICRS↔FK5(J2000) rotation or keep identity". It rested on a wrong premise: **0.2.0 already computed it**, because the `frame.name` shortcut only fires on equal names and `'icrs' != 'fk5'`. The real defect was same-name FK5 frames at different equinoxes, where the shortcut *did* return the identity. The owner's answer ("compute the rotation") is therefore what already happens; the pair now has a regression test instead of a behaviour change.
+
+**Remaining.**
+- Stage 6: flip `0.3.0.dev0` to `0.3.0`, date the CHANGELOG entry, write `docs/release/0.3.0.md`, tag, and publish through reprojax's existing gates.
+- Not run in this session, because they need the CI matrix rather than this host: the CPU minimum (astropy 7.2.0 / jax 0.10.2) and CPU latest stacks, the ROCm run, and the installed-wheel job. The commands are recorded in the plan's V3–V6 rows; the local gate is V1/V2/V7–V12.
+- Option B (a raw-key → validated-record memo) is revisited only if the warm CPU cache-hit median exceeds 5.0 ms.
+- FK4-NO-E could be allow-listed later; it is a rigid rotation.
+
 ## Cut or deferred
 
 - **Image resampling in mapprojax** (`reproject_interp`, flux-conserving variant, tiling, coadd): belongs in reprojax. When it is built there, note that JAX `map_coordinates` supports only order 0 and 1, and that Jacobian-scaled interpolation is not flux-conserving under downsampling (use adaptive anti-aliasing or drizzle).
