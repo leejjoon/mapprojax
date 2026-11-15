@@ -618,7 +618,7 @@ Size: roughly 150–350 lines of library code and 300–500 lines of tests, plus
 
 **Control run.** C1 is the control: the unchanged suite against mapprojax 0.4.0 is **105 passed, 2 skipped** (~41 s), so 0.4.0's SIP-triangle fix does not move the SPHEREx numbers.
 
-**Final gates on C2.** **127 passed, 2 skipped** in the reprojax `.venv` (Py 3.14 free-threaded, astropy 8.0.2, jax 0.12.0.1, mapprojax 0.4.0, reproject 0.21.0) — the 105 baseline plus 22 new tests. No tolerance was edited: `SKY_TOL_UAS=10.0`, `PIX_TOL=1e-4`, f32 caps `6e-4/5e-4`, `_EXPECTED_OVERLAP={False:4673,True:1568}`, interp `rtol=1e-6, atol=0.01`, adaptive `atol=0.005`. `scripts/check_quickstart.py` still prints `quick start OK: (40, 40), 1120 finite pixels`.
+**Final gates.** **128 passed, 2 skipped** at HEAD (`36dca03`) in the reprojax `.venv` (Py 3.14 free-threaded, astropy 8.0.2, jax 0.12.0.1, mapprojax 0.4.0, reproject 0.21.0) — the 105 baseline plus 23 new tests. C2 alone was 127/2; `36dca03` added `test_validation_runs_exactly_twice_per_call`, the V10(c) call-count check. No tolerance was edited: `SKY_TOL_UAS=10.0`, `PIX_TOL=1e-4`, f32 caps `6e-4/5e-4`, `_EXPECTED_OVERLAP={False:4673,True:1568}`, interp `rtol=1e-6, atol=0.01`, adaptive `atol=0.005`. `scripts/check_quickstart.py` still prints `quick start OK: (40, 40), 1120 finite pixels`.
 
 **Byte-identity (V8).** The real SPHEREx pair's transform output on a fixed 5000-point grid (`np.random.default_rng(1)`) is **bit-identical** before and after C2, for both `matrix_precision="f64"` and `"f32"`. Tolerances were not the evidence; the bytes were.
 
