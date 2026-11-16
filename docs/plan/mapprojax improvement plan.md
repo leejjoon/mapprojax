@@ -599,7 +599,7 @@ One new test module, plus the SIP-fix test in `tests/test_wcs_utils.py`. Compari
 | 3 | The validation matrix above | Agreement within existing budgets; minimum and latest CPU stacks and local ROCm pass with no loosened caps |
 | 4 | CHANGELOG; release mapprojax 0.4.0 through the existing produce-mode pipeline and gates | 0.4.0 on PyPI with provenance; fresh install verified. *Done Nov 13–14 2026; stages 1–3 done with it.* |
 | 5 | reprojax migration, frame-equivalence fix, cache-key change | The SPHEREx numerical and validity contracts still pass; unsupported inputs cannot bypass validation |
-| 6 | Release reprojax 0.3.0 through its existing gates | First upload through reprojax's trusted publisher succeeds, with attestations |
+| 6 | Release reprojax 0.3.0 through its existing gates | First upload through reprojax's trusted publisher succeeds, with attestations. *Done 2026-11-16; the first upload through reprojax's trusted publisher succeeded, with attestations.* |
 
 Size: roughly 150–350 lines of library code and 300–500 lines of tests, plus documentation and the reprojax change; about 3–5 working days plus release gates. No new release machinery.
 
@@ -660,7 +660,7 @@ Re-run during the re-review, the script gives 2.077 / 7.122 / 0.580 s here, 2.06
 **Premise correction (recorded from the committee review).** The post-consensus intent question asked whether to "compute the ICRS↔FK5(J2000) rotation or keep identity". It rested on a wrong premise: **0.2.0 already computed it**, because the `frame.name` shortcut only fires on equal names and `'icrs' != 'fk5'`. The real defect was same-name FK5 frames at different equinoxes, where the shortcut *did* return the identity. The owner's answer ("compute the rotation") is therefore what already happens; the pair now has a regression test instead of a behaviour change.
 
 **Remaining.**
-- Stage 6: flip `0.3.0.dev0` to `0.3.0`, date the CHANGELOG entry, write `docs/release/0.3.0.md`, tag, and publish through reprojax's existing gates.
+- Stage 6: **done 2026-11-16.** `0.3.0.dev0` flipped to `0.3.0`, CHANGELOG dated, `docs/release/0.3.0.md` written, tagged, and published through reprojax's existing gates. See "Stage 6 closure" below.
 - **Gates run on this host** (V1/V2/V7–V12): the reprojax `.venv` suite at 128/2, plus the CPU **minimum** stack (Py 3.11.15, jax 0.10.2, numpy 2.4.6, astropy 7.2.0, mapprojax 0.4.0, reproject 0.21.0) and the CPU **latest** stack (Py 3.14.4, jax 0.12.0.1, numpy 2.5.4, astropy 8.0.2), both at 128/2, and the f32 `-W error::UserWarning` step.
 - **GitHub CI (Nov 15)**: reprojax `main` at `b813823`, run 43715565680 — `cpu (3.11.15, ci/minimum.txt)`, `cpu (3.14.4, ci/latest.txt)` and `packaging` (installed wheel and sdist) all succeeded. mapprojax `rocm-extra` at `bf4eba8`, run 43715569332, also succeeded.
 - **ROCm (V5, Nov 16)**: a fresh clone of the pushed `b813823` in a dedicated venv (Py 3.12.13, jax/jaxlib 0.11.1 + `jax-rocm7-plugin`/`jax-rocm7-pjrt` 0.11.1, numpy 2.5.1, astropy 8.0.2, mapprojax 0.4.0 from PyPI, reproject 0.21.0) on `RocmDevice(id=0)`: **130 passed, 0 skipped**, i.e. the 128 CPU tests plus the two GPU-only tests. The plan's V5 row says 127; that predates the as-built 23 new tests. The suite's GPU benchmark printed 0.0265 s batched against 6.7594 s looped CPU (254.9x), in line with 0.2.0's 0.0262 s. The recorded synchronised medians from `benchmarks/benchmark_stage5_cost.py` (backend `gpu (rocm:0)`, x64 on, 5 warm-ups + 100 reps) are below. They are record-only, with no GPU budget:
@@ -675,6 +675,42 @@ Re-run during the re-review, the script gives 2.077 / 7.122 / 0.580 s here, 2.06
 - **Every Stage 5 gate has passed.** Stage 6 can start.
 - Option B (a raw-key → validated-record memo) is revisited only if the warm CPU cache-hit median exceeds 5.0 ms.
 - FK4-NO-E could be allow-listed later; it is a rigid rotation.
+
+### Stage 6 closure — 2026-11-16
+
+reprojax 0.3.0 is on PyPI, published through its own trusted publisher with
+PEP 740 attestations. Every identity below was read back from the public index
+and the GitHub API, not from the workflow's own report.
+
+| Item | Value |
+| --- | --- |
+| Release commit (S) | `70a8529932753aa803ec96c51267b545a5a483f9` — exactly three files: `pyproject.toml` (`0.3.0.dev0` → `0.3.0`), `README.md` status line, `CHANGELOG.md` refusal claims |
+| Tag | `v0.3.0`, annotated object `7e54f2063d4f50fb0bab4c43422c65a62f433886`, target S |
+| CI run | `43846522136`, attempt 1, `push`/`main`: `cpu (3.11.15)`, `cpu (3.14.4)`, `packaging` all success |
+| Artifact | `release-dist` `14215721515`, 49,666 B, expiry `2027-02-14T10:11:03Z` |
+| `SHA256SUMS` sha256 | `f8477b202e3a5846e8cb479fa329f9184fbbb3fbdda183d7884fdc7068bd60c8` |
+| Published files | `reprojax-0.3.0-py3-none-any.whl` 24,877 B `d6c4e02e…c193eec3`; `reprojax-0.3.0.tar.gz` 25,239 B `59b53729…c45a92a` — both equal to G4 |
+| Publish run | `43849396287` — `validate` success, `pypi` approved, `publish` success; uploaded `2026-11-16T10:36:22Z` / `10:36:24Z` |
+| Provenance | `/integrity/reprojax/0.3.0/<file>/provenance` → 200 both; `pypi-attestations verify` OK both; publisher `GitHub / leejjoon/reprojax / publish.yml / pypi`; certificate `…/publish.yml@refs/tags/v0.3.0` |
+| G4 on the downloaded bytes | CPU min 128/2, CPU latest 128/2, f32 4+4 under `-W error::UserWarning`, ROCm 130/0 on `RocmDevice(id=0)`; `twine check --strict` 2×PASSED; quick start OK from wheel and sdist |
+| G6 | `validate`'s seven printed identities matched G4 exactly (run id, attempt, artifact id, expiry, version `0.3.0`, `SHA256SUMS` sha, both file hashes) |
+| G7 | fresh installs resolve `mapprojax==0.4.0` with no `reproject`; `requires_dist` = `mapprojax[astropy]<0.5,>=0.4.0`; neither file yanked |
+
+Pairings now documented: **mapprojax 0.4.x / reprojax 0.3.0**
+(`mapprojax[astropy]>=0.4.0,<0.5`) and the historical **mapprojax 0.3.x /
+reprojax 0.2.0** (`mapprojax>=0.3.0,<0.4`). The 0.2.0 records are unchanged.
+
+Notes for later readers:
+
+- The `## Related tools` table in `README.md` is a scope/backend comparison
+dated **2026-11-07**; its `mapprojax 0.3.0` row is stale after the 0.4.0
+release but is **not** a compatibility claim, so it was left untouched here.
+  A compatibility table was added separately, immediately above it.
+- `reprojax 0.3.0`'s CHANGELOG narrows its own claims: refusals are grouped by
+  actual source (mapprojax's `from_astropy`, reprojax's own guards, and the
+  headers that are unreachable in both versions because astropy fails first).
+- `v0.3.0` is immutable (ruleset `26935201`: `update` + `deletion`). Any
+  post-tag defect is a 0.3.1 decision, never a moved tag.
 
 ## Cut or deferred
 

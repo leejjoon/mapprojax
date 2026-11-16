@@ -61,6 +61,15 @@ Use the JSON-safe `to_dict()` and matching projection class's `from_dict()` meth
 
 The old NumPy, `*Array`, `*Jax`, and `*Mixed` public class families have no compatibility aliases. Import `Tan` / `Sin` from `mapprojax` and specify a precision mode. Replace Array classes with stacked PyTrees and `jax.vmap`; replace Mixed classes with `precision="mixed"`. See [the user manual](docs/user_manual.md) for offset composition, SIP use, batching, serialization, differentiability limits, and detailed migration notes.
 
+## Compatibility
+
+Each mapprojax release is tested against one reprojax release; the pairing is declared by reprojax's own dependency floor.
+
+| mapprojax | reprojax | reprojax declares |
+| --- | --- | --- |
+| 0.4.x | 0.3.0 | `mapprojax[astropy]>=0.4.0,<0.5` |
+| 0.3.x | 0.2.0 | `mapprojax>=0.3.0,<0.4` |
+
 ## Related tools
 
 Scope/backend comparison, checked against the linked package versions on 2026-11-07; no comparative speed or accuracy benchmark is implied:
