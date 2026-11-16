@@ -79,7 +79,7 @@ Read DEVELOPER.md and `docs/benchmarks/accuracy_results.md` before touching nume
 
 ## Current direction
 
-`docs/plan/mapprojax improvement plan.md` is the agreed roadmap and supersedes the plan sections of DEVELOPER.md and `fo64_report_and_plan.md`. Stages 1–3 are complete. Stage 3, the JAX-first restructure, closed on Nov 4 2026 with the verified pair mapprojax `10f9c75` / reprojax `5fadcf7`. Next are Stage 4 (the kernel's public surface) and Stage 5 (docs and release). Check the plan before starting work.
+`docs/plan/mapprojax improvement plan.md` is the agreed roadmap and supersedes the plan sections of DEVELOPER.md and `fo64_report_and_plan.md`. Stages 1–3 are complete. Stage 3, the JAX-first restructure, closed on Nov 4 2026 with the verified pair mapprojax `10f9c75` / reprojax `5fadcf7`. Stages 4, 5 and 6 have since closed: 0.4.0 is on PyPI, and reprojax 0.3.0 (its first trusted-publisher release, with attestations) closed Stage 6 on Nov 16 2026. See the plan's Stage 6 closure section. Check the plan before starting work.
 
 - **Scope.** Image resampling (interpolation, flux, tiling, coadds) belongs in reprojax, not here.
 - **API changes are breaking.** There are no compatibility aliases. Update the migration table in `docs/user_manual.md` and check reprojax against the change, running its suite with `PYTHONPATH` pointing at this tree.
@@ -87,4 +87,4 @@ Read DEVELOPER.md and `docs/benchmarks/accuracy_results.md` before touching nume
 
 ## Repo hygiene
 
-The repo root has untracked scratch files: FITS images (`1904-66_*.fits`, `reprojected_*.fits`), `t.tgz` (92 MB), `reproj_test/`, ad-hoc scripts (`debug_coords.py`, `ex_proj*.py`, `test_precision.py`), and notes (`docs/FITS WCS Relation Note.md`, `docs/sip/shupeADASS.pdf`). AGENT.md and CLAUDE.md are user-owned and untracked. `benchmarks/results/stage3-g012-qa.json` is a withdrawn QA report, also untracked. None of these are gitignored, so stage files explicitly rather than with `git add .`.
+The repo root has untracked scratch files: FITS images (`1904-66_*.fits`, `reprojected_*.fits`), `t.tgz` (92 MB), `reproj_test/`, ad-hoc scripts (`debug_coords.py`, `ex_proj*.py`, `test_precision.py`), and notes (`docs/FITS WCS Relation Note.md`, `docs/sip/shupeADASS.pdf`). `CLAUDE.md` is user-owned and untracked; `AGENT.md` is now tracked. `benchmarks/results/stage3-g012-qa.json` is a withdrawn QA report, also untracked. None of these are gitignored, so stage files explicitly rather than with `git add .`.
