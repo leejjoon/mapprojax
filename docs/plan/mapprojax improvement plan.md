@@ -662,7 +662,17 @@ Re-run during the re-review, the script gives 2.077 / 7.122 / 0.580 s here, 2.06
 **Remaining.**
 - Stage 6: flip `0.3.0.dev0` to `0.3.0`, date the CHANGELOG entry, write `docs/release/0.3.0.md`, tag, and publish through reprojax's existing gates.
 - **Gates run on this host** (V1/V2/V7–V12): the reprojax `.venv` suite at 128/2, plus the CPU **minimum** stack (Py 3.11.15, jax 0.10.2, numpy 2.4.6, astropy 7.2.0, mapprojax 0.4.0, reproject 0.21.0) and the CPU **latest** stack (Py 3.14.4, jax 0.12.0.1, numpy 2.5.4, astropy 8.0.2), both at 128/2, and the f32 `-W error::UserWarning` step.
-- **Gates still to do**: the installed-wheel job (`packaging` in `ci.yml`), the ROCm run, and GitHub CI for both CPU stacks. Then Stage 6 can start.
+- **GitHub CI (Nov 15)**: reprojax `main` at `b813823`, run 43715565680 — `cpu (3.11.15, ci/minimum.txt)`, `cpu (3.14.4, ci/latest.txt)` and `packaging` (installed wheel and sdist) all succeeded. mapprojax `rocm-extra` at `bf4eba8`, run 43715569332, also succeeded.
+- **ROCm (V5, Nov 16)**: a fresh clone of the pushed `b813823` in a dedicated venv (Py 3.12.13, jax/jaxlib 0.11.1 + `jax-rocm7-plugin`/`jax-rocm7-pjrt` 0.11.1, numpy 2.5.1, astropy 8.0.2, mapprojax 0.4.0 from PyPI, reproject 0.21.0) on `RocmDevice(id=0)`: **130 passed, 0 skipped**, i.e. the 128 CPU tests plus the two GPU-only tests. The plan's V5 row says 127; that predates the as-built 23 new tests. The suite's GPU benchmark printed 0.0265 s batched against 6.7594 s looped CPU (254.9x), in line with 0.2.0's 0.0262 s. The recorded synchronised medians from `benchmarks/benchmark_stage5_cost.py` (backend `gpu (rocm:0)`, x64 on, 5 warm-ups + 100 reps) are below. They are record-only, with no GPU budget:
+
+  | Case (ROCm) | Median (p90) |
+  | --- | ---: |
+  | warm `build_transform` cache hit, pre-built `WCS` objects | 2.804 ms (3.090) |
+  | warm `build_transform` cache hit, fresh `WCS(header)` per call | 7.357 ms (7.530) |
+  | warm real-pair `reproject_interp` (2040²→1201², native `>f4` input) | 0.160 s (0.163) |
+
+  The cache hit costs about 0.7 ms more than on CPU (2.075 ms), which matches the predicted device-to-host copy of the validated leaves in `_leaf_key` (risk P4). It is still under the CPU 5.0 ms figure and about 1.8% of the warm GPU real-pair call.
+- **Every Stage 5 gate has passed.** Stage 6 can start.
 - Option B (a raw-key → validated-record memo) is revisited only if the warm CPU cache-hit median exceeds 5.0 ms.
 - FK4-NO-E could be allow-listed later; it is a rigid rotation.
 
