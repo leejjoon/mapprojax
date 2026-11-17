@@ -679,8 +679,11 @@ Re-run during the re-review, the script gives 2.077 / 7.122 / 0.580 s here, 2.06
 ### Stage 6 closure — 2026-11-16
 
 reprojax 0.3.0 is on PyPI, published through its own trusted publisher with
-PEP 740 attestations. Every identity below was read back from the public index
-and the GitHub API, not from the workflow's own report.
+PEP 740 attestations. The release identities below (tag, commit, CI run,
+artifact, file hashes, publish run, provenance) were read back from the public
+index and the GitHub API, not from the workflow's own report. The G4 row is the
+local gate's own result, and the G6 row is the `validate` job's output compared
+with G4.
 
 | Item | Value |
 | --- | --- |
@@ -695,6 +698,7 @@ and the GitHub API, not from the workflow's own report.
 | G4 on the downloaded bytes | CPU min 128/2, CPU latest 128/2, f32 4+4 under `-W error::UserWarning`, ROCm 130/0 on `RocmDevice(id=0)`; `twine check --strict` 2×PASSED; quick start OK from wheel and sdist |
 | G6 | `validate`'s seven printed identities matched G4 exactly (run id, attempt, artifact id, expiry, version `0.3.0`, `SHA256SUMS` sha, both file hashes) |
 | G7 | fresh installs resolve `mapprojax==0.4.0` with no `reproject`; `requires_dist` = `mapprojax[astropy]<0.5,>=0.4.0`; neither file yanked |
+| mapprojax closure CI | `ac0723d`: run `43851162787` (`rocm-extra`) and `43852675498` (`main`), both success |
 
 Pairings now documented: **mapprojax 0.4.x / reprojax 0.3.0**
 (`mapprojax[astropy]>=0.4.0,<0.5`) and the historical **mapprojax 0.3.x /
@@ -711,6 +715,14 @@ release but is **not** a compatibility claim, so it was left untouched here.
   headers that are unreachable in both versions because astropy fails first).
 - `v0.3.0` is immutable (ruleset `26935201`: `update` + `deletion`). Any
   post-tag defect is a 0.3.1 decision, never a moved tag.
+- **Post-closure review (2026-11-17).** An independent two-member committee
+  accepted Stage 6 with follow-ups. The G4 counts are sums of per-module runs,
+  because one `pytest` process over the whole suite ran out of memory on the
+  gate host. CI run `43846522136` ran the suite in one process on S, with the
+  same counts. reprojax's `docs/release/0.3.0.md` had three passages of its body
+  edited in place, against its append-only rule, and its disclosure of those
+  edits was itself inaccurate. Both points are corrected in an appended
+  erratum there. Owner confirmation of the P1–P5 pauses is still to be recorded.
 
 ## Cut or deferred
 

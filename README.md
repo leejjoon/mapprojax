@@ -67,8 +67,8 @@ Each mapprojax release is tested against one reprojax release; the pairing is de
 
 | mapprojax | reprojax | reprojax declares |
 | --- | --- | --- |
-| 0.4.x | 0.3.0 | `mapprojax[astropy]>=0.4.0,<0.5` |
-| 0.3.x | 0.2.0 | `mapprojax>=0.3.0,<0.4` |
+| 0.4.x | [0.3.0](https://github.com/leejjoon/reprojax/releases/tag/v0.3.0) | `mapprojax[astropy]>=0.4.0,<0.5` |
+| 0.3.x | [0.2.0](https://github.com/leejjoon/reprojax/releases/tag/v0.2.0) | `mapprojax>=0.3.0,<0.4` |
 
 ## Related tools
 
