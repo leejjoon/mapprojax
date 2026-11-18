@@ -214,8 +214,10 @@ def api_fresh_artifact(repo, artifact_id, delays=FRESH_ARTIFACT_DELAYS, sleep=ti
     """Read an artifact uploaded moments ago by this same job.
 
     GitHub's API can return 404 for a just-uploaded artifact for a short while
-    (observed 2026-11-18, about 0.3 s after upload). Retry only that 404, for
-    about 60 s in total; any other error, or a 404 that persists, still fails.
+    (observed 2026-11-18, about 0.3 s after upload), and a later request can
+    still 404 after an earlier one succeeded, so every read of this artifact in
+    the provenance step goes through here. Retry only that 404, for about 60 s
+    in total; any other error, or a 404 that persists, still fails.
     """
     path = f"repos/{repo}/actions/artifacts/{artifact_id}"
     for delay in delays:
@@ -276,10 +278,13 @@ def select(root, tag=None):
     return {"mode": "reuse", **record}
 
 
-def actual_metadata(record):
+def actual_metadata(record, fresh=False):
     repo = repository()
     require(record["repository"] == repo, "repository mismatch")
-    metadata = api(f"repos/{repo}/actions/artifacts/{record['artifact_id']}")
+    if fresh:
+        metadata = api_fresh_artifact(repo, record["artifact_id"])
+    else:
+        metadata = api(f"repos/{repo}/actions/artifacts/{record['artifact_id']}")
     check_expiry(metadata)
     for field in ("created_at", "expires_at", "expired"):
         require(metadata[field] == record[field], "artifact metadata changed: " + field)
@@ -376,7 +381,7 @@ def main(argv=None):
                   "expired": metadata["expired"], "deleted": False,
                   "manifest": json.loads(args.manifest.read_text())}
         parse_record("```stage5-artifact-json\n" + json.dumps(result) + "\n```")
-        actual_metadata(result)
+        actual_metadata(result, fresh=True)
     else:
         result = select(args.root, args.tag)
         if args.command in ("download", "verify"):

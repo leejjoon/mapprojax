@@ -537,3 +537,39 @@ def test_fresh_artifact_lookup_does_not_retry_other_errors(monkeypatch, code):
     with pytest.raises(HTTPError):
         release.api_fresh_artifact("o/r", 7, delays=(1, 2), sleep=lambda d: None)
     assert len(calls) == 1
+
+
+def test_provenance_rereads_fresh_artifact_with_retry(tmp_path, monkeypatch):
+    sha = "a" * 40
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    stamp = lambda t: t.isoformat().replace("+00:00", "Z")
+    metadata = {"id": 7, "name": "release-original", "digest": None,
+                "created_at": stamp(now - timedelta(minutes=1)),
+                "expires_at": stamp(now + timedelta(days=89)),
+                "expired": False, "workflow_run": {"id": 9, "head_sha": sha}}
+    run = {"id": 9, "run_attempt": 1, "head_sha": sha, "path": ".github/workflows/ci.yml",
+           "event": "push", "head_branch": "rocm-extra"}
+    artifact_reads = []
+
+    def fresh(repo, artifact_id, **kwargs):
+        artifact_reads.append(artifact_id)
+        return metadata
+
+    def api(path):
+        if "/actions/artifacts/" in path:
+            raise _http_error(404)  # the plain path must not be used for a fresh artifact
+        return run
+
+    monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+    monkeypatch.setattr(release, "api_fresh_artifact", fresh)
+    monkeypatch.setattr(release, "api", api)
+    monkeypatch.setattr(release, "git", lambda root, *args: sha.encode())
+    monkeypatch.setattr(release, "inputs", lambda root: {"sha256": "b" * 64})
+    monkeypatch.setattr(release, "parse_record", lambda text: None)
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion = "0.4.1.dev0"\n')
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("{}")
+    out = tmp_path / "record.json"
+    release.main(["provenance", "--root", str(tmp_path), "--artifact-id", "7",
+                  "--manifest", str(manifest), "--output", str(out)])
+    assert artifact_reads == [7, 7]
