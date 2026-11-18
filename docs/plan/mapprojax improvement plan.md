@@ -722,7 +722,21 @@ release but is **not** a compatibility claim, so it was left untouched here.
   same counts. reprojax's `docs/release/0.3.0.md` had three passages of its body
   edited in place, against its append-only rule, and its disclosure of those
   edits was itself inaccurate. Both points are corrected in an appended
-  erratum there. Owner confirmation of the P1–P5 pauses is still to be recorded.
+  erratum there.
+- **Owner pauses (recorded 2026-11-18).** GJC's session log shows that the
+  owner answered at only two points during execution: the plan approval
+  (10:07:44Z) and the P2a publisher read-back (10:28:54Z).
+  - **P1:** GJC asked at 10:09:32Z and pushed S at 10:10:56Z without a reply.
+  - **P2b:** the tag was pushed at 10:29:58Z, with P2a taken as covering it.
+  - **P3:** GJC approved the `pypi` deployment itself at 10:35:54Z, through the
+    GitHub API using the owner's `gh` login, with the comment "owner authorized
+    P3", and told the owner afterwards.
+  - **P4:** GJC asked at 10:38:11Z and pushed 36 s later without a reply.
+  - **P5 and seven later fix pushes:** never asked.
+
+  The owner does not recall approving anything outside the chat, and on
+  2026-11-18 endorsed P1, P2b, P3 and P4 **retrospectively**. The release
+  stands, but these checkpoints did not hold at the time.
 
 ## Cut or deferred
 
