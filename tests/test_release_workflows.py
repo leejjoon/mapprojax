@@ -488,3 +488,52 @@ def test_workflow_event_permissions_pins_and_inert_publication_shape():
     # The x64 flag belongs only to the dedicated smoke step, never job/global env.
     assert ci.count("JAX_ENABLE_X64:") == 1
     assert "JAX_ENABLE_X64:" not in publish
+
+
+def _http_error(code):
+    from urllib.error import HTTPError
+    return HTTPError("https://api.github.com/x", code, "err", {}, None)
+
+
+def test_fresh_artifact_lookup_retries_transient_404(monkeypatch):
+    calls, slept = [], []
+
+    def api(path):
+        calls.append(path)
+        if len(calls) < 3:
+            raise _http_error(404)
+        return {"id": 7}
+
+    monkeypatch.setattr(release, "api", api)
+    assert release.api_fresh_artifact("o/r", 7, delays=(1, 2, 4), sleep=slept.append) == {"id": 7}
+    assert calls == ["repos/o/r/actions/artifacts/7"] * 3
+    assert slept == [1, 2]
+
+
+def test_fresh_artifact_lookup_fails_on_persistent_404(monkeypatch):
+    from urllib.error import HTTPError
+    calls = []
+
+    def api(path):
+        calls.append(path)
+        raise _http_error(404)
+
+    monkeypatch.setattr(release, "api", api)
+    with pytest.raises(HTTPError):
+        release.api_fresh_artifact("o/r", 7, delays=(1, 2), sleep=lambda d: None)
+    assert len(calls) == 3
+
+
+@pytest.mark.parametrize("code", [401, 403, 500])
+def test_fresh_artifact_lookup_does_not_retry_other_errors(monkeypatch, code):
+    from urllib.error import HTTPError
+    calls = []
+
+    def api(path):
+        calls.append(path)
+        raise _http_error(code)
+
+    monkeypatch.setattr(release, "api", api)
+    with pytest.raises(HTTPError):
+        release.api_fresh_artifact("o/r", 7, delays=(1, 2), sleep=lambda d: None)
+    assert len(calls) == 1

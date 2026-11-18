@@ -45,7 +45,9 @@ from pathlib import Path, PurePosixPath
 import re
 import stat
 import subprocess
+import time
 import tomllib
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 import zipfile
@@ -205,6 +207,27 @@ def api(path, binary=False):
     return data if binary else json.loads(data)
 
 
+FRESH_ARTIFACT_DELAYS = (1, 2, 4, 8, 15, 30)
+
+
+def api_fresh_artifact(repo, artifact_id, delays=FRESH_ARTIFACT_DELAYS, sleep=time.sleep):
+    """Read an artifact uploaded moments ago by this same job.
+
+    GitHub's API can return 404 for a just-uploaded artifact for a short while
+    (observed 2026-11-18, about 0.3 s after upload). Retry only that 404, for
+    about 60 s in total; any other error, or a 404 that persists, still fails.
+    """
+    path = f"repos/{repo}/actions/artifacts/{artifact_id}"
+    for delay in delays:
+        try:
+            return api(path)
+        except HTTPError as error:
+            if error.code != 404:
+                raise
+        sleep(delay)
+    return api(path)
+
+
 def repository():
     value = os.environ.get("GITHUB_REPOSITORY", "")
     require(re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", value),
@@ -340,7 +363,7 @@ def main(argv=None):
     elif args.command == "provenance":
         require(args.artifact_id and args.manifest, "provenance needs artifact ID and manifest")
         repo = repository()
-        metadata = api(f"repos/{repo}/actions/artifacts/{args.artifact_id}")
+        metadata = api_fresh_artifact(repo, args.artifact_id)
         check_expiry(metadata)
         run = api(f"repos/{repo}/actions/runs/{metadata['workflow_run']['id']}")
         result = {"schema_version": 1, "repository": repo,
