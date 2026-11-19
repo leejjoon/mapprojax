@@ -496,7 +496,7 @@ Revised Nov 6 2026 against the repository at the end of Stage 4 (mapprojax `26b6
 | `from_astropy(wcs)` | Lets users and reprojax pass astropy WCS objects directly | Shipped in v0.4.0 (Nov 13 2026); see "Milestone v0.4.0: `from_astropy`" below. `to_header` later |
 | TPV | Standard in SCAMP/SWarp output (DES, DECaLS, Pan-STARRS) | A distortion step like SIP, so no new projection class; shares the Newton inverse from Stage 2. Watch the radial terms' non-differentiable `r` at the origin |
 | Astrometric-fit example | The demo for the gradient story | Fit CD + SIP to Gaia matches; compare with `astropy.wcs.utils.fit_wcs_from_points` |
-| ZEA, STG, ARC | Zenithal family, cheap once the restructure is done | Add when a dataset needs them |
+| ZEA, STG, ARC | Zenithal family, cheap once the restructure is done | Started 2026-11-20 at the owner's request; see "Milestone v0.5.0: zenithal projections" below |
 | Research note | Makes the precision work citable | RNAAS length, built on realistic-size numbers. The contribution is the measured envelope and the offset form; composing M_tgt·M_srcᵀ itself is standard |
 
 ## Milestone v0.4.0: `from_astropy`
@@ -737,6 +737,129 @@ release but is **not** a compatibility claim, so it was left untouched here.
   The owner does not recall approving anything outside the chat, and on
   2026-11-18 endorsed P1, P2b, P3 and P4 **retrospectively**. The release
   stands, but these checkpoints did not hold at the time.
+
+## Milestone v0.5.0: zenithal projections (ZEA, STG, ARC)
+
+2026-11-20 · drafted, then reviewed by a two-member committee (Opus, Codex): both ACCEPT WITH CHANGES, converged in one reconciliation round. The changes are folded in below. Approved by the owner on 2026-11-20, with Z7's reprojax 0.3.1 confirmed. mapprojax `main` is at `108a9d0` (`0.4.1.dev0`); reprojax 0.3.0 requires `mapprojax[astropy]>=0.4.0,<0.5`.
+
+Decision 3 says to add projections when data asks for them. The owner chose to start the zenithal family now. The scope stays narrow: the three zenithal projections that have no PV parameters and share TAN's reference-at-the-native-pole geometry. The pipeline, rotation, precision modes, offset path and `Reprojector` need no changes; each projection only supplies `_native_to_plane` / `_plane_to_native`.
+
+### Decisions
+
+| | Decision |
+| --- | --- |
+| **Z1** | Public classes `Zea`, `Stg` and `Arc` in `wcs.py`, mixins in `projections.py`, exported from `mapprojax`. They have the same constructor, precision modes, SIP support and JSON format as `Tan` / `Sin`. |
+| **Z2** | Release as **0.5.0** (owner, 2026-11-20): new public classes are a minor bump. A 0.4.1 adding public API was considered and rejected. reprojax 0.3.0 caps `<0.5`, so a tested reprojax compatibility release follows (Z7). |
+| **Z3** | No PV parameters. `_check_pv` and `from_astropy` keep refusing every primary PV card (including `PV1_3` / `PV1_4`) except SIN's zero PV2_1/PV2_2, and keep the TPV/TPD/lookup-table refusals. AZP, SZP, ZPN and AIR (the parametrised zenithals) stay out of scope. |
+| **Z4** | No rotation change. All three have θ₀ = 90°, so the existing rule applies unchanged: an effective LONPOLE of 180 only. At CRVAL2 = +90 an omitted LONPOLE (WCSLIB's effective 0) is refused, and an explicit LONPOLE = 180 is accepted (`wcs_utils.py:70-91`). |
+| **Z5** | SIP is accepted on all three, as on SIN; astropy applies SIP on `ZEA-SIP`, `STG-SIP` and `ARC-SIP`. |
+| **Z6** | **Accuracy envelope ρ ≤ 120°, declared before measuring.** Pixel error is the primary metric; sky error is also reported. Budgets are set per fixture from the measurement. ZEA's sky-error budget states its inherent 1/cos(ρ/2) growth, which is 2× at 120°. Beyond 120° the results are analytically valid but only characterised, with no accuracy claim. |
+| **Z7** | reprojax **0.3.1** (owner, 2026-11-20): cap `<0.6`, so reprojax accepts ZEA/STG/ARC end to end through `from_astropy`. This is a tested release, not docs only; see Work item 8. |
+
+### Formulas
+
+Internal plane coordinates are **radians** (`base.py:331-378`). FITS CD and WCSLIB plane coordinates are degrees. In the native frame (reference point at (1, 0, 0), `projections.py` convention), the angular distance ρ from the reference satisfies cos ρ = x and sin ρ = s = √(y² + z²). The radial functions are those of Calabretta & Greisen (2002). Every projection keeps TAN's direction (y, z)/s; only the radial function changes, so the orientation carries over.
+
+| | R(ρ) | Forward `(X, Y)` | Inverse | Inverse valid |
+| --- | --- | --- | --- | --- |
+| ZEA | 2 sin(ρ/2) | `(y, z) · √(2 / (1 + x))` | `x = 1 − R²/2`, `(y, z) = (X, Y) · √(1 − R²/4)` | `R ≤ 2` |
+| STG | 2 tan(ρ/2) | `(y, z) · 2 / (1 + x)` | `k = 1/(1 + R²/4)`, `x = 2k − 1`, `(y, z) = k (X, Y)` | every finite plane point |
+| ARC | ρ | `(y, z) · atan2(s, x) / s` | `x = cos R`, `(y, z) = (X, Y) · sin R / R` | `R ≤ π` |
+
+**Numerical forms (required):**
+
+- **No cancellation in 1 + x.** For x < 0, ZEA and STG compute 1 + x as s² / (1 − x). The drafted direct form, measured in mixed `proj` at 0.01°/px:
+  - ZEA: 0.129 px off at ρ = 178° and 98.9 px at 179.9°;
+  - STG: 14.6 px off at 178° and 2.3·10⁵ px at 179.9°;
+  - the stable form: 2·10⁻³ px for ZEA and 0.12 px for STG at 178°.
+- **Forward validity is "not the exact antipode".** It is defined as `x > 0 or s² > finfo(dtype).tiny`, not as `x > −1`. In f32, x rounds to −1 within about 0.014° of the antipode, and that test would wrongly mask the disc.
+- **Exact antipode is invalid for all three** (a deliberate choice). The point (−1, 0, 0) has no native longitude. WCSLIB returns an arbitrary limb point for ZEA and ARC and NaN for STG. Points near the antipode still map to the limb. The test feeds native (−1, 0, 0) directly: `proj(π, 0)` gives s² ≈ 1.5·10⁻³², so it never reaches the exact antipode.
+- **Limbs are strict analytic bounds:** `R ≤ 2` (ZEA) and `R ≤ π` (ARC), including equality, which matches WCSLIB. Mask comparisons against astropy skip a few-ulp band around each limb, except in dedicated exact-limb tests.
+- **ARC has three guarded expressions:**
+  - forward `atan2(s, x)/s`, as a series in u² = s²/x², selected on `small & x > 0`. Without `x > 0` the series also fires near the antipode: a point at ρ = π − 5·10⁻⁵ landed beside CRPIX in the prototype;
+  - inverse `sin R / R`, as a series in R²;
+  - inverse `cos R`, as a series in R², so there is no `sqrt` at R² = 0.
+
+  The prototype's `sqrt` + `sinc` gave NaN `unproj` gradients at CRPIX in f64 and mixed.
+- **Series details:**
+  - terms through sixth order;
+  - dtype-static thresholds, starting from s², R² ≤ 10⁻² (f32) and ≤ 10⁻⁴ (f64);
+  - the sixth-order truncation error at those thresholds is about 10⁻⁹ relative in f32 and 10⁻¹⁷ in f64;
+  - the unselected branch is fed positive finite stand-ins (double `where`), because the outer `where` alone does not protect the pullback.
+- **Why this is not a corner case.** Every invalid sample is replaced by native (1, 0, 0) or plane (0, 0) (`base.py:323,329,363,374`), which is exactly ARC's singular point. Every masked sample therefore goes through the series branch, not only CRPIX.
+- **Typed constants throughout.** An untyped `1.0` in a `where` put an f64 convert into the f32 `Reprojector` jaxpr in the prototype.
+- **STG inverse overflow.** The `k` form keeps the value finite where `(4 − R²)/(4 + R²)` gives inf/inf. It still forms R² = inf above about 1.8·10¹⁹ rad in f32. Keep it only if extreme-finite value and gradient tests pass; otherwise use a scaled, reciprocal-radius form.
+- **ZEA at R = 2** is value-valid, but the inverse derivative is singular there. Gradients are required to be finite just inside the limb, not at it, mirroring `test_pixel_map.py:78` and `test_wcs_regressions.py:492` for SIN.
+
+*Feasibility probe (2026-11-20, scratch, not committed):* the drafted formulas, in f64, were re-run by the committee with great-circle separation, 20,000 samples per case, CRVAL2 ∈ {30°, −89°, +90° with LONPOLE = 180}, and pixels reaching plane radii well beyond both limbs. The maximum error against astropy's `all_pix2world` was 3.2·10⁻⁶ mas for ZEA and 4.7·10⁻⁷ mas for ARC and STG, with zero mask mismatches away from the exact antipode. (The original probe checked latitude only.)
+
+### Work
+
+1. **Kernel:** three mixins in the numerical forms above, three registered classes, the exports, and an updated `_PipelineBase` docstring.
+2. **Loaders:**
+   - add `ZEA`, `STG` and `ARC` to `_SUPPORTED_PROJECTIONS` (`wcs_utils.py:9`) and to the dispatch in `from_astropy` (`astropy.py:397`);
+   - update the messages and docstrings that say "TAN and SIN";
+   - document that `load_wcs_params_from_header()` returns no projection code, so the caller picks the class matching CTYPE. Add a regression showing that a formerly refused ZEA header loads and works with `Zea`;
+   - keep every Z3 refusal, each with a test on a zenithal header.
+3. **Projection tests:**
+   - formulas against astropy (angular separation, plus radial pixel error);
+   - masks at each limb, away from the few-ulp band;
+   - exact-limb tests for ZEA (R = 2) and ARC (R = π);
+   - the exact antipode fed as native (−1, 0, 0), invalid for all three;
+   - finite values and pixel and parameter gradients at exact CRPIX for all three projections;
+   - ARC gradients at s = 10⁻⁸ and across each series switch-over;
+   - each ARC branch within 2 ulp of an f64 reference, in f32 and f64, on CPU and ROCm. (f32 `atan2(s, x)/s` is 1.18 ulp off on ROCm at s² = 10⁻⁴, so branch-against-branch 1-ulp parity is not required);
+   - STG extreme-finite inputs (value and gradient).
+4. **Generic tests:** audit every projection-coded site in the collected tests. That is the `Tan, Sin` parametrisations (including string-form ones) plus the projection-sensitive fixtures; `tests/verify_jax.py` is not collected. The sites cover the x64 jaxpr policy, retrace count, per-mode gradients, JSON round trip and wrong-class rejection, `Reprojector`, pixel map and the offset path.
+   - Invalid-sample fixtures are chosen per class rather than copied from TAN's horizon:
+     - ZEA and ARC use a pixel beyond their limb;
+     - STG has no finite invalid plane point, so it uses non-finite input, a singular CD, or source-leg invalidity.
+   - Revisit the "genuinely mixed batch" assertions (`test_wcs_regressions.py:425,551`), `MIXED_SEP` (`:273`, whose 135° and 179.99° samples are valid for all three) and `test_back_hemisphere_is_not_a_valid_pixel` (`:49`).
+   - Audit the offset path on wide fields where Δα wraps at ±π.
+5. **Accuracy harness (Z6):**
+   - fix `Case.proj` (`tests/accuracy_reference.py:123-125`) and `tests/test_wcs_utils.py:60`, which treat every non-SIN header as TAN;
+   - add a genuine f32 row: the f32 offset path plus host composition, and zenithal `Reprojector` pairs. The harness today has f64 and mixed only (`accuracy_reference.py:63-70, 233-275`);
+   - fixtures per projection:
+     - the five existing synthetic centres;
+     - one rotated-PC 4096² wide fixture with corners at ρ = 120°;
+     - polar-cap centres at CRVAL2 = +90 (with LONPOLE = 180) and −90. The existing near-pole centres only cover 0.5° fields;
+     - radial samples at 0°, 60°, 90°, 100° and 120° over several azimuths;
+     - one f32 `Reprojector` pair, a ZEA wide field onto a TAN cutout;
+   - characterisation only, beyond 120°: ZEA near R = 2, ARC near π, STG at 150°;
+   - measure f64, mixed and f32, then set the per-fixture caps in `accuracy_baselines.json` and regenerate `docs/benchmarks/accuracy_results.md`. Existing TAN and SIN budgets are not touched.
+   - Reference points: the fp32 pixel floor depends on the image size (about 1.25·10⁻³ px at pixel coordinates near 2·10⁴), not on the projection. Measured at 120°: about 4.5·10⁻⁴, 3.7·10⁻⁴ and 5.9·10⁻⁴ px, and 65, 29 and 76 mas, for ZEA, STG and ARC. ZEA mixed `unproj` was 119 mas against a 45 mas floor. These are observations, not budgets.
+6. **Docs:**
+   - README;
+   - the user manual: the projection list, domains, the exact-antipode choice, the 120° envelope, and the Δα = ±π wrap of the offset representation on fields wider than a hemisphere;
+   - CHANGELOG;
+   - AGENT.md ("Adding a projection" and the scope line);
+   - a `Cut or deferred` entry for the parametrised zenithals.
+7. **mapprojax release:** 0.5.0 through the existing gates.
+8. **reprojax 0.3.1 (Z7):**
+   - cap `<0.6`, with the CI constraint files moved to mapprojax 0.5.0 (`reprojax/pyproject.toml:17`, `ci/minimum.txt:18`, `ci/latest.txt:16`);
+   - README (`README.md:20` says anything other than TAN and SIN raises), transform docs, and a CHANGELOG entry naming the new accepted inputs;
+   - TAN↔ZEA end-to-end tests in both directions and both matrix precisions, through `build_transform` / `pixel_map`, plus one image-wrapper test;
+   - construction and cache smoke tests for ARC and STG. The cache key already includes the class name (`transform.py:80`);
+   - a clean-environment check against the published mapprojax 0.5.0, not only `PYTHONPATH`.
+
+### Stages
+
+| Stage | Work | Done when |
+| --- | --- | --- |
+| 1 | Version → `0.5.0.dev0`; items 1–3. The per-mode gradient and f32-jaxpr checks for the three new classes run here, not in Stage 2 | Each projection matches astropy and its masks; the antipode and limb choices are tested; gradients are finite at CRPIX in every mode; the f32 jaxpr has no f64 operation; the full suite is unchanged on CPU and ROCm |
+| 2 | Items 4–5 | All five classes pass every generic test; Z6 budgets measured and frozen; accuracy report regenerated and diff reviewed |
+| 3 | Item 6; reprojax suite against this tree | Doc fences pass; reprojax green with `PYTHONPATH` |
+| 4 | Item 7, then item 8 | Each release step separately authorised by the owner |
+
+Size: about 100–150 lines of library code and 400–700 lines of tests, plus docs and the reprojax change. About 4–6 working days plus the release gates.
+
+### Risks
+
+- **fp32 far from the reference.** Mitigation: the stable 1 + x forms, the 120° envelope, and the ZEA growth stated in its budget.
+- **ARC's singular point.** Every masked sample lands on it. Mitigation: three guarded series and gradient tests at CRPIX and at the switch-overs.
+- **Generic tests that assume a horizon.** STG has none. Mitigation: per-class invalid fixtures (item 4).
+- **WCSLIB divergence by design** at the exact antipode. Mitigation: documented, and tested against the stated choice.
+- **reprojax pin and behaviour change.** Mitigation: Z7, tested end to end before release.
 
 ## Cut or deferred
 
