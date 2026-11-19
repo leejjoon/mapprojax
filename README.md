@@ -34,6 +34,29 @@ assert jnp.all(jnp.isfinite(x)) & jnp.all(jnp.isfinite(y))
 
 Pixels and `crpix` are 0-based. `crval` is in degrees; `proj` and `unproj` use radians in `(longitude, latitude)` order. TAN is invalid at and behind the horizon; SIN is valid on the front hemisphere and inside its inverse unit disc. Invalid samples produce NaNs.
 
+If you already have an `astropy.wcs.WCS`, convert it with `from_astropy` (needs the `[astropy]` extra). It refuses any WCS it cannot reproduce exactly, so a successful conversion matches Astropy's own pixel-to-sky mapping:
+
+```python
+import jax
+import jax.numpy as jnp
+import numpy as np
+from astropy.wcs import WCS
+from mapprojax import from_astropy
+
+jax.config.update("jax_enable_x64", True)
+wcs = WCS(naxis=2)
+wcs.wcs.ctype = ["RA---TAN", "DEC--TAN"]
+wcs.wcs.crpix = [513.0, 513.0]  # FITS cards are 1-based
+wcs.wcs.crval = [150.0, 30.0]
+wcs.wcs.cd = [[-1.0e-4, 0.0], [0.0, 1.0e-4]]
+
+projection = from_astropy(wcs, precision="f64")
+x = y = np.array([0.0, 1023.0])
+lon, lat = projection.unproj(jnp.asarray(x), jnp.asarray(y))
+ra, dec = wcs.pixel_to_world_values(x, y)  # also 0-based pixels
+assert np.allclose(np.degrees(lon), ra) and np.allclose(np.degrees(lat), dec)
+```
+
 ## Precision modes
 
 | Mode | Native/pixel path | Absolute celestial rotation | Requirement |
@@ -72,11 +95,11 @@ Each mapprojax release is tested against one reprojax release; the pairing is de
 
 ## Related tools
 
-Scope/backend comparison, checked against the linked package versions on 2026-11-07; no comparative speed or accuracy benchmark is implied:
+Scope/backend comparison, checked against the linked package versions on 2026-11-19; no comparative speed or accuracy benchmark is implied:
 
 | Tool | Scope and precision design |
 |---|---|
-| mapprojax 0.3.0 | Coordinate-only TAN/SIN + SIP JAX kernel; explicit WCS precision and host-composed relative f32/f64 mapping. Image resampling belongs in reprojax. |
+| mapprojax 0.4.0 | Coordinate-only TAN/SIN + SIP JAX kernel; explicit WCS precision, host-composed relative f32/f64 mapping, and exact-or-refuse conversion from `astropy.wcs.WCS`. Image resampling belongs in reprojax. |
 | [JAX-GalSim 2026.7.0 `GSFitsWCS`](https://github.com/GalSim-developers/JAX-GalSim/blob/v2026.7.0/jax_galsim/fitswcs.py) | WCS inside a JAX galaxy-simulation toolkit, with more projection families; its constructor uses JAX array conversion rather than mapprojax's explicit three-mode API. |
 | [dfreproject 1.3.1](https://pypi.org/project/dfreproject/1.3.1/) | TAN/SIP image reprojection and interpolation using PyTorch on CPU/GPU; tensor dtype/device policy, not this coordinate-only JAX API. See its [methodology](https://dfreproject.readthedocs.io/en/latest/methodology.html). |
 | [Astropy-affiliated reproject 0.21.0](https://pypi.org/project/reproject/0.21.0/) | General astronomical image reprojection with interpolation, adaptive and pixel-overlap methods in the NumPy/Astropy/SciPy ecosystem; different scope from a split-precision JAX coordinate kernel. |
