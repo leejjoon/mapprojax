@@ -1,4 +1,4 @@
-"""Scale-aware derivative checks for ``Tan``/``Sin`` in every precision mode.
+"""Scale-aware derivative checks for every projection class in every precision mode.
 
 Every leaf is perturbed as ``base + scale * delta`` so each Jacobian block is
 O(0.1-10) per unit ``delta`` (outputs: sky offsets in arcsec for the forward
@@ -37,7 +37,7 @@ import numpy as np
 import pytest
 from jax.test_util import check_grads
 
-from mapprojax.wcs import Tan, Sin
+from mapprojax.wcs import Tan, Sin, Zea, Stg, Arc
 from mapprojax.sip import Sip
 
 
@@ -63,7 +63,7 @@ ARCSEC = 180.0 / np.pi * 3600.0
 _p, _q = np.meshgrid(np.arange(4), np.arange(4), indexing="ij")
 SIP_SCALE = jnp.asarray(np.where((_p + _q >= 2) & (_p + _q <= 3), 1.0 / 1000.0 ** (_p + _q), 0.0))
 SCALE = dict(crpix=1.0, cd=1e-3, crval=1e-3, a=SIP_SCALE, b=SIP_SCALE, ap=SIP_SCALE, bp=SIP_SCALE)
-CLASSES = [Tan, Sin]
+CLASSES = [Tan, Sin, Zea, Stg, Arc]
 
 # Per-mode check_grads: (eps, atol, rtol). See the module docstring.
 CHECK_GRADS = {

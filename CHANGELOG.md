@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Development version `0.4.1.dev0`; records the verified PyPI 0.4.0 publication.
+- Development version `0.5.0.dev0` (Milestone v0.5.0: zenithal projections); records the verified PyPI 0.4.0 publication.
 
 ## 0.4.0 — 2026-11-13
 

@@ -861,6 +861,26 @@ Size: about 100–150 lines of library code and 400–700 lines of tests, plus d
 - **WCSLIB divergence by design** at the exact antipode. Mitigation: documented, and tested against the stated choice.
 - **reprojax pin and behaviour change.** Mitigation: Z7, tested end to end before release.
 
+### Stage 1 closure — 2026-11-20
+
+- **Changes:**
+  - version `0.5.0.dev0`;
+  - `ZeaMixin`, `StgMixin` and `ArcMixin` in the numerical forms above;
+  - `Zea`, `Stg` and `Arc` classes, exported;
+  - CTYPE support in both loaders.
+- **Tests:**
+  - `tests/test_zenithal.py`, 75 tests, covering:
+    - astropy agreement and masks for CRVAL2 = 30, −90 and +90 (great-circle separation < 10⁻⁴ mas);
+    - limbs and the antipode;
+    - the f32 near-antipode accuracy;
+    - finite gradients at exact CRPIX in every mode and on masked samples;
+    - ARC branch accuracy;
+    - loaders, SIP and refusals;
+    - an f32 `Reprojector` round trip over a 100° field.
+  - `test_gradients_modes.py` now covers all five classes, and `test_x64_policy.py`'s f32-jaxpr check covers four class pairs.
+- **Suite:** 1259 passed on CPU and on ROCm.
+- **Deviation from Work item 3:** the ARC float32 ulp bound is **3**, not 2. ROCm's own float32 `atan2` is 2.04 ulp off on these inputs (0.49 on CPU), and the exact branch adds two roundings: measured 2.48 ulp on ROCm and 1.48 on CPU. The series branch is 1.51 on both, and float64 holds the 2-ulp bound.
+
 ## Cut or deferred
 
 - **Image resampling in mapprojax** (`reproject_interp`, flux-conserving variant, tiling, coadd): belongs in reprojax. When it is built there, note that JAX `map_coordinates` supports only order 0 and 1, and that Jacobian-scaled interpolation is not flux-conserving under downsampling (use adaptive anti-aliasing or drizzle).

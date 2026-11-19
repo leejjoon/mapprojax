@@ -1,4 +1,4 @@
-"""Precision-explicit JAX TAN and SIN WCS classes.
+"""Precision-explicit JAX WCS classes: TAN, SIN, ZEA, STG and ARC.
 
 These classes share the established pixel/native/celestial pipeline while
 keeping their numerical precision policy and PyTree reconstruction explicit.
@@ -32,7 +32,7 @@ from jax.tree_util import register_pytree_node_class
 
 from .base import _PipelineBase, _check_cd
 from .jax_base import _effective_f64, _require_x64
-from .projections import SinMixin, TanMixin
+from .projections import ArcMixin, SinMixin, StgMixin, TanMixin, ZeaMixin
 from .sip import Sip
 from .utils import apply_rotation, apply_rotation_transpose, rotation_matrix
 
@@ -409,3 +409,17 @@ class Tan(TanMixin, _PrecisionWCSBase):
 class Sin(SinMixin, _PrecisionWCSBase):
     """Orthographic JAX WCS with explicit f32, mixed, or f64 precision."""
 
+
+@register_pytree_node_class
+class Zea(ZeaMixin, _PrecisionWCSBase):
+    """Zenithal equal-area JAX WCS with explicit f32, mixed, or f64 precision."""
+
+
+@register_pytree_node_class
+class Stg(StgMixin, _PrecisionWCSBase):
+    """Stereographic JAX WCS with explicit f32, mixed, or f64 precision."""
+
+
+@register_pytree_node_class
+class Arc(ArcMixin, _PrecisionWCSBase):
+    """Zenithal equidistant JAX WCS with explicit f32, mixed, or f64 precision."""

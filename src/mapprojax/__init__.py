@@ -1,12 +1,12 @@
 from .base import (
     absolute_from_offset, offset_from_absolute,
 )
-from .wcs import Tan, Sin
+from .wcs import Tan, Sin, Zea, Stg, Arc
 from .reproject import Reprojector
 from .utils import compose_relative_rotation
 
 __all__ = [
-    'Tan', 'Sin',
+    'Tan', 'Sin', 'Zea', 'Stg', 'Arc',
     'absolute_from_offset', 'offset_from_absolute',
     'Reprojector', 'compose_relative_rotation',
     'from_astropy',

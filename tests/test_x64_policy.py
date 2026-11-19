@@ -5,6 +5,8 @@ import sys
 import textwrap
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[1]
 
 
@@ -93,7 +95,10 @@ print('ok')
     assert "ok" in proc.stdout
 
 
-def test_f32_reprojector_jaxpr_has_no_f64_ops_with_x64_on_or_off():
+@pytest.mark.parametrize("src_cls,tgt_cls", [
+    ("Tan", "Sin"), ("Zea", "Tan"), ("Stg", "Arc"), ("Arc", "Zea"),
+])
+def test_f32_reprojector_jaxpr_has_no_f64_ops_with_x64_on_or_off(src_cls, tgt_cls):
     """Isolate the f32 pixel_map kernel across construction and call styles.
 
     A live f64 relative matrix may be formed before the kernel; cast it before
@@ -104,7 +109,7 @@ def test_f32_reprojector_jaxpr_has_no_f64_ops_with_x64_on_or_off():
 jax.config.update('jax_enable_x64', {enabled})
 from mapprojax import Reprojector
 from mapprojax.sip import Sip
-from mapprojax.wcs import Tan, Sin
+from mapprojax.wcs import Tan, Sin, Zea, Stg, Arc
 from mapprojax.utils import compose_relative_rotation
 
 a = np.zeros((4, 4)); a[2, 0] = 4e-6; a[1, 1] = -2e-6; a[0, 3] = 1e-9
@@ -112,8 +117,8 @@ b = np.zeros((4, 4)); b[2, 0] = -3e-6; b[1, 1] = 2.5e-6; b[3, 0] = 1e-9
 sip_src = Sip(a=a, b=b, ap=-a, bp=-b, inverse_steps=2)
 sip_tgt = Sip(a=0.5 * a, b=0.5 * b, ap=-0.5 * a, bp=-0.5 * b, inverse_steps=3)
 cd = [[-1e-3, 0.], [0., 1e-3]]
-src = Tan([100., 100.], cd, [180., 30.], sip=sip_src, precision='f32')
-tgt = Sin([100., 100.], cd, [180.01, 30.], sip=sip_tgt, precision='f32')
+src = {src_cls}([100., 100.], cd, [180., 30.], sip=sip_src, precision='f32')
+tgt = {tgt_cls}([100., 100.], cd, [180.01, 30.], sip=sip_tgt, precision='f32')
 rp = Reprojector(src, tgt, matrix_precision='f32')
 x = jnp.full((8,), 3.0, jnp.float32); y = jnp.full((8,), 4.0, jnp.float32)
 

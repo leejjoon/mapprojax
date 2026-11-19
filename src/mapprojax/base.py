@@ -236,8 +236,9 @@ def offset_from_absolute(absolute, *, crval, offset_scale):
 
 
 class _PipelineBase(ABC):
-    """Pixel <-> native <-> celestial pipeline shared by ``Tan``/``Sin``
-    (and the reprojection legs).
+    """Pixel <-> native <-> celestial pipeline shared by the projection
+    classes (``Tan``, ``Sin``, ``Zea``, ``Stg``, ``Arc``) and the reprojection
+    legs.
 
     Every stage has an internal ``_..._valid`` form that returns finite
     values plus a validity flag; invalid samples carry a safe substitute.

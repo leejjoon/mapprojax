@@ -33,7 +33,7 @@ module name does not shadow it.
 import warnings
 
 from .sip import DEFAULT_INVERSE_STEPS, Sip
-from .wcs import Sin, Tan
+from .wcs import Arc, Sin, Stg, Tan, Zea
 from .wcs_utils import _check_lonpole, _check_pv, _parse_ctype
 
 __all__ = ["from_astropy"]
@@ -210,7 +210,11 @@ def _ctype_cards(header):
 
 
 def from_astropy(wcs, *, precision, inverse_steps=DEFAULT_INVERSE_STEPS):
-    """Build a :class:`~mapprojax.wcs.Tan` or :class:`~mapprojax.wcs.Sin`.
+    """Build the mapprojax kernel matching the WCS projection code.
+
+    TAN gives :class:`~mapprojax.wcs.Tan`, SIN :class:`~mapprojax.wcs.Sin`,
+    ZEA :class:`~mapprojax.wcs.Zea`, STG :class:`~mapprojax.wcs.Stg` and ARC
+    :class:`~mapprojax.wcs.Arc`. Every other projection code is refused.
 
     Parameters
     ----------
@@ -228,7 +232,7 @@ def from_astropy(wcs, *, precision, inverse_steps=DEFAULT_INVERSE_STEPS):
 
     Returns
     -------
-    Tan | Sin
+    Tan | Sin | Zea | Stg | Arc
         An ordinary kernel in the input WCS's *own* celestial frame. RADESYS,
         EQUINOX, MJD and observation keywords are ignored, not applied and not
         kept: the conversion preserves the numerical pixel-to-coordinate
@@ -394,5 +398,5 @@ def from_astropy(wcs, *, precision, inverse_steps=DEFAULT_INVERSE_STEPS):
         )
 
     # 13. Construct; the constructor validates `precision` and the CD.
-    cls = {"TAN": Tan, "SIN": Sin}[proj]
+    cls = {"TAN": Tan, "SIN": Sin, "ZEA": Zea, "STG": Stg, "ARC": Arc}[proj]
     return cls(crpix, cd, crval, sip=sip, precision=precision)

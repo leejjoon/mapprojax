@@ -6,7 +6,7 @@ from .sip import Sip
 #: Longitude/latitude CTYPE code pairs this loader supports. The latitude code
 #: must be the matching one for the axis-1 longitude code.
 _LAT_FOR_LON = {"RA--": "DEC-", "GLON": "GLAT", "ELON": "ELAT"}
-_SUPPORTED_PROJECTIONS = ("TAN", "SIN")
+_SUPPORTED_PROJECTIONS = ("TAN", "SIN", "ZEA", "STG", "ARC")
 _DEGREE_UNITS = ("deg", "degree", "degrees")
 
 
@@ -157,6 +157,10 @@ def load_wcs_params_from_header(header):
             cd: list [[cd1_1, cd1_2], [cd2_1, cd2_2]]
             crval: list [lon, lat]
             sip: mapprojax.sip.Sip object or None
+
+    The tuple carries no projection code: pick the class (``Tan``, ``Sin``,
+    ``Zea``, ``Stg`` or ``Arc``) that matches the header's CTYPE. Prefer
+    :func:`mapprojax.from_astropy`, which dispatches on CTYPE itself.
 
     Raises:
         ValueError: on a key this loader cannot interpret.
