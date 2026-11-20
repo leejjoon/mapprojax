@@ -17,6 +17,19 @@ diff. A rewritten cap can still move up or down within that rule, since it
 is recomputed as 1.2x the new measurement; review the diff either way.
 New entries (a cap that did not exist before) are always allowed.
 
+``--add-missing-caps`` keeps every existing entry verbatim and only adds the
+missing ones (recorded under ``_provenance.additions``), so adding a case or
+an implementation cannot move an old cap. ``--also-measured ROCM.json`` (a
+``--json`` result of this script on another backend) makes each new fp32 cap
+cover the worst backend: the genuinely float32 rows depend on the backend's
+float32 transcendentals, and ROCm's are measurably less accurate than CPU's.
+The zenithal additions were written with both::
+
+    JAX_PLATFORMS=rocm uv run python benchmarks/benchmark_accuracy.py --json rocm.json
+    JAX_PLATFORMS=cpu uv run python benchmarks/benchmark_accuracy.py \\
+        --write-baselines --add-missing-caps --also-measured rocm.json \\
+        --markdown docs/benchmarks/accuracy_results.md
+
 Exits non-zero if: the astropy oracle does not converge or its own round trip
 exceeds 1e-8 px; any mapprojax output on a valid pixel or in a pair overlap is
 non-finite; an fp64 result breaks its budget; an fp32 row or capped pair run
@@ -108,7 +121,8 @@ def measure():
             problems.append(f"transposed-rotation control {d} not detected: "
                             f"{c['n_caught']}/{c['n']} samples caught")
     return {"oracle": oracle, "cases": rows, "pairs": pairs,
-            "transposed_rotation": controls}, problems
+            "transposed_rotation": controls,
+            "beyond_envelope": ar.characterise_beyond_envelope()}, problems
 
 
 def _fp32_rows(result):
@@ -151,15 +165,26 @@ def check_caps(result, baselines):
     return problems
 
 
-def baselines_from(result):
+def baselines_from(result, also=()):
+    """Cap entries from ``result``. ``also`` holds ``--json`` outputs of the
+    same benchmark on other backends: an fp32 row's cap then covers the worst
+    of all of them, and the entry records each backend's max."""
     def entry(stats, unit, sample, **extra):
         return {"sample": sample, **extra, "unit": unit, "measured_max": stats["max"],
                 "measured_rms": stats["rms"], "cap": _cap(stats["max"])}
 
+    others = [(o["environment"]["backend"],
+               {(m, k): st for m, k, st in _fp32_rows(o)}) for o in also]
     grid = f"{ar.GRID_N}x{ar.GRID_N} grid + CRPIX"
     fp32 = {metric: {} for metric in ar.METRIC_KEYS}
     for metric, key, stats in _fp32_rows(result):
-        fp32[metric][key] = entry(stats, ar.METRIC_KEYS[metric][1], grid)
+        runs = [(jax.default_backend(), stats)] + [
+            (backend, rows[(metric, key)]) for backend, rows in others if (metric, key) in rows]
+        worst = max(runs, key=lambda run: run[1]["max"])[1]
+        extra = {}
+        if len(runs) > 1:
+            extra["measured_max_by_backend"] = {b: st["max"] for b, st in runs}
+        fp32[metric][key] = entry(worst, ar.METRIC_KEYS[metric][1], grid, **extra)
     pair = {key: entry(p["pixel_error_px"], "px", f"{grid} on the source, astropy-decided overlap",
                        n_overlap=p["n_overlap"])
             for key, p in _capped_pairs(result)}
@@ -170,8 +195,11 @@ def baselines_from(result):
             "versions": env["versions"],
             "backend": env["backend"],
             "dtype": ("float64, except the jax_mixed rows (fp32 pixels, crpix, cd and SIP; fp64 "
-                      "crval and rotation) and pair runs keyed f32 (Reprojector matrix_precision='f32')"),
+                      "crval and rotation), the offset_f32 rows (precision='f32' offset path "
+                      "composed on the host) and pair runs keyed f32 (Reprojector "
+                      "matrix_precision='f32')"),
             "margin": f"cap = measured max x {BASELINE_MARGIN}, rounded up to 2 significant figures",
+            "also_measured_backends": [o["environment"]["backend"] for o in also],
             "meaning": ("Regression caps on the jax_mixed fp32 floor and on the fp32 "
                         "Reprojector. Not accuracy claims; the fp64 paths are held to the "
                         "budgets in tests/accuracy_reference.py instead."),
@@ -179,6 +207,35 @@ def baselines_from(result):
         "fp32": fp32,
         "pair": pair,
     }
+
+
+def merge_missing(old, new):
+    """``old`` with only the cap entries it lacks taken from ``new``.
+
+    Existing entries -- and the provenance they were measured under -- stay
+    verbatim, so adding a case or an implementation cannot move an old cap.
+    """
+    merged = json.loads(json.dumps(old))
+    added = []
+    for metric, entries in new["fp32"].items():
+        bucket = merged.setdefault("fp32", {}).setdefault(metric, {})
+        for key, entry in entries.items():
+            if key not in bucket:
+                bucket[key] = entry
+                added.append(f"fp32/{metric}/{key}")
+    for key, entry in new["pair"].items():
+        if key not in merged.setdefault("pair", {}):
+            merged["pair"][key] = entry
+            added.append(f"pair/{key}")
+    if added:
+        history = merged["_provenance"].setdefault("additions", [])
+        history.append({"generated_by": "benchmarks/benchmark_accuracy.py --write-baselines "
+                                         "--add-missing-caps",
+                        **{k: new["_provenance"][k] for k in ("versions", "backend")},
+                        "also_measured_backends": new["_provenance"].get("also_measured_backends", []),
+                        "dtype": new["_provenance"]["dtype"],
+                        "n_entries": len(added)})
+    return merged
 
 
 def environment():
@@ -216,10 +273,15 @@ def render_markdown(result, env):
         f"- Budgets (fp64 paths): forward < {ar.FORWARD_MAS:g} mas; inverse < {ar.INVERSE_PX:g} px.",
         "- `offset_host` composes `absolute_from_offset` / `offset_from_absolute`, measured on every case,",
         "  including the exact-pole `1904-66_*` fixtures (CRVAL2 = -90).",
-        "- `jax_mixed` is `wcs.Tan(precision='mixed')` / `wcs.Sin(precision='mixed')` fed f32 pixels: fp32 pixels, `crpix`,",
-        "  `cd` and SIP; fp64 `crval` and rotation. That is a different precision contract, so it is",
-        "  held to a measured cap per case and metric (`fp32 cap X`) from the `fp32` section of",
-        "  `tests/data/accuracy_baselines.json`, not to the fp64 budgets.",
+        "- `jax_mixed` is the case's class with `precision='mixed'` fed f32 pixels: fp32 pixels, `crpix`,",
+        "  `cd` and SIP; fp64 `crval` and rotation. `offset_f32` is the genuine float32 path:",
+        "  `precision='f32'`, f32 pixels and SIP, `unproj_offset` / `proj_offset` composed on the host.",
+        "  Both are different precision contracts, so each is held to a measured cap per case and",
+        "  metric (`fp32 cap X`) from the `fp32` section of `tests/data/accuracy_baselines.json`,",
+        "  not to the fp64 budgets.",
+        f"- `wide_*` cases (ZEA, STG, ARC): {ar.WIDE_NAXIS}x{ar.WIDE_NAXIS} rotated-PC fields with corners",
+        f"  {ar.WIDE_RHO_DEG:g} deg from CRVAL, the declared accuracy envelope; they add radial spokes at",
+        f"  {', '.join(f'{r:g}' for r in ar.WIDE_SPOKES_DEG)} deg over eight azimuths. Pole centres use LONPOLE = 180.",
         "- No timings: this is an accuracy benchmark.",
         "",
         "## Single WCS",
@@ -267,6 +329,21 @@ def render_markdown(result, env):
                 "(rejected, or wrong by more than max(1 px, 100x the correct run)): "
                 f"forward {_ctl(c['forward'])}; reverse {_ctl(c['reverse'])}.", ""]
 
+    out += [
+        f"## Beyond the {ar.WIDE_RHO_DEG:g} degree envelope (characterisation only)",
+        "",
+        "Eight-azimuth rings on the `wide_*_ordinary` geometry. Results here are analytically",
+        "valid but carry no accuracy claim, budget or cap. ZEA's sky error grows as",
+        "1/cos(rho/2) by construction; STG's pixel coordinates grow as tan(rho/2).",
+        "",
+        "| proj | rho (deg) | impl | fwd max (mas) | inv max (px) |",
+        "|---|---|---|---|---|",
+    ]
+    for r in result["beyond_envelope"]:
+        out.append(f"| {r['proj']} | {r['rho_deg']:g} | {r['impl']} "
+                   f"| {_g(r['forward_mas']['max'])} | {_g(r['inverse_px']['max'])} |")
+    out.append("")
+
     return "\n".join(out)
 
 
@@ -276,11 +353,19 @@ def main(argv=None):
     ap.add_argument("--markdown", type=Path, help="write the rendered table here")
     ap.add_argument("--write-baselines", action="store_true",
                     help=f"regenerate {ar.BASELINES_PATH.relative_to(REPO)} (review the diff)")
+    ap.add_argument("--add-missing-caps", action="store_true",
+                    help="with --write-baselines: keep every existing cap entry verbatim "
+                         "and only add entries that are missing")
+    ap.add_argument("--also-measured", type=Path, action="append", default=[],
+                    help="with --write-baselines: a --json result from another backend; "
+                         "new fp32 caps cover the worst backend")
     ap.add_argument("--allow-cap-increase", action="store_true",
                     help="with --write-baselines: accept results above their old caps")
     args = ap.parse_args(argv)
     if args.allow_cap_increase and not args.write_baselines:
         ap.error("--allow-cap-increase only applies with --write-baselines")
+    if args.add_missing_caps and not args.write_baselines:
+        ap.error("--add-missing-caps only applies with --write-baselines")
 
     result, problems = measure()
     env = environment()
@@ -293,7 +378,11 @@ def main(argv=None):
                 print(f"PROBLEM: {p}", file=sys.stderr)
             print("refusing to write baselines", file=sys.stderr)
             return 1
-        ar.BASELINES_PATH.write_text(json.dumps(baselines_from(result), indent=2) + "\n")
+        also = [json.loads(path.read_text()) for path in args.also_measured]
+        new = baselines_from(result, also)
+        if args.add_missing_caps:
+            new = merge_missing(ar.load_baselines(), new)
+        ar.BASELINES_PATH.write_text(json.dumps(new, indent=2) + "\n")
     problems += check_caps(result, ar.load_baselines())
 
     if args.json:

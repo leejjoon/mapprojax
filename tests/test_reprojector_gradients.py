@@ -14,7 +14,7 @@ from jax.test_util import check_grads
 
 from mapprojax.reproject import Reprojector
 from mapprojax.sip import Sip
-from mapprojax.wcs import Sin, Tan
+from mapprojax.wcs import Arc, Sin, Stg, Tan, Zea
 
 
 @pytest.fixture(autouse=True)
@@ -172,6 +172,9 @@ def test_from_matrix_live_crval_dependencies_match_finite_differences(precision)
         (Tan, Tan, (45.0, 89.0), (45.1, 89.0)),
         (Tan, Tan, (45.0, -89.0), (45.1, -89.0)),
         (Tan, Sin, (180.0, 30.0), (180.2, 30.1)),
+        (Zea, Tan, (180.0, 30.0), (180.2, 30.1)),
+        (Stg, Arc, (45.0, 89.0), (45.1, 89.0)),
+        (Arc, Zea, (359.9, 0.0), (0.1, 0.1)),
     ],
 )
 def test_live_crval_gradients_cover_representative_geometry(

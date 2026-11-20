@@ -57,8 +57,9 @@ def _max_sep_arcsec(lon1, lat1, lon2, lat2):
 
 def _assert_matches_astropy(h, pix=PIX, atol_arcsec=1e-6):
     crpix, cd, crval, sip = load_wcs_params_from_header(h)
-    cls = Sin if "SIN" in h["CTYPE1"] else Tan
-    ra, dec = cls(crpix, cd, crval, sip=sip).unproj(pix[:, 0], pix[:, 1])
+    from mapprojax import wcs as mp
+    cls = getattr(mp, str(h["CTYPE1"])[5:8].title())  # the class CTYPE names
+    ra, dec = cls(crpix, cd, crval, sip=sip, precision="f64").unproj(pix[:, 0], pix[:, 1])
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         ref = WCS(h).all_pix2world(pix, 0)

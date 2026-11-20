@@ -19,7 +19,7 @@ import pytest
 import jax
 import jax.numpy as jnp
 
-from mapprojax.wcs import Tan, Sin
+from mapprojax.wcs import Tan, Sin, Zea, Stg, Arc
 from mapprojax.reproject import Reprojector, SUPPORTED_MATRIX_PRECISIONS
 from mapprojax.sip import Sip
 from mapprojax.utils import compose_relative_rotation
@@ -81,7 +81,7 @@ OVERLAPPING_CASES = [
     (5.0, 0.1, 40000.0, 1e-1),
 ]
 
-WCS_PAIRS = [(Tan, Tan), (Tan, Sin), (Sin, Tan)]
+WCS_PAIRS = [(Tan, Tan), (Tan, Sin), (Sin, Tan), (Zea, Tan), (Tan, Stg), (Arc, Zea), (Stg, Arc)]
 
 
 @pytest.fixture(autouse=True)

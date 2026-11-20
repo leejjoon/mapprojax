@@ -7,9 +7,11 @@ jax.config.update("jax_enable_x64", True)
 import pytest
 
 import mapprojax
-from mapprojax.wcs import Sin, Tan
+from mapprojax.wcs import Arc, Sin, Stg, Tan, Zea
 from mapprojax.sip import Sip
 from mapprojax.wcs_utils import load_wcs_params_from_header
+
+ALL_CLASSES = [Tan, Sin, Zea, Stg, Arc]
 
 DATA_DIR = Path(__file__).resolve().parent / 'data'
 
@@ -126,7 +128,7 @@ def test_root_exports_precision_wcs_without_legacy_aliases():
         assert not hasattr(mapprojax, obsolete), obsolete
 
 
-@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda cls: cls.__name__)
+@pytest.mark.parametrize("cls", ALL_CLASSES, ids=lambda cls: cls.__name__)
 @pytest.mark.parametrize("precision", ["f32", "mixed", "f64"])
 @pytest.mark.parametrize("with_sip", [False, True], ids=["no-sip", "ab-only-sip"])
 def test_wcs_json_round_trip_preserves_precision_and_state(cls, precision, with_sip):

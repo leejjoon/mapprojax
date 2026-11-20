@@ -16,11 +16,11 @@ import jax.numpy as jnp
 
 from mapprojax import absolute_from_offset, offset_from_absolute
 from mapprojax.sip import Sip
-from mapprojax.wcs import Tan, Sin
+from mapprojax.wcs import Tan, Sin, Zea, Stg, Arc
 
 CRPIX = [512.0, 512.0]
 CD = [[-0.001, 0.0], [0.0, 0.001]]
-WCS_CLASSES = [Tan, Sin]
+WCS_CLASSES = [Tan, Sin, Zea, Stg, Arc]
 MAS_PER_RAD = np.degrees(1.0) * 3.6e6
 
 

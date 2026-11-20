@@ -881,6 +881,28 @@ Size: about 100–150 lines of library code and 400–700 lines of tests, plus d
 - **Suite:** 1259 passed on CPU and on ROCm.
 - **Deviation from Work item 3:** the ARC float32 ulp bound is **3**, not 2. ROCm's own float32 `atan2` is 2.04 ulp off on these inputs (0.49 on CPU), and the exact branch adds two roundings: measured 2.48 ulp on ROCm and 1.48 on CPU. The series branch is 1.51 on both, and float64 holds the 2-ulp bound.
 
+### Stage 2 closure — 2026-11-20
+
+- **Generic tests:** the class parametrisations in `test_wcs_regressions.py`, `test_wcs_new.py`, `test_wcs_json.py`, `test_offset_projection.py`, `test_pixel_map.py`, `test_reproject_relative.py`, `test_reprojector_gradients.py` and `test_astropy_reference.py` now cover all five classes, or zenithal pairs where they take pairs.
+  - Two tests assumed a horizon. `test_back_hemisphere_is_not_a_valid_pixel` is now limited to TAN and SIN, with `test_back_hemisphere_is_valid_beyond_a_horizon` added for the zenithals.
+  - The mixed-batch and masked-loss tests take their invalid samples per class: 135° and 179.99° for TAN and SIN, NaN and inf for the zenithals. Each now asserts that its batch really is mixed.
+- **Harness:**
+  - `Case.proj` reads the CTYPE code, and `test_wcs_utils.py` dispatches on it too.
+  - New `offset_f32` row: `precision="f32"` offset path composed on the host.
+  - 15 synthetic zenithal cases.
+  - 9 `wide_*` fixtures: 4096² rotated-PC with corners at 120°, at (150, 30) and at both poles with LONPOLE = 180, plus radial spokes at 0, 60, 90, 100 and 120° over eight azimuths.
+  - A characterisation table beyond 120°, not gated.
+  - A ZEA wide field onto a TAN cutout through `Reprojector`: max error 2.2·10⁻¹² px in f64 and 2.1·10⁻⁴ px in f32 (cap 2.6·10⁻⁴), identical on CPU and ROCm.
+- **Results within the envelope:**
+  - Every fp64 row passes the existing 10⁻⁴ mas and 10⁻⁶ px budgets, including the 120° pole fixtures.
+  - Mixed `unproj` max on the wide fixtures: 54 mas (ZEA), 31 (STG) and 42 (ARC).
+  - `offset_f32` max: 74, 61 and 74 mas on CPU.
+  - Inverse ≤ 1.0·10⁻³ px everywhere.
+- **Caps:**
+  - 124 new entries, written with the new `--add-missing-caps` flag, which keeps every existing entry verbatim (checked: no TAN/SIN entry changed).
+  - `--also-measured` makes each new cap cover the worst of CPU and ROCm. ROCm's float32 transcendentals put `offset_f32` up to 1.74× above CPU (the ZEA pole fixtures). Caps measured on CPU alone failed 7 rows on ROCm.
+- **Suite:** 2027 passed on CPU and ROCm.
+
 ## Cut or deferred
 
 - **Image resampling in mapprojax** (`reproject_interp`, flux-conserving variant, tiling, coadd): belongs in reprojax. When it is built there, note that JAX `map_coordinates` supports only order 0 and 1, and that Jacobian-scaled interpolation is not flux-conserving under downsampling (use adaptive anti-aliasing or drizzle).

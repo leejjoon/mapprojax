@@ -432,3 +432,33 @@ def test_reprojector_wide_field_round_trip(code):
     assert np.all(np.asarray(valid))
     err = np.hypot(np.asarray(x) - np.asarray(gx.ravel()), np.asarray(y) - np.asarray(gy.ravel()))
     assert err.max() < 2e-3
+
+
+# --- a wide zenithal field onto a TAN cutout -------------------------------
+
+#: Max pixel error against astropy, measured 2026-11-20 (identical on CPU and
+#: ROCm): f64 2.2e-12, f32 2.1e-4 over 2076 overlap samples. f64 is held to
+#: the 1e-6 px pair target; f32 to a cap of measured x 1.2.
+PAIR_CAP_PX = {"f64": 1e-6, "f32": 2.6e-4}
+
+
+@pytest.mark.parametrize("precision", ["f64", "f32"])
+def test_wide_zea_onto_tan_cutout_matches_astropy(precision):
+    import accuracy_reference as ar
+
+    src_h = ar.wide_header("ZEA", (150.0, 30.0))
+    tgt_h = ar.synthetic_header("TAN", (200.0, 70.0), naxis=512, cdelt=0.05)
+    ws, wt = ar.astropy_wcs(src_h), ar.astropy_wcs(tgt_h)
+    pix = ar.pixel_grid(src_h, 257)
+    ref = wt.all_world2pix(ws.all_pix2world(pix, 0), 0, tolerance=1e-10, maxiter=100)
+    overlap = ar._overlap_mask(ref, (512, 512))
+    assert overlap.sum() == 2076
+
+    src, tgt = from_astropy(ws, precision=precision), from_astropy(wt, precision=precision)
+    dtype = np.float32 if precision == "f32" else np.float64
+    x, y, valid = Reprojector(src, tgt, matrix_precision=precision).pixel_map(
+        jnp.asarray(pix[overlap, 0], dtype), jnp.asarray(pix[overlap, 1], dtype))
+    assert np.all(np.asarray(valid))
+    err = np.hypot(np.asarray(x, np.float64) - ref[overlap, 0],
+                   np.asarray(y, np.float64) - ref[overlap, 1])
+    assert err.max() < PAIR_CAP_PX[precision], err.max()

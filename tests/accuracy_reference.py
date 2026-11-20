@@ -22,7 +22,7 @@ Conventions
 
 Implementations
 ---------------
-``jax`` (``wcs.Tan``/``wcs.Sin`` with ``precision="f64"``) and
+``jax`` (the projection class matching CTYPE, with ``precision="f64"``) and
 ``offset_host`` (f64 ``unproj_offset``/``proj_offset`` composed on the host
 with ``absolute_from_offset``/``offset_from_absolute``) are fp64 paths held
 to the budgets above. ``jax_mixed`` is the
@@ -31,7 +31,17 @@ and rotation -- so it is held to a measured cap per case and metric in
 ``accuracy_baselines.json`` (``fp32`` section), not to the fp64 budgets. The
 harness feeds it f32 pixels and f32 SIP coefficients, as ``Reprojector`` does,
 so the caps measure the fp32 floor rather than fp64 arithmetic promoted
-through fp32 parameters.
+through fp32 parameters. ``offset_f32`` is the genuine float32 path:
+``precision="f32"``, f32 pixels and SIP, ``unproj_offset``/``proj_offset``
+composed on the host with ``absolute_from_offset``/``offset_from_absolute``.
+It is capped the same way.
+
+Zenithal wide fields
+--------------------
+``wide_*`` cases (ZEA, STG, ARC) are 4096^2 rotated-PC fields whose corners sit
+at ``WIDE_RHO_DEG`` = 120 degrees from the reference: the declared accuracy
+envelope of Milestone v0.5.0 (plan decision Z6). Besides the grid they sample
+radial spokes at ``WIDE_SPOKES_DEG`` over eight azimuths.
 """
 
 from __future__ import annotations
@@ -66,7 +76,7 @@ METRIC_KEYS = {"forward": ("forward_mas", "mas"), "inverse": ("inverse_px", "px"
 # a different contract, not a defect, so its limits come from measured caps for
 # both metrics (see ``budget``).
 FP64_IMPL = ("jax", "offset_host")
-F32_IMPL = ("jax_mixed",)
+F32_IMPL = ("jax_mixed", "offset_f32")
 IMPLEMENTATIONS = FP64_IMPL + F32_IMPL
 
 # Real-pair runs. The fp64 reverse direction has no SIP inverse in its path and
@@ -104,6 +114,34 @@ def load_header(name: str) -> fits.Header:
     return fits.Header.fromstring((DATA_DIR / name).read_text(), sep=header_sep(name))
 
 
+#: Zenithal radial functions R(rho), rho and R in radians.
+RADIAL = {
+    "TAN": np.tan,
+    "SIN": np.sin,
+    "ZEA": lambda rho: 2.0 * np.sin(rho / 2.0),
+    "STG": lambda rho: 2.0 * np.tan(rho / 2.0),
+    "ARC": lambda rho: rho,
+}
+ZENITHAL = ("ZEA", "STG", "ARC")
+WIDE_NAXIS = 4096
+WIDE_RHO_DEG = 120.0
+WIDE_SPOKES_DEG = (0.0, 60.0, 90.0, 100.0, 120.0)
+
+
+def wide_header(proj: str, crval) -> fits.Header:
+    """A ``WIDE_NAXIS``^2 field whose corners are ``WIDE_RHO_DEG`` from CRVAL.
+
+    A reference on a pole gets LONPOLE = 180 explicitly, the only orientation
+    the kernel reproduces (at CRVAL2 = +90 WCSLIB would otherwise use 0).
+    """
+    corner_px = (WIDE_NAXIS - 1) / 2.0 * np.sqrt(2.0)
+    cdelt = float(np.degrees(RADIAL[proj](np.radians(WIDE_RHO_DEG)))) / corner_px
+    h = synthetic_header(proj, crval, naxis=WIDE_NAXIS, cdelt=cdelt)
+    if abs(crval[1]) == 90.0:
+        h["LONPOLE"] = 180.0
+    return h
+
+
 def synthetic_header(proj: str, crval, naxis: int = 256, cdelt: float = 2e-3) -> fits.Header:
     h = fits.Header()
     h["NAXIS"], h["NAXIS1"], h["NAXIS2"] = 2, naxis, naxis
@@ -122,7 +160,12 @@ class Case:
 
     @property
     def proj(self) -> str:
-        return "SIN" if "SIN" in self.header["CTYPE1"] else "TAN"
+        """The CTYPE projection code, e.g. ``TAN`` from ``RA---TAN-SIP``."""
+        return str(self.header["CTYPE1"])[5:8]
+
+    @property
+    def is_wide(self) -> bool:
+        return self.name.startswith("wide_")
 
     @property
     def has_sip(self) -> bool:
@@ -143,10 +186,38 @@ def cases() -> list[Case]:
         "near_pole_n": (45.0, 89.9),
         "near_pole_s": (200.0, -89.9),
     }
-    for proj in ("TAN", "SIN"):
+    for proj in ("TAN", "SIN") + ZENITHAL:
         for label, crval in centres.items():
             out.append(Case(f"{proj.lower()}_{label}", synthetic_header(proj, crval)))
+    wide = {"ordinary": (150.0, 30.0), "pole_n": (0.0, 90.0), "pole_s": (0.0, -90.0)}
+    for proj in ZENITHAL:
+        for label, crval in wide.items():
+            out.append(Case(f"wide_{proj.lower()}_{label}", wide_header(proj, crval)))
     return out
+
+
+def spoke_pixels(header: fits.Header) -> np.ndarray:
+    """0-based pixels at ``WIDE_SPOKES_DEG`` from CRVAL over eight azimuths."""
+    proj = str(header["CTYPE1"])[5:8]
+    cd = np.array([[header["PC1_1"], header["PC1_2"]], [header["PC2_1"], header["PC2_2"]]])
+    cd = cd * np.array([[header["CDELT1"]], [header["CDELT2"]]])
+    crpix = np.array([header["CRPIX1"], header["CRPIX2"]]) - 1.0
+    out = []
+    for rho in WIDE_SPOKES_DEG:
+        r_deg = np.degrees(RADIAL[proj](np.radians(rho)))
+        for az in np.radians(np.arange(8) * 45.0 + 10.0):
+            plane = r_deg * np.array([np.sin(az), np.cos(az)])
+            out.append(crpix + np.linalg.solve(cd, plane))
+    return np.array(out)
+
+
+def case_pixels(case: Case, n: int = GRID_N) -> np.ndarray:
+    """The sampled pixels of a case: the grid plus CRPIX, and the radial
+    spokes for a wide field."""
+    pix = pixel_grid(case.header, n)
+    if case.is_wide:
+        pix = np.vstack([pix, spoke_pixels(case.header)])
+    return pix
 
 
 def pixel_grid(header: fits.Header, n: int = GRID_N) -> np.ndarray:
@@ -235,8 +306,8 @@ def build(case: Case, backend: str):
     crpix, cd, crval, sip = _params(case.header)
     from mapprojax import wcs as mp
     cls = getattr(mp, case.proj.title())
-    precision = "f64" if backend in ("numpy", "jax") else "mixed"
-    if backend == "jax_mixed":
+    precision = {"numpy": "f64", "jax": "f64", "offset_f32": "f32"}.get(backend, "mixed")
+    if backend in ("jax_mixed", "offset_f32"):
         sip = _cast_sip(sip, np.float32)
     return cls(crpix, cd, np.asarray(crval, dtype=np.float64),
                sip=sip, precision=precision)
@@ -253,14 +324,14 @@ def implementations_for(case: Case) -> tuple[str, ...]:
 
 def run_impl(case: Case, impl: str, pix: np.ndarray, world_deg: np.ndarray):
     """Return (world_deg, pix) from mapprojax for the given impl."""
-    backend = {"jax": "jax", "jax_mixed": "jax_mixed"}.get(impl, "numpy")
+    backend = {"jax": "jax", "jax_mixed": "jax_mixed", "offset_f32": "offset_f32"}.get(impl, "numpy")
     wcs = build(case, backend)
     ra_in, dec_in = np.radians(world_deg[:, 0]), np.radians(world_deg[:, 1])
     if impl in F32_IMPL:
         pix = pix.astype(np.float32)  # fp32 contract: pixels arrive as f32
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
-        if impl == "offset_host":
+        if impl in ("offset_host", "offset_f32"):
             from mapprojax import absolute_from_offset, offset_from_absolute
             offset = wcs.unproj_offset(pix[:, 0], pix[:, 1])
             ra, dec = absolute_from_offset(
@@ -278,7 +349,7 @@ def run_impl(case: Case, impl: str, pix: np.ndarray, world_deg: np.ndarray):
 
 
 def evaluate(case: Case, impl: str, n: int = GRID_N) -> dict:
-    pix = pixel_grid(case.header, n)
+    pix = case_pixels(case, n)
     world_ref = oracle_world(case.header, pix)
     world, pix_back = run_impl(case, impl, pix, world_ref)
     fwd = separation_mas(world[:, 0], world[:, 1], world_ref[:, 0], world_ref[:, 1])
@@ -294,9 +365,41 @@ def evaluate(case: Case, impl: str, n: int = GRID_N) -> dict:
     }
 
 
+#: Beyond the 120 degree envelope: reported, never gated (plan decision Z6).
+BEYOND_RHO_DEG = {"ZEA": (150.0, 170.0, 178.0, 179.9), "STG": (150.0, 170.0, 178.0),
+                  "ARC": (150.0, 170.0, 178.0, 179.9)}
+
+
+def characterise_beyond_envelope() -> list[dict]:
+    """Max errors on eight-azimuth rings beyond ``WIDE_RHO_DEG``, per
+    projection, distance and implementation, on the ``wide_*_ordinary``
+    geometry. Characterisation only: no budget or cap applies."""
+    rows = []
+    for proj in ZENITHAL:
+        header = wide_header(proj, (150.0, 30.0))
+        case = Case(f"beyond_{proj.lower()}", header)
+        cd = np.array([[header["PC1_1"], header["PC1_2"]], [header["PC2_1"], header["PC2_2"]]])
+        cd = cd * np.array([[header["CDELT1"]], [header["CDELT2"]]])
+        crpix = np.array([header["CRPIX1"], header["CRPIX2"]]) - 1.0
+        for rho in BEYOND_RHO_DEG[proj]:
+            r_deg = np.degrees(RADIAL[proj](np.radians(rho)))
+            az = np.radians(np.arange(8) * 45.0 + 10.0)
+            plane = r_deg * np.stack([np.sin(az), np.cos(az)], -1)
+            pix = crpix + np.linalg.solve(cd, plane.T).T
+            world_ref = oracle_world(header, pix)
+            for impl in IMPLEMENTATIONS:
+                world, pix_back = run_impl(case, impl, pix, world_ref)
+                fwd = separation_mas(world[:, 0], world[:, 1], world_ref[:, 0], world_ref[:, 1])
+                inv = np.hypot(*(pix_back - pix).T)
+                rows.append({"proj": proj, "rho_deg": rho, "impl": impl,
+                             "forward_mas": dataclasses.asdict(Stats.of(fwd)),
+                             "inverse_px": dataclasses.asdict(Stats.of(inv))})
+    return rows
+
+
 def oracle_self_check(case: Case, n: int = GRID_N) -> dict:
     """Astropy round trip on the same grid; raises on non-convergence."""
-    pix = pixel_grid(case.header, n)
+    pix = case_pixels(case, n)
     back = oracle_pixel(case.header, oracle_world(case.header, pix))
     return {"case": case.name, "roundtrip_px": dataclasses.asdict(Stats.of(np.hypot(*(back - pix).T)))}
 

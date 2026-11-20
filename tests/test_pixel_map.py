@@ -7,7 +7,7 @@ import pytest
 
 from mapprojax.reproject import Reprojector
 from mapprojax.sip import Sip
-from mapprojax.wcs import Sin, Tan
+from mapprojax.wcs import Arc, Sin, Stg, Tan, Zea
 
 
 @pytest.fixture(autouse=True)
@@ -99,7 +99,7 @@ def test_sin_outside_disc_is_invalid():
     assert (float(x), float(y)) == (0.0, 0.0)
 
 
-@pytest.mark.parametrize("projection", [Tan, Sin])
+@pytest.mark.parametrize("projection", [Tan, Sin, Zea, Stg, Arc])
 def test_nonfinite_target_crpix_is_zero_masked_and_pix_to_pix_unchanged(projection):
     src = _wcs()
     target = _wcs(projection, crpix=(np.inf, 0.0))

@@ -6,7 +6,9 @@ import numpy as np
 import pytest
 
 from mapprojax.sip import Sip
-from mapprojax.wcs import Sin, Tan
+from mapprojax.wcs import Arc, Sin, Stg, Tan, Zea
+
+ALL_CLASSES = [Tan, Sin, Zea, Stg, Arc]
 
 
 CD = np.array([[-1.0e-3, 0.0], [0.0, 1.0e-3]])
@@ -22,7 +24,7 @@ def x64_enabled():
         jax.config.update("jax_enable_x64", previous)
 
 
-@pytest.mark.parametrize("cls", [Tan, Sin])
+@pytest.mark.parametrize("cls", ALL_CLASSES)
 @pytest.mark.parametrize("precision", ["f32", "mixed", "f64"])
 def test_construction_precision_and_reference_leaf(cls, precision, x64_enabled):
     crval = np.array([123.4, -37.7], dtype=np.float64)
@@ -145,7 +147,7 @@ def test_offset_scale_shares_reference_trig_dtype(precision, expected, x64_enabl
     assert offsets[1].dtype == expected
 
 
-@pytest.mark.parametrize("cls", [Tan, Sin])
+@pytest.mark.parametrize("cls", ALL_CLASSES)
 @pytest.mark.parametrize("precision", ["f32", "mixed", "f64"])
 def test_json_round_trip_preserves_contract_dtype_and_sip(cls, precision, x64_enabled):
     reference = np.array([180.0, 45.0], dtype=np.float64)
@@ -217,7 +219,7 @@ def test_new_wcs_works_as_jit_argument_and_closed_over(x64_enabled):
         np.testing.assert_array_equal(left, right)
 
 
-@pytest.mark.parametrize("cls", [Tan, Sin])
+@pytest.mark.parametrize("cls", ALL_CLASSES)
 def test_vmap_pixel_grid_paired_samples_and_shared_grid_axes(cls, x64_enabled):
     wcses = [
         cls([0.0, 0.0], CD, centre, precision="f64")
@@ -428,7 +430,7 @@ def _call(wcs, method, dtype):
 
 
 def _cases():
-    for cls in (Tan, Sin):
+    for cls in ALL_CLASSES:
         for precision in MODES:
             methods = NATIVE if precision == "f32" else NATIVE + ABSOLUTE
             for method in methods:
@@ -488,7 +490,7 @@ def test_numeric_leaf_changes_reuse_the_compiled_function(x64_enabled):
 
     x, y = jnp.asarray([1.0, 2.0]), jnp.asarray([3.0, 4.0])
     sip = Sip(a=SIP_A, b=SIP_B, inverse_steps=3)
-    for cls in (Tan, Sin):
+    for cls in ALL_CLASSES:
         for precision in MODES:
             traces.clear()
             ref = np.array([180.0, 30.0], dtype=np.float32 if precision == "f32"
@@ -515,7 +517,7 @@ SIP_CONFIGS = {
 
 @pytest.mark.parametrize("sip_config", SIP_CONFIGS, ids=list(SIP_CONFIGS))
 @pytest.mark.parametrize("precision", MODES)
-@pytest.mark.parametrize("cls", [Tan, Sin])
+@pytest.mark.parametrize("cls", ALL_CLASSES)
 def test_json_round_trip_preserves_outputs(cls, precision, sip_config, x64_enabled):
     config = SIP_CONFIGS[sip_config]
     sip = None if config is None else Sip(**config)

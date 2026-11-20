@@ -19,7 +19,14 @@ from astropy.wcs import WCS
 from mapprojax import Reprojector
 from mapprojax.sip import Sip
 from mapprojax.wcs_utils import load_wcs_params_from_header
-from mapprojax.wcs import Sin, Tan
+from mapprojax.wcs import Arc, Sin, Stg, Tan, Zea
+
+ALL_CLASSES = [Tan, Sin, Zea, Stg, Arc]
+#: Projections with a horizon on the sphere. ZEA, STG and ARC are valid on
+#: the whole back hemisphere and lose only the exact antipode, which ``proj``
+#: never reaches (``proj(pi, 0)`` gives y ~ 1e-16), so their invalid sky
+#: samples here are non-finite inputs instead.
+HORIZON_CLASSES = [Tan, Sin]
 
 
 @pytest.fixture(autouse=True)
@@ -46,7 +53,7 @@ def _precision_wcs(cls, crpix, cd, crval, sip=None, precision="f64"):
 
 # --- projection domains -----------------------------------------------------
 
-@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", HORIZON_CLASSES, ids=lambda c: c.__name__)
 @pytest.mark.parametrize("sep_deg", [135.0, 179.99])
 def test_back_hemisphere_is_not_a_valid_pixel(cls, sep_deg):
     """Outside the domain the contract is NaN, not merely "not finite"."""
@@ -55,11 +62,28 @@ def test_back_hemisphere_is_not_a_valid_pixel(cls, sep_deg):
     assert np.isnan(x) and np.isnan(y), (x, y)
 
 
-@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", [Zea, Stg, Arc], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("sep_deg", [135.0, 179.99])
+def test_back_hemisphere_is_valid_beyond_a_horizon(cls, sep_deg):
+    wcs = _precision_wcs(cls, [0.0, 0.0], [[-0.5, 0.0], [0.0, 0.5]], [0.0, 0.0])
+    x, y = wcs.proj(np.radians(sep_deg), 0.0)
+    assert np.isfinite(x) and np.isfinite(y), (x, y)
+    lon, lat = wcs.unproj(x, y)
+    assert float(np.degrees(lon)) == pytest.approx(sep_deg, abs=1e-9)
+    assert float(lat) == pytest.approx(0.0, abs=1e-11)
+
+
+def _mixed_sep(cls):
+    """Separations in degrees, invalid at indices 1 and 3 for ``cls``."""
+    bad = (135.0, 179.99) if cls in HORIZON_CLASSES else (np.nan, np.inf)
+    return np.array([10.0, bad[0], 20.0, bad[1], 5.0])
+
+
+@pytest.mark.parametrize("cls", ALL_CLASSES, ids=lambda c: c.__name__)
 def test_mixed_valid_invalid_batch(cls):
     """Validity is per sample: masking one pixel must not spoil the others."""
     wcs = _precision_wcs(cls, [0.0, 0.0], CD, [0.0, 0.0])
-    sep = np.array([10.0, 135.0, 20.0, 179.99, 5.0])
+    sep = _mixed_sep(cls)
     x, y = wcs.proj(np.radians(sep), np.zeros_like(sep))
     good = np.array([True, False, True, False, True])
     assert np.all(np.isfinite(x[good])), x
@@ -67,7 +91,7 @@ def test_mixed_valid_invalid_batch(cls):
     assert np.all(np.isnan(y[~good])), y
 
 
-@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", ALL_CLASSES, ids=lambda c: c.__name__)
 def test_front_hemisphere_is_finite(cls):
     wcs = _precision_wcs(cls, [0.0, 0.0], CD, [0.0, 0.0])
     x, y = wcs.proj(np.radians(10.0), np.radians(-5.0))
@@ -161,7 +185,7 @@ def test_ab_only_inverse_matches_astropy():
 
 # --- PyTree reconstruction ---------------------------------------------------
 
-@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", ALL_CLASSES, ids=lambda c: c.__name__)
 def test_eval_shape_on_jax_wcs(cls):
     wcs = _precision_wcs(cls, [0.0, 0.0], CD, [0.0, 0.0])
     out = jax.eval_shape(lambda w: w, wcs)
@@ -220,7 +244,7 @@ def test_crval_gradient_survives_the_pytree():
     assert np.any(np.abs(grad) > 1e-9), f"crval gradient was zeroed: {grad}"
 
 
-@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", ALL_CLASSES, ids=lambda c: c.__name__)
 def test_jit_and_vmap_over_parameters(cls):
     def state(crpix):
         wcs = _precision_wcs(cls, crpix, CD, [180.0, 0.0])
@@ -233,7 +257,7 @@ def test_jit_and_vmap_over_parameters(cls):
     assert np.asarray(vmapped[0]).shape == (3,)
 
 
-@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", ALL_CLASSES, ids=lambda c: c.__name__)
 def test_mixed_unflatten_keeps_the_precision_split(cls):
     wcs = _precision_wcs(cls, [0.0, 0.0], CD, [180.0, 0.0], precision="mixed")
     leaves, treedef = jax.tree_util.tree_flatten(wcs)
@@ -273,7 +297,7 @@ def test_sip_survives_unflatten():
 MIXED_SEP = np.radians(np.array([10.0, 135.0, 20.0, 179.99, 5.0]))
 
 
-@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", ALL_CLASSES, ids=lambda c: c.__name__)
 def test_masked_loss_keeps_parameter_gradients_finite(cls):
     """A NaN reaching the CD multiply poisons its pullback (0 * NaN = NaN).
 
@@ -282,14 +306,18 @@ def test_masked_loss_keeps_parameter_gradients_finite(cls):
     """
     cd = jnp.asarray(CD)
 
+    sep = jnp.asarray(np.radians(_mixed_sep(cls)))
+    x, _ = _precision_wcs(cls, jnp.zeros(2), cd, jnp.zeros(2)).proj(sep, jnp.zeros_like(sep))
+    assert np.isnan(np.asarray(x)).tolist() == [False, True, False, True, False]
+
     def loss_cd(cd_):
         wcs = _precision_wcs(cls, jnp.zeros(2), cd_, jnp.zeros(2))
-        x, y = wcs.proj(MIXED_SEP, jnp.zeros_like(MIXED_SEP))
+        x, y = wcs.proj(sep, jnp.zeros_like(sep))
         return jnp.nansum(x) + jnp.nansum(y)
 
     def loss_crval(crval_):
         wcs = _precision_wcs(cls, jnp.zeros(2), cd, crval_)
-        x, _ = wcs.proj(MIXED_SEP, jnp.zeros_like(MIXED_SEP))
+        x, _ = wcs.proj(sep, jnp.zeros_like(sep))
         return jnp.nansum(x)
 
     for name, grad in (("cd", jax.grad(loss_cd)(cd)),
@@ -410,7 +438,7 @@ METHODS = ["proj", "proj_xyz", "proj_offset", "native_to_pix",
 
 @pytest.mark.parametrize("with_sip", [False, True], ids=["nosip", "sip"])
 @pytest.mark.parametrize("method", METHODS)
-@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", ALL_CLASSES, ids=lambda c: c.__name__)
 def test_masked_loss_gradients_are_finite_everywhere(cls, method, with_sip):
     crval = jnp.asarray([10.0, 20.0])
 
@@ -429,7 +457,7 @@ def test_masked_loss_gradients_are_finite_everywhere(cls, method, with_sip):
         assert np.all(np.isfinite(np.asarray(g))), f"{cls.__name__}.{method} d/d{name}: {g}"
 
 
-@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", ALL_CLASSES, ids=lambda c: c.__name__)
 def test_masked_loss_pixel_gradients_are_finite(cls):
     w = _precision_wcs(cls, jnp.zeros(2), jnp.asarray(CD), jnp.asarray([10.0, 20.0]),
             sip=Sip(a=jnp.asarray(SIP_A), b=jnp.asarray(SIP_B)))
@@ -606,7 +634,7 @@ def test_matrix_that_loses_rank_when_cast_to_f32_is_rejected():
         Tan(np.zeros(2), CAST_LOSS_CD, np.zeros(2), precision="mixed")
 
 
-@pytest.mark.parametrize("cls", [Tan, Sin], ids=lambda c: c.__name__)
+@pytest.mark.parametrize("cls", ALL_CLASSES, ids=lambda c: c.__name__)
 @pytest.mark.parametrize("kind", ["singular", "nan"])
 def test_mixed_constructors_reject_bad_cd(cls, kind):
     cd = BAD_CD[kind]

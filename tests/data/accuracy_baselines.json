@@ -9,7 +9,23 @@
     "backend": "cpu",
     "dtype": "float64, except the jax_mixed rows (fp32 pixels, crpix, cd and SIP; fp64 crval and rotation) and pair runs keyed f32 (Reprojector matrix_precision='f32')",
     "margin": "cap = measured max x 1.2, rounded up to 2 significant figures",
-    "meaning": "Regression caps on the jax_mixed fp32 floor and on the fp32 Reprojector. Not accuracy claims; the fp64 paths are held to the budgets in tests/accuracy_reference.py instead."
+    "meaning": "Regression caps on the jax_mixed fp32 floor and on the fp32 Reprojector. Not accuracy claims; the fp64 paths are held to the budgets in tests/accuracy_reference.py instead.",
+    "additions": [
+      {
+        "generated_by": "benchmarks/benchmark_accuracy.py --write-baselines --add-missing-caps",
+        "versions": {
+          "jax": "0.11.1",
+          "numpy": "2.5.1",
+          "astropy": "8.0.2"
+        },
+        "backend": "cpu",
+        "also_measured_backends": [
+          "gpu"
+        ],
+        "dtype": "float64, except the jax_mixed rows (fp32 pixels, crpix, cd and SIP; fp64 crval and rotation), the offset_f32 rows (precision='f32' offset path composed on the host) and pair runs keyed f32 (Reprojector matrix_precision='f32')",
+        "n_entries": 124
+      }
+    ]
   },
   "fp32": {
     "forward": {
@@ -110,6 +126,688 @@
         "measured_max": 0.14868144468860015,
         "measured_rms": 0.04110216198417744,
         "cap": 0.18
+      },
+      "1904-66_TAN/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 22.4626913413108,
+          "gpu": 26.361008164599504
+        },
+        "unit": "mas",
+        "measured_max": 26.361008164599504,
+        "measured_rms": 13.592609309803208,
+        "cap": 32.0
+      },
+      "1904-66_SIN/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 32.407653395983296,
+          "gpu": 32.83547082904003
+        },
+        "unit": "mas",
+        "measured_max": 32.83547082904003,
+        "measured_rms": 15.71281400104564,
+        "cap": 40.0
+      },
+      "spherex_l2/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 26.680476923928808,
+          "gpu": 26.680476923928808
+        },
+        "unit": "mas",
+        "measured_max": 26.680476923928808,
+        "measured_rms": 7.21443018869956,
+        "cap": 33.0
+      },
+      "spherex_template/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.8813020195480781,
+          "gpu": 1.1254714024483952
+        },
+        "unit": "mas",
+        "measured_max": 1.1254714024483952,
+        "measured_rms": 0.3268815511284469,
+        "cap": 1.4
+      },
+      "tan_ordinary/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 19.698952770187834,
+          "gpu": 19.698952770187834
+        },
+        "unit": "mas",
+        "measured_max": 19.698952770187834,
+        "measured_rms": 5.784993284632792,
+        "cap": 24.0
+      },
+      "tan_ra_wrap_hi/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 3.8022391569701104,
+          "gpu": 3.8502629938392423
+        },
+        "unit": "mas",
+        "measured_max": 3.8502629938392423,
+        "measured_rms": 1.2844263310374742,
+        "cap": 4.7
+      },
+      "tan_ra_wrap_lo/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 3.8022391368535207,
+          "gpu": 3.8502629737248917
+        },
+        "unit": "mas",
+        "measured_max": 3.8502629737248917,
+        "measured_rms": 1.2844263240966096,
+        "cap": 4.7
+      },
+      "tan_near_pole_n/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 12.319194331469314,
+          "gpu": 12.320102182376441
+        },
+        "unit": "mas",
+        "measured_max": 12.320102182376441,
+        "measured_rms": 7.087902203542358,
+        "cap": 15.0
+      },
+      "tan_near_pole_s/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 12.31919433150999,
+          "gpu": 12.320102182410668
+        },
+        "unit": "mas",
+        "measured_max": 12.320102182410668,
+        "measured_rms": 7.0879022175674296,
+        "cap": 15.0
+      },
+      "sin_ordinary/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 17.60402585641002,
+          "gpu": 17.65203083540826
+        },
+        "unit": "mas",
+        "measured_max": 17.65203083540826,
+        "measured_rms": 5.9183643760737175,
+        "cap": 22.0
+      },
+      "sin_ra_wrap_hi/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 4.046351692920433,
+          "gpu": 4.070364055488203
+        },
+        "unit": "mas",
+        "measured_max": 4.070364055488203,
+        "measured_rms": 1.2673962379197286,
+        "cap": 4.9
+      },
+      "sin_ra_wrap_lo/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 4.046351670088111,
+          "gpu": 4.070364032656034
+        },
+        "unit": "mas",
+        "measured_max": 4.070364032656034,
+        "measured_rms": 1.267396230896423,
+        "cap": 4.9
+      },
+      "sin_near_pole_n/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 12.374400706566194,
+          "gpu": 12.374400706566194
+        },
+        "unit": "mas",
+        "measured_max": 12.374400706566194,
+        "measured_rms": 7.07902853858276,
+        "cap": 15.0
+      },
+      "sin_near_pole_s/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 12.374400706522488,
+          "gpu": 12.374400706522488
+        },
+        "unit": "mas",
+        "measured_max": 12.374400706522488,
+        "measured_rms": 7.079028550402738,
+        "cap": 15.0
+      },
+      "zea_ordinary/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.17284353128220248,
+          "gpu": 0.17284353128220248
+        },
+        "unit": "mas",
+        "measured_max": 0.17284353128220248,
+        "measured_rms": 0.05999220314187157,
+        "cap": 0.21
+      },
+      "zea_ordinary/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 16.33132692308306,
+          "gpu": 16.33132245934568
+        },
+        "unit": "mas",
+        "measured_max": 16.33132692308306,
+        "measured_rms": 5.8500327905598155,
+        "cap": 20.0
+      },
+      "zea_ra_wrap_hi/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.17284361979599772,
+          "gpu": 0.17284361979599772
+        },
+        "unit": "mas",
+        "measured_max": 0.17284361979599772,
+        "measured_rms": 0.05999220264795289,
+        "cap": 0.21
+      },
+      "zea_ra_wrap_hi/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 3.8262568965258144,
+          "gpu": 3.8262568965258144
+        },
+        "unit": "mas",
+        "measured_max": 3.8262568965258144,
+        "measured_rms": 1.2659214538488897,
+        "cap": 4.6
+      },
+      "zea_ra_wrap_lo/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.1728435773076099,
+          "gpu": 0.1728435773076099
+        },
+        "unit": "mas",
+        "measured_max": 0.1728435773076099,
+        "measured_rms": 0.059992205854761574,
+        "cap": 0.21
+      },
+      "zea_ra_wrap_lo/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 3.8262568626766966,
+          "gpu": 3.8262568626766966
+        },
+        "unit": "mas",
+        "measured_max": 3.8262568626766966,
+        "measured_rms": 1.2659214466691764,
+        "cap": 4.6
+      },
+      "zea_near_pole_n/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.1728435089056706,
+          "gpu": 0.17284347899667732
+        },
+        "unit": "mas",
+        "measured_max": 0.1728435089056706,
+        "measured_rms": 0.059992203335250134,
+        "cap": 0.21
+      },
+      "zea_near_pole_n/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 12.322391458764345,
+          "gpu": 12.322391458764345
+        },
+        "unit": "mas",
+        "measured_max": 12.322391458764345,
+        "measured_rms": 7.062429250700185,
+        "cap": 15.0
+      },
+      "zea_near_pole_s/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.17284355493110334,
+          "gpu": 0.17284346936493503
+        },
+        "unit": "mas",
+        "measured_max": 0.17284355493110334,
+        "measured_rms": 0.05999220424073426,
+        "cap": 0.21
+      },
+      "zea_near_pole_s/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 12.3223914587978,
+          "gpu": 12.3223914587978
+        },
+        "unit": "mas",
+        "measured_max": 12.3223914587978,
+        "measured_rms": 7.062429263572278,
+        "cap": 15.0
+      },
+      "stg_ordinary/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.17216854429102493,
+          "gpu": 0.17216854429102493
+        },
+        "unit": "mas",
+        "measured_max": 0.17216854429102493,
+        "measured_rms": 0.056017991727045205,
+        "cap": 0.21
+      },
+      "stg_ordinary/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 17.698077341609846,
+          "gpu": 17.698077341609846
+        },
+        "unit": "mas",
+        "measured_max": 17.698077341609846,
+        "measured_rms": 5.75774725042662,
+        "cap": 22.0
+      },
+      "stg_ra_wrap_hi/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.17216860160511174,
+          "gpu": 0.17216860160511174
+        },
+        "unit": "mas",
+        "measured_max": 0.17216860160511174,
+        "measured_rms": 0.05601798992527456,
+        "cap": 0.21
+      },
+      "stg_ra_wrap_hi/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 4.614905059442961,
+          "gpu": 4.663785236070488
+        },
+        "unit": "mas",
+        "measured_max": 4.663785236070488,
+        "measured_rms": 1.2843182743487485,
+        "cap": 5.6
+      },
+      "stg_ra_wrap_lo/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.17216856609879438,
+          "gpu": 0.17216856609879438
+        },
+        "unit": "mas",
+        "measured_max": 0.17216856609879438,
+        "measured_rms": 0.05601798948358649,
+        "cap": 0.21
+      },
+      "stg_ra_wrap_lo/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 4.614905037990306,
+          "gpu": 4.663785215701558
+        },
+        "unit": "mas",
+        "measured_max": 4.663785215701558,
+        "measured_rms": 1.2843182672908886,
+        "cap": 5.6
+      },
+      "stg_near_pole_n/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.17216850719378657,
+          "gpu": 0.17216850719378657
+        },
+        "unit": "mas",
+        "measured_max": 0.17216850719378657,
+        "measured_rms": 0.05601799034693974,
+        "cap": 0.21
+      },
+      "stg_near_pole_n/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 12.317624909771384,
+          "gpu": 12.32562243526441
+        },
+        "unit": "mas",
+        "measured_max": 12.32562243526441,
+        "measured_rms": 7.085723622421531,
+        "cap": 15.0
+      },
+      "stg_near_pole_s/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.1721685059790526,
+          "gpu": 0.1721685059790526
+        },
+        "unit": "mas",
+        "measured_max": 0.1721685059790526,
+        "measured_rms": 0.05601799037810417,
+        "cap": 0.21
+      },
+      "stg_near_pole_s/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 12.317624909750597,
+          "gpu": 12.32562243522476
+        },
+        "unit": "mas",
+        "measured_max": 12.32562243522476,
+        "measured_rms": 7.085723636036063,
+        "cap": 15.0
+      },
+      "arc_ordinary/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.15730909476437507,
+          "gpu": 0.15730909476437507
+        },
+        "unit": "mas",
+        "measured_max": 0.15730909476437507,
+        "measured_rms": 0.05173774830442267,
+        "cap": 0.19
+      },
+      "arc_ordinary/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 16.201856240486123,
+          "gpu": 16.201856240486123
+        },
+        "unit": "mas",
+        "measured_max": 16.201856240486123,
+        "measured_rms": 5.823876642060699,
+        "cap": 20.0
+      },
+      "arc_ra_wrap_hi/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.15730922552649473,
+          "gpu": 0.15730922637314565
+        },
+        "unit": "mas",
+        "measured_max": 0.15730922637314565,
+        "measured_rms": 0.05173774731240257,
+        "cap": 0.19
+      },
+      "arc_ra_wrap_hi/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 3.9588650562613688,
+          "gpu": 3.958982558693042
+        },
+        "unit": "mas",
+        "measured_max": 3.958982558693042,
+        "measured_rms": 1.2603323869331025,
+        "cap": 4.8
+      },
+      "arc_ra_wrap_lo/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.15730907881920228,
+          "gpu": 0.15730907881920228
+        },
+        "unit": "mas",
+        "measured_max": 0.15730907881920228,
+        "measured_rms": 0.05173774815891171,
+        "cap": 0.19
+      },
+      "arc_ra_wrap_lo/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 3.9588650334221565,
+          "gpu": 3.9589825365439046
+        },
+        "unit": "mas",
+        "measured_max": 3.9589825365439046,
+        "measured_rms": 1.2603323794867762,
+        "cap": 4.8
+      },
+      "arc_near_pole_n/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.1573091093746908,
+          "gpu": 0.1573091093746908
+        },
+        "unit": "mas",
+        "measured_max": 0.1573091093746908,
+        "measured_rms": 0.051737749452852214,
+        "cap": 0.19
+      },
+      "arc_near_pole_n/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 12.320897574527615,
+          "gpu": 12.320897574527615
+        },
+        "unit": "mas",
+        "measured_max": 12.320897574527615,
+        "measured_rms": 7.069867410690292,
+        "cap": 15.0
+      },
+      "arc_near_pole_s/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.1573091054386457,
+          "gpu": 0.1573091054386457
+        },
+        "unit": "mas",
+        "measured_max": 0.1573091054386457,
+        "measured_rms": 0.051737749101300405,
+        "cap": 0.19
+      },
+      "arc_near_pole_s/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 12.320897666248827,
+          "gpu": 12.320897666248827
+        },
+        "unit": "mas",
+        "measured_max": 12.320897666248827,
+        "measured_rms": 7.069867424516616,
+        "cap": 15.0
+      },
+      "wide_zea_ordinary/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 54.32905893900923,
+          "gpu": 54.32905894089808
+        },
+        "unit": "mas",
+        "measured_max": 54.32905894089808,
+        "measured_rms": 11.830299141906357,
+        "cap": 66.0
+      },
+      "wide_zea_ordinary/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 74.23044819127146,
+          "gpu": 85.0719781783
+        },
+        "unit": "mas",
+        "measured_max": 85.0719781783,
+        "measured_rms": 18.730777853964327,
+        "cap": 110.0
+      },
+      "wide_zea_pole_n/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 54.32905905499037,
+          "gpu": 54.32905905499037
+        },
+        "unit": "mas",
+        "measured_max": 54.32905905499037,
+        "measured_rms": 11.83029914370024,
+        "cap": 66.0
+      },
+      "wide_zea_pole_n/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 63.61159429890743,
+          "gpu": 110.37719275589671
+        },
+        "unit": "mas",
+        "measured_max": 110.37719275589671,
+        "measured_rms": 28.709801509194808,
+        "cap": 140.0
+      },
+      "wide_zea_pole_s/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 54.329059042916505,
+          "gpu": 54.329059042916505
+        },
+        "unit": "mas",
+        "measured_max": 54.329059042916505,
+        "measured_rms": 11.830299143996026,
+        "cap": 66.0
+      },
+      "wide_zea_pole_s/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 63.04724791936642,
+          "gpu": 108.692224486922
+        },
+        "unit": "mas",
+        "measured_max": 108.692224486922,
+        "measured_rms": 28.631089242131328,
+        "cap": 140.0
+      },
+      "wide_stg_ordinary/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 30.515012968397315,
+          "gpu": 30.515012968397315
+        },
+        "unit": "mas",
+        "measured_max": 30.515012968397315,
+        "measured_rms": 9.141859075166169,
+        "cap": 37.0
+      },
+      "wide_stg_ordinary/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 45.630960364664695,
+          "gpu": 63.826655773107014
+        },
+        "unit": "mas",
+        "measured_max": 63.826655773107014,
+        "measured_rms": 18.860252131846647,
+        "cap": 77.0
+      },
+      "wide_stg_pole_n/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 30.515012978158133,
+          "gpu": 30.515012978158133
+        },
+        "unit": "mas",
+        "measured_max": 30.515012978158133,
+        "measured_rms": 9.141859077214072,
+        "cap": 37.0
+      },
+      "wide_stg_pole_n/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 60.814186645995534,
+          "gpu": 81.88888834533853
+        },
+        "unit": "mas",
+        "measured_max": 81.88888834533853,
+        "measured_rms": 28.29560680876385,
+        "cap": 99.0
+      },
+      "wide_stg_pole_s/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 30.515012965316117,
+          "gpu": 30.515012954968554
+        },
+        "unit": "mas",
+        "measured_max": 30.515012965316117,
+        "measured_rms": 9.141859076972528,
+        "cap": 37.0
+      },
+      "wide_stg_pole_s/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 60.81418656211103,
+          "gpu": 81.88888828851138
+        },
+        "unit": "mas",
+        "measured_max": 81.88888828851138,
+        "measured_rms": 28.241902013468806,
+        "cap": 99.0
+      },
+      "wide_arc_ordinary/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 42.19282219212906,
+          "gpu": 42.19282219212906
+        },
+        "unit": "mas",
+        "measured_max": 42.19282219212906,
+        "measured_rms": 14.000470986738323,
+        "cap": 51.0
+      },
+      "wide_arc_ordinary/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 60.18008635533362,
+          "gpu": 59.41542944652898
+        },
+        "unit": "mas",
+        "measured_max": 60.18008635533362,
+        "measured_rms": 17.227527694000393,
+        "cap": 73.0
+      },
+      "wide_arc_pole_n/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 42.19282216023802,
+          "gpu": 42.19282216023802
+        },
+        "unit": "mas",
+        "measured_max": 42.19282216023802,
+        "measured_rms": 14.000470977412272,
+        "cap": 51.0
+      },
+      "wide_arc_pole_n/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 74.22910850486504,
+          "gpu": 87.35278325623572
+        },
+        "unit": "mas",
+        "measured_max": 87.35278325623572,
+        "measured_rms": 25.934869700264056,
+        "cap": 110.0
+      },
+      "wide_arc_pole_s/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 42.192822162732455,
+          "gpu": 42.19282216156899
+        },
+        "unit": "mas",
+        "measured_max": 42.192822162732455,
+        "measured_rms": 14.000470980620372,
+        "cap": 51.0
+      },
+      "wide_arc_pole_s/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 65.54700272104094,
+          "gpu": 87.35278325952034
+        },
+        "unit": "mas",
+        "measured_max": 87.35278325952034,
+        "measured_rms": 25.829622957566965,
+        "cap": 110.0
       }
     },
     "inverse": {
@@ -210,6 +908,688 @@
         "measured_max": 3.411968959808029e-05,
         "measured_rms": 1.6088417751032e-05,
         "cap": 4.1e-05
+      },
+      "1904-66_TAN/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.00010235906879424087,
+          "gpu": 0.00012634655122130734
+        },
+        "unit": "px",
+        "measured_max": 0.00012634655122130734,
+        "measured_rms": 5.365927498241202e-05,
+        "cap": 0.00016
+      },
+      "1904-66_SIN/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.00012582719804741396,
+          "gpu": 0.00014395112811365666
+        },
+        "unit": "px",
+        "measured_max": 0.00014395112811365666,
+        "measured_rms": 6.21169584392293e-05,
+        "cap": 0.00018
+      },
+      "spherex_l2/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0036671921107909672,
+          "gpu": 0.0036671921107909672
+        },
+        "unit": "px",
+        "measured_max": 0.0036671921107909672,
+        "measured_rms": 0.001033274108440485,
+        "cap": 0.0045
+      },
+      "spherex_template/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.00013647875839232116,
+          "gpu": 0.00013647875839232116
+        },
+        "unit": "px",
+        "measured_max": 0.00013647875839232116,
+        "measured_rms": 3.6203411434624765e-05,
+        "cap": 0.00017
+      },
+      "tan_ordinary/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0020624216418842546,
+          "gpu": 0.0020624216418842546
+        },
+        "unit": "px",
+        "measured_max": 0.0020624216418842546,
+        "measured_rms": 0.0006293536928701539,
+        "cap": 0.0025
+      },
+      "tan_ra_wrap_hi/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.000488519610399845,
+          "gpu": 0.000488519610399845
+        },
+        "unit": "px",
+        "measured_max": 0.000488519610399845,
+        "measured_rms": 0.00014903709858609066,
+        "cap": 0.00059
+      },
+      "tan_ra_wrap_lo/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.000488519610399845,
+          "gpu": 0.0004904816638319528
+        },
+        "unit": "px",
+        "measured_max": 0.0004904816638319528,
+        "measured_rms": 0.00014856782430900243,
+        "cap": 0.00059
+      },
+      "tan_near_pole_n/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.001698598638925262,
+          "gpu": 0.001703321065028807
+        },
+        "unit": "px",
+        "measured_max": 0.001703321065028807,
+        "measured_rms": 0.0009765265383245385,
+        "cap": 0.0021
+      },
+      "tan_near_pole_s/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0016923675591452242,
+          "gpu": 0.001698598638925262
+        },
+        "unit": "px",
+        "measured_max": 0.001698598638925262,
+        "measured_rms": 0.0009765430872851287,
+        "cap": 0.0021
+      },
+      "sin_ordinary/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0019513360413612475,
+          "gpu": 0.0019555672634851526
+        },
+        "unit": "px",
+        "measured_max": 0.0019555672634851526,
+        "measured_rms": 0.0006178927663787927,
+        "cap": 0.0024
+      },
+      "sin_ra_wrap_hi/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.000540772862142009,
+          "gpu": 0.0005261517227040609
+        },
+        "unit": "px",
+        "measured_max": 0.000540772862142009,
+        "measured_rms": 0.0001445306683916922,
+        "cap": 0.00065
+      },
+      "sin_ra_wrap_lo/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0005313258467553757,
+          "gpu": 0.0005261517227040609
+        },
+        "unit": "px",
+        "measured_max": 0.0005313258467553757,
+        "measured_rms": 0.00014444279726312018,
+        "cap": 0.00064
+      },
+      "sin_near_pole_n/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0017038677459592045,
+          "gpu": 0.0017147647648306514
+        },
+        "unit": "px",
+        "measured_max": 0.0017147647648306514,
+        "measured_rms": 0.0009811481335243156,
+        "cap": 0.0021
+      },
+      "sin_near_pole_s/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0017038677459592045,
+          "gpu": 0.001707297582603486
+        },
+        "unit": "px",
+        "measured_max": 0.001707297582603486,
+        "measured_rms": 0.0009808688870765092,
+        "cap": 0.0021
+      },
+      "zea_ordinary/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 3.411968959808029e-05,
+          "gpu": 3.0517578125e-05
+        },
+        "unit": "px",
+        "measured_max": 3.411968959808029e-05,
+        "measured_rms": 1.4736257884084837e-05,
+        "cap": 4.1e-05
+      },
+      "zea_ordinary/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.001844484037629587,
+          "gpu": 0.001844484037629587
+        },
+        "unit": "px",
+        "measured_max": 0.001844484037629587,
+        "measured_rms": 0.0006283926749568627,
+        "cap": 0.0023
+      },
+      "zea_ra_wrap_hi/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 3.411968959808029e-05,
+          "gpu": 3.0517578125e-05
+        },
+        "unit": "px",
+        "measured_max": 3.411968959808029e-05,
+        "measured_rms": 1.4736257884084837e-05,
+        "cap": 4.1e-05
+      },
+      "zea_ra_wrap_hi/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.00044151722095429343,
+          "gpu": 0.00044877444976357245
+        },
+        "unit": "px",
+        "measured_max": 0.00044877444976357245,
+        "measured_rms": 0.00014394639817077106,
+        "cap": 0.00054
+      },
+      "zea_ra_wrap_lo/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 3.411968959808029e-05,
+          "gpu": 3.0517578125e-05
+        },
+        "unit": "px",
+        "measured_max": 3.411968959808029e-05,
+        "measured_rms": 1.4736257884084837e-05,
+        "cap": 4.1e-05
+      },
+      "zea_ra_wrap_lo/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.00044877444976357245,
+          "gpu": 0.00044877444976357245
+        },
+        "unit": "px",
+        "measured_max": 0.00044877444976357245,
+        "measured_rms": 0.000144363796985818,
+        "cap": 0.00054
+      },
+      "zea_near_pole_n/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 3.411968959808029e-05,
+          "gpu": 3.0517578125e-05
+        },
+        "unit": "px",
+        "measured_max": 3.411968959808029e-05,
+        "measured_rms": 1.4736257884084837e-05,
+        "cap": 4.1e-05
+      },
+      "zea_near_pole_n/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.001708166744281803,
+          "gpu": 0.0017132195719059464
+        },
+        "unit": "px",
+        "measured_max": 0.0017132195719059464,
+        "measured_rms": 0.0009816086733068163,
+        "cap": 0.0021
+      },
+      "zea_near_pole_s/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 3.411968959808029e-05,
+          "gpu": 3.0517578125e-05
+        },
+        "unit": "px",
+        "measured_max": 3.411968959808029e-05,
+        "measured_rms": 1.4736257884084837e-05,
+        "cap": 4.1e-05
+      },
+      "zea_near_pole_s/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.001703321065028807,
+          "gpu": 0.0017091206087580385
+        },
+        "unit": "px",
+        "measured_max": 0.0017091206087580385,
+        "measured_rms": 0.0009815513386723252,
+        "cap": 0.0021
+      },
+      "stg_ordinary/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 4.88519610399845e-05,
+          "gpu": 3.411968959808029e-05
+        },
+        "unit": "px",
+        "measured_max": 4.88519610399845e-05,
+        "measured_rms": 1.8371108574350195e-05,
+        "cap": 5.9e-05
+      },
+      "stg_ordinary/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0020352187494869574,
+          "gpu": 0.0020352187494869574
+        },
+        "unit": "px",
+        "measured_max": 0.0020352187494869574,
+        "measured_rms": 0.0006312389183510825,
+        "cap": 0.0025
+      },
+      "stg_ra_wrap_hi/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 4.88519610399845e-05,
+          "gpu": 3.411968959808029e-05
+        },
+        "unit": "px",
+        "measured_max": 4.88519610399845e-05,
+        "measured_rms": 1.8371108574350195e-05,
+        "cap": 5.9e-05
+      },
+      "stg_ra_wrap_hi/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0005181252089340102,
+          "gpu": 0.0005072256512022297
+        },
+        "unit": "px",
+        "measured_max": 0.0005181252089340102,
+        "measured_rms": 0.00014500476793060947,
+        "cap": 0.00063
+      },
+      "stg_ra_wrap_lo/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 4.88519610399845e-05,
+          "gpu": 3.411968959808029e-05
+        },
+        "unit": "px",
+        "measured_max": 4.88519610399845e-05,
+        "measured_rms": 1.8371108574350195e-05,
+        "cap": 5.9e-05
+      },
+      "stg_ra_wrap_lo/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0005199755618709942,
+          "gpu": 0.0005072256512022297
+        },
+        "unit": "px",
+        "measured_max": 0.0005199755618709942,
+        "measured_rms": 0.00014509036643128563,
+        "cap": 0.00063
+      },
+      "stg_near_pole_n/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 4.88519610399845e-05,
+          "gpu": 3.411968959808029e-05
+        },
+        "unit": "px",
+        "measured_max": 4.88519610399845e-05,
+        "measured_rms": 1.8371108574350195e-05,
+        "cap": 5.9e-05
+      },
+      "stg_near_pole_n/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.001708166744281803,
+          "gpu": 0.0017063256426871278
+        },
+        "unit": "px",
+        "measured_max": 0.001708166744281803,
+        "measured_rms": 0.0009741399293537912,
+        "cap": 0.0021
+      },
+      "stg_near_pole_s/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 4.88519610399845e-05,
+          "gpu": 3.411968959808029e-05
+        },
+        "unit": "px",
+        "measured_max": 4.88519610399845e-05,
+        "measured_rms": 1.8371108574350195e-05,
+        "cap": 5.9e-05
+      },
+      "stg_near_pole_s/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0017009443805439076,
+          "gpu": 0.0017063256426871278
+        },
+        "unit": "px",
+        "measured_max": 0.0017063256426871278,
+        "measured_rms": 0.0009771595123051905,
+        "cap": 0.0021
+      },
+      "arc_ordinary/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 4.88519610399845e-05,
+          "gpu": 3.411968959808029e-05
+        },
+        "unit": "px",
+        "measured_max": 4.88519610399845e-05,
+        "measured_rms": 2.0113260385839947e-05,
+        "cap": 5.9e-05
+      },
+      "arc_ordinary/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0019220018189929726,
+          "gpu": 0.0019073486328125
+        },
+        "unit": "px",
+        "measured_max": 0.0019220018189929726,
+        "measured_rms": 0.0006356624115840277,
+        "cap": 0.0024
+      },
+      "arc_ra_wrap_hi/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 4.88519610399845e-05,
+          "gpu": 3.411968959808029e-05
+        },
+        "unit": "px",
+        "measured_max": 4.88519610399845e-05,
+        "measured_rms": 2.0113260385839947e-05,
+        "cap": 5.9e-05
+      },
+      "arc_ra_wrap_hi/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0005181252089340102,
+          "gpu": 0.0005072256512022297
+        },
+        "unit": "px",
+        "measured_max": 0.0005181252089340102,
+        "measured_rms": 0.0001484922773397481,
+        "cap": 0.00063
+      },
+      "arc_ra_wrap_lo/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 4.88519610399845e-05,
+          "gpu": 3.411968959808029e-05
+        },
+        "unit": "px",
+        "measured_max": 4.88519610399845e-05,
+        "measured_rms": 2.0113260385839947e-05,
+        "cap": 5.9e-05
+      },
+      "arc_ra_wrap_lo/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0005199755618709942,
+          "gpu": 0.0005072256512022297
+        },
+        "unit": "px",
+        "measured_max": 0.0005199755618709942,
+        "measured_rms": 0.00014847353070729895,
+        "cap": 0.00063
+      },
+      "arc_near_pole_n/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 4.88519610399845e-05,
+          "gpu": 3.411968959808029e-05
+        },
+        "unit": "px",
+        "measured_max": 4.88519610399845e-05,
+        "measured_rms": 2.0113260385839947e-05,
+        "cap": 5.9e-05
+      },
+      "arc_near_pole_n/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.001703321065028807,
+          "gpu": 0.0017063256426871278
+        },
+        "unit": "px",
+        "measured_max": 0.0017063256426871278,
+        "measured_rms": 0.0009740979780952599,
+        "cap": 0.0021
+      },
+      "arc_near_pole_s/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 4.88519610399845e-05,
+          "gpu": 3.411968959808029e-05
+        },
+        "unit": "px",
+        "measured_max": 4.88519610399845e-05,
+        "measured_rms": 2.0113260385839947e-05,
+        "cap": 5.9e-05
+      },
+      "arc_near_pole_s/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0016960780671904441,
+          "gpu": 0.00170203909355877
+        },
+        "unit": "px",
+        "measured_max": 0.00170203909355877,
+        "measured_rms": 0.0009742196331385154,
+        "cap": 0.0021
+      },
+      "wide_zea_ordinary/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0004766483574108635,
+          "gpu": 0.00048828125
+        },
+        "unit": "px",
+        "measured_max": 0.00048828125,
+        "measured_rms": 0.00012100366529632044,
+        "cap": 0.00059
+      },
+      "wide_zea_ordinary/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0006905339660024879,
+          "gpu": 0.0005459150335692846
+        },
+        "unit": "px",
+        "measured_max": 0.0006905339660024879,
+        "measured_rms": 0.0001505418362395068,
+        "cap": 0.00083
+      },
+      "wide_zea_pole_n/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0004766483574108635,
+          "gpu": 0.00048828125
+        },
+        "unit": "px",
+        "measured_max": 0.00048828125,
+        "measured_rms": 0.00012100366529632044,
+        "cap": 0.00059
+      },
+      "wide_zea_pole_n/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0008802615418613255,
+          "gpu": 0.0008802615418613255
+        },
+        "unit": "px",
+        "measured_max": 0.0008802615418613255,
+        "measured_rms": 0.00021577455957964812,
+        "cap": 0.0011
+      },
+      "wide_zea_pole_s/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0004766483574108635,
+          "gpu": 0.00048828125
+        },
+        "unit": "px",
+        "measured_max": 0.00048828125,
+        "measured_rms": 0.00012100366529632044,
+        "cap": 0.00059
+      },
+      "wide_zea_pole_s/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.000953399618640949,
+          "gpu": 0.000953399618640949
+        },
+        "unit": "px",
+        "measured_max": 0.000953399618640949,
+        "measured_rms": 0.0002139814639500275,
+        "cap": 0.0012
+      },
+      "wide_stg_ordinary/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0005459150335692846,
+          "gpu": 0.0005459150335692846
+        },
+        "unit": "px",
+        "measured_max": 0.0005459150335692846,
+        "measured_rms": 0.00013705569687261186,
+        "cap": 0.00066
+      },
+      "wide_stg_ordinary/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0010066175843793117,
+          "gpu": 0.0009765625
+        },
+        "unit": "px",
+        "measured_max": 0.0010066175843793117,
+        "measured_rms": 0.00020993673074834644,
+        "cap": 0.0013
+      },
+      "wide_stg_pole_n/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0005459150335692846,
+          "gpu": 0.0005459150335692846
+        },
+        "unit": "px",
+        "measured_max": 0.0005459150335692846,
+        "measured_rms": 0.00013705569687261186,
+        "cap": 0.00066
+      },
+      "wide_stg_pole_n/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0009765625,
+          "gpu": 0.0009705370618689226
+        },
+        "unit": "px",
+        "measured_max": 0.0009765625,
+        "measured_rms": 0.00023266634124510704,
+        "cap": 0.0012
+      },
+      "wide_stg_pole_s/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0005459150335692846,
+          "gpu": 0.0005459150335692846
+        },
+        "unit": "px",
+        "measured_max": 0.0005459150335692846,
+        "measured_rms": 0.00013705569687261186,
+        "cap": 0.00066
+      },
+      "wide_stg_pole_s/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0009765625,
+          "gpu": 0.0010355272075100873
+        },
+        "unit": "px",
+        "measured_max": 0.0010355272075100873,
+        "measured_rms": 0.0002005213307060805,
+        "cap": 0.0013
+      },
+      "wide_arc_ordinary/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0005459150335692846,
+          "gpu": 0.0005459150335692846
+        },
+        "unit": "px",
+        "measured_max": 0.0005459150335692846,
+        "measured_rms": 0.0001726427405089212,
+        "cap": 0.00066
+      },
+      "wide_arc_ordinary/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0006905339660024879,
+          "gpu": 0.000732421875
+        },
+        "unit": "px",
+        "measured_max": 0.000732421875,
+        "measured_rms": 0.00024020465467446998,
+        "cap": 0.00088
+      },
+      "wide_arc_pole_n/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0005459150335692846,
+          "gpu": 0.0005459150335692846
+        },
+        "unit": "px",
+        "measured_max": 0.0005459150335692846,
+        "measured_rms": 0.0001726427405089212,
+        "cap": 0.00066
+      },
+      "wide_arc_pole_n/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0008802615418613255,
+          "gpu": 0.0008802615418613255
+        },
+        "unit": "px",
+        "measured_max": 0.0008802615418613255,
+        "measured_rms": 0.00022936040905202672,
+        "cap": 0.0011
+      },
+      "wide_arc_pole_s/jax_mixed": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0005459150335692846,
+          "gpu": 0.0005459150335692846
+        },
+        "unit": "px",
+        "measured_max": 0.0005459150335692846,
+        "measured_rms": 0.0001726427405089212,
+        "cap": 0.00066
+      },
+      "wide_arc_pole_s/offset_f32": {
+        "sample": "33x33 grid + CRPIX",
+        "measured_max_by_backend": {
+          "cpu": 0.0008802615418613255,
+          "gpu": 0.0008802615418613255
+        },
+        "unit": "px",
+        "measured_max": 0.0008802615418613255,
+        "measured_rms": 0.00023110819124540964,
+        "cap": 0.0011
       }
     }
   },

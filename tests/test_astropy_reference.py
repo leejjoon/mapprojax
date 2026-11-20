@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 import accuracy_reference as ar
-from mapprojax.wcs import Sin, Tan
+from mapprojax.wcs import Arc, Sin, Stg, Tan, Zea
 
 FORWARD_MAS = ar.FORWARD_MAS
 INVERSE_PX = ar.INVERSE_PX
@@ -104,7 +104,7 @@ def test_inverse_matches_astropy(case, impl):
     assert stats["max"] < budget, f"{stats['max']:.3e} px"
 
 
-# fp32 contract: no fp64 budget, so the fp32 path (``jax_mixed``) is held to
+# fp32 contract: no fp64 budget, so the fp32 paths (``jax_mixed``, ``offset_f32``) are held to
 # its own measured floor from ``accuracy_baselines.json`` instead.
 FP32 = [pytest.param(c, i, id=f"{c.name}-{i}")
         for c in CASES for i in ar.implementations_for(c) if ar.budget(i, "forward") is None]
@@ -131,7 +131,7 @@ def _ring(lon0_deg, lat0_deg, sep_deg, n=8):
     return lon, lat
 
 
-@pytest.mark.parametrize("proj", ["TAN", "SIN"])
+@pytest.mark.parametrize("proj", ["TAN", "SIN", "ZEA", "STG", "ARC"])
 @pytest.mark.parametrize("impl", ["numpy", "jax"])
 @pytest.mark.parametrize("sep_deg", [30.0, 60.0, 85.0])
 def test_wide_angle_front_hemisphere_matches_astropy(proj, impl, sep_deg):
@@ -150,7 +150,8 @@ def test_wide_angle_front_hemisphere_matches_astropy(proj, impl, sep_deg):
 ARRAY_CENTRES = np.array([[150.0, 30.0], [359.99, 5.0], [45.0, 89.9], [200.0, -60.0]])
 
 
-@pytest.mark.parametrize("cls, proj", [(Tan, "TAN"), (Sin, "SIN")])
+@pytest.mark.parametrize("cls, proj", [(Tan, "TAN"), (Sin, "SIN"), (Zea, "ZEA"),
+                                       (Stg, "STG"), (Arc, "ARC")])
 def test_vmap_matches_independent_astropy_per_centre(cls, proj):
     crpix, cd, _, _ = ar._params(ar.synthetic_header(proj, (0.0, 0.0)))
     wcses = [
