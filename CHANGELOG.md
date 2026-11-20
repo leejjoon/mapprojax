@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Development version `0.5.1.dev0`; records the verified PyPI 0.5.0 publication.
+
 ## 0.5.0 — 2026-11-20
 
 - New `Zea`, `Stg` and `Arc` classes: the zenithal equal-area, stereographic and zenithal equidistant projections, with the same constructor, precision modes, SIP support and JSON format as `Tan` and `Sin`. `load_wcs_params_from_header` and `from_astropy` accept `ZEA`, `STG` and `ARC` CTYPEs (`from_astropy` returns the matching class); every existing refusal still applies, and the parametrised zenithals (AZP, SZP, ZPN, AIR) stay refused. Each is valid over the whole sphere except the exact antipode of the reference point, which is invalid by design (WCSLIB returns an arbitrary boundary point there for ZEA and ARC). Accuracy evidence covers fields within 120 degrees of the reference; see the [user manual](docs/user_manual.md#zenithal-projections-beyond-the-horizon).
