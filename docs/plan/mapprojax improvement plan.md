@@ -903,6 +903,22 @@ Size: about 100–150 lines of library code and 400–700 lines of tests, plus d
   - `--also-measured` makes each new cap cover the worst of CPU and ROCm. ROCm's float32 transcendentals put `offset_f32` up to 1.74× above CPU (the ZEA pole fixtures). Caps measured on CPU alone failed 7 rows on ROCm.
 - **Suite:** 2027 passed on CPU and ROCm.
 
+### Stage 3 closure — 2026-11-20
+
+- **Docs:**
+  - README and CHANGELOG;
+  - the user manual's new "Zenithal projections beyond the horizon" section: domains, the exact-antipode choice, the 120° envelope and gradients at ZEA's limb;
+  - the offset wrap on fields wider than a hemisphere;
+  - the loader's lack of a projection code;
+  - AGENT.md ("Adding a projection");
+  - a Cut-or-deferred entry for AZP, SZP, ZPN and AIR.
+  - Doc fences and the release tests pass.
+- **reprojax (`4215a81`, unchanged) against this tree, one test module per process:**
+  - CPU: 128 passed, 2 skipped, using reprojax's own venv with `PYTHONPATH`.
+  - ROCm: 130 passed, 0 skipped. This used a throwaway venv (`~/scratch/rpx-rocm-venv`: Python 3.12, jax 0.11.1 + rocm7, this tree editable, reprojax editable with `--no-deps`), because reprojax's own venv is 3.14t without ROCm.
+  - Both match the 0.3.0 gate counts. `--no-deps` was needed because reprojax still caps `mapprojax<0.5`; Z7 widens that cap.
+  - `test_precision_modes.py` strips `PYTHONPATH` from its subprocesses, so a path overlay is not enough on any backend; the packages must be installed.
+
 ## Cut or deferred
 
 - **Image resampling in mapprojax** (`reproject_interp`, flux-conserving variant, tiling, coadd): belongs in reprojax. When it is built there, note that JAX `map_coordinates` supports only order 0 and 1, and that Jacobian-scaled interpolation is not flux-conserving under downsampling (use adaptive anti-aliasing or drizzle).
