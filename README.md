@@ -99,7 +99,7 @@ Scope/backend comparison, checked against the linked package versions on 2026-11
 
 | Tool | Scope and precision design |
 |---|---|
-| mapprojax 0.4.0 | Coordinate-only TAN/SIN + SIP JAX kernel; explicit WCS precision, host-composed relative f32/f64 mapping, and exact-or-refuse conversion from `astropy.wcs.WCS`. Image resampling belongs in reprojax. |
+| mapprojax 0.5.0 | Coordinate-only zenithal (TAN, SIN, ZEA, STG, ARC) + SIP JAX kernel; explicit WCS precision, host-composed relative f32/f64 mapping, and exact-or-refuse conversion from `astropy.wcs.WCS`. Image resampling belongs in reprojax. |
 | [JAX-GalSim 2026.7.0 `GSFitsWCS`](https://github.com/GalSim-developers/JAX-GalSim/blob/v2026.7.0/jax_galsim/fitswcs.py) | WCS inside a JAX galaxy-simulation toolkit, with more projection families; its constructor uses JAX array conversion rather than mapprojax's explicit three-mode API. |
 | [dfreproject 1.3.1](https://pypi.org/project/dfreproject/1.3.1/) | TAN/SIP image reprojection and interpolation using PyTorch on CPU/GPU; tensor dtype/device policy, not this coordinate-only JAX API. See its [methodology](https://dfreproject.readthedocs.io/en/latest/methodology.html). |
 | [Astropy-affiliated reproject 0.21.0](https://pypi.org/project/reproject/0.21.0/) | General astronomical image reprojection with interpolation, adaptive and pixel-overlap methods in the NumPy/Astropy/SciPy ecosystem; different scope from a split-precision JAX coordinate kernel. |
