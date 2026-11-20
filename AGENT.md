@@ -2,7 +2,7 @@
 
 This file provides guidance to coding agents working with code in this repository.
 
-mapprojax implements FITS WCS map projections (TAN, SIN, plus SIP distortion) as differentiable JAX PyTrees, partly ported from [cds-mapproj-rust](https://github.com/cds-astro/cds-mapproj-rust). Its distinguishing feature is a precision strategy that keeps fp64 off the per-pixel path. The downstream image-reprojection package is **reprojax** (separate repo, `../reprojax`), which builds on mapprojax's `Reprojector`. Version 0.4.0 is tested with reprojax 0.3.0, which declares `mapprojax[astropy]>=0.4.0,<0.5` (the historical 0.3.0 pairing was reprojax 0.2.0, `mapprojax>=0.3.0,<0.4`).
+mapprojax implements FITS WCS map projections (the zenithal TAN, SIN, ZEA, STG and ARC, plus SIP distortion) as differentiable JAX PyTrees, partly ported from [cds-mapproj-rust](https://github.com/cds-astro/cds-mapproj-rust). Its distinguishing feature is a precision strategy that keeps fp64 off the per-pixel path. The downstream image-reprojection package is **reprojax** (separate repo, `../reprojax`), which builds on mapprojax's `Reprojector`. Version 0.4.0 is tested with reprojax 0.3.0, which declares `mapprojax[astropy]>=0.4.0,<0.5` (the historical 0.3.0 pairing was reprojax 0.2.0, `mapprojax>=0.3.0,<0.4`).
 
 ## Commands
 
@@ -43,13 +43,13 @@ pixel ─(−crpix, SIP pix_to_foc)→ (u,v) ─(CD, degrees)→ plane (X,Y) ─
 
 ### Classes
 
-- **Public classes.** `Tan` and `Sin` (`wcs.py`) are a projection mixin (`projections.py`: `TanMixin` / `SinMixin`, supplying `_native_to_plane` / `_plane_to_native`) plus `_PrecisionWCSBase(_PipelineBase)`. Both are registered as PyTrees.
+- **Public classes.** `Tan`, `Sin`, `Zea`, `Stg` and `Arc` (`wcs.py`) are a projection mixin (`projections.py`: `TanMixin`, `SinMixin`, `ZeaMixin`, `StgMixin`, `ArcMixin`, supplying `_native_to_plane` / `_plane_to_native`) plus `_PrecisionWCSBase(_PipelineBase)`. All are registered as PyTrees.
 - **Precision.** It is a required keyword: `precision="f32" | "mixed" | "f64"`. It is aux data, as is SIP `inverse_steps`, which is static and changes the compiled program.
 - **Leaves.** The leaves are `crpix`, `cd`, `crval` and the SIP coefficients. `r_matrix` is derived on access and never stored.
 - **Reconstruction.** `tree_unflatten` rebuilds through `__new__` and only assigns, so `tree_map` casts and `jax.eval_shape` survive. Never route unflatten through `__init__`.
 - **`crval` storage.** It is stored as given (`_normalize_crval`); a NumPy float64 reference stays a host fp64 array. A sequence mixing float precisions is rejected rather than promoted.
 - **Batching.** There are no `*Array` classes: stack compatible PyTrees and use `jax.vmap` (recipes in the `wcs.py` module docstring and the user manual). The constructor also accepts batched leaves, which reprojax uses.
-- **Adding a projection** touches `projections.py` (the mixin), `wcs.py` (the class) and `__init__.py`.
+- **Adding a projection** touches `projections.py` (the mixin), `wcs.py` (the class), `__init__.py`, `_SUPPORTED_PROJECTIONS` in `wcs_utils.py`, the dispatch in `astropy.py`, and the class lists in the tests and `tests/accuracy_reference.py`. Read the `projections.py` module docstring first: every branch, including the unselected side of a `where`, must stay finite, and invalid samples' stand-ins land on the reference point (native `(1, 0, 0)`, plane `(0, 0)`), so any removable singularity there needs a series (see `ArcMixin`). `tests/test_zenithal.py` is the template for the projection-specific tests.
 - `jax_base.py` holds only the x64 guards (`_require_x64`, `_effective_f64`) and the `Sip` PyTree registration.
 
 ### Precision strategy
@@ -79,7 +79,7 @@ Read DEVELOPER.md and `docs/benchmarks/accuracy_results.md` before touching nume
 
 ## Current direction
 
-`docs/plan/mapprojax improvement plan.md` is the agreed roadmap and supersedes the plan sections of DEVELOPER.md and `fo64_report_and_plan.md`. Stages 1–3 are complete. Stage 3, the JAX-first restructure, closed on Nov 4 2026 with the verified pair mapprojax `10f9c75` / reprojax `5fadcf7`. Stages 4, 5 and 6 have since closed: 0.4.0 is on PyPI, and reprojax 0.3.0 (its first trusted-publisher release, with attestations) closed Stage 6 on Nov 16 2026. See the plan's Stage 6 closure section. Check the plan before starting work.
+`docs/plan/mapprojax improvement plan.md` is the agreed roadmap and supersedes the plan sections of DEVELOPER.md and `fo64_report_and_plan.md`. Stages 1–3 are complete. Stage 3, the JAX-first restructure, closed on Nov 4 2026 with the verified pair mapprojax `10f9c75` / reprojax `5fadcf7`. Stages 4, 5 and 6 have since closed: 0.4.0 is on PyPI, and reprojax 0.3.0 (its first trusted-publisher release, with attestations) closed Stage 6 on Nov 16 2026. See the plan's Stage 6 closure section. Milestone v0.5.0 (ZEA, STG, ARC; plan section of that name) is in progress. Check the plan before starting work.
 
 - **Scope.** Image resampling (interpolation, flux, tiling, coadds) belongs in reprojax, not here.
 - **API changes are breaking.** There are no compatibility aliases. Update the migration table in `docs/user_manual.md` and check reprojax against the change, running its suite with `PYTHONPATH` pointing at this tree.

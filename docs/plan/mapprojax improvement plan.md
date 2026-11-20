@@ -909,6 +909,7 @@ Size: about 100–150 lines of library code and 400–700 lines of tests, plus d
 - **Array-API backend inference and PyTorch/CuPy support**: works against the host-fp64 / device-fp32 split; dfreproject already serves PyTorch users.
 - **equinox / flax**: explicit PyTree registration covers the need without a dependency.
 - **CAR, AIT, MOL**: needed only for all-sky maps, an audience not targeted yet.
+- **AZP, SZP, ZPN, AIR** (the parametrised zenithals): each needs PV parameters and its own domain rules; Milestone v0.5.0 kept to the parameter-free ZEA, STG and ARC. Add when a dataset needs them.
 - **Non-default LONPOLE**: the default is already encoded for zenithal projections and is what the SPHEREx template uses (`LONPOLE` 180 at δ₀ = 0.48°). Until then, refuse any effective `LONPOLE` other than 180 (Stage 2); `LATPOLE` has no effect for zenithal projections and is accepted. General support must reproduce WCSLIB's defaults and ambiguity rules, not just a three-angle rotation.
 - **`-TAB`, D2IM lookup distortions**: defer unless a user asks.
 

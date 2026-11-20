@@ -1,6 +1,6 @@
 # User Manual
 
-`mapprojax` is a JAX coordinate kernel for TAN and SIN FITS WCS projections, including SIP distortion. It is not an image-resampling package: use `reprojax` for resampling and coadds, and Astropy for general FITS header parsing and WCS support beyond these projections.
+`mapprojax` is a JAX coordinate kernel for the FITS zenithal WCS projections TAN, SIN, ZEA, STG and ARC, including SIP distortion. It is not an image-resampling package: use `reprojax` for resampling and coadds, and Astropy for general FITS header parsing and WCS support beyond these projections.
 
 ## Conventions and installation
 
@@ -8,11 +8,11 @@ Install with `pip install mapprojax`, or with `pip install .` from a source chec
 
 A WCS uses 0-based pixel coordinates, stores `crpix` in pixels and `crval` in degrees, and takes/returns sky coordinates in radians in `(longitude, latitude)` order. `proj(lon, lat)` maps sky to pixels; `unproj(x, y)` maps pixels to sky.
 
-Use `mapprojax.wcs_utils.load_wcs_params_from_header` to extract the supported parameters from an Astropy FITS header. It converts FITS `CRPIX` to the package's 0-based pixel convention.
+Use `mapprojax.wcs_utils.load_wcs_params_from_header` to extract the supported parameters from an Astropy FITS header. It converts FITS `CRPIX` to the package's 0-based pixel convention. It returns no projection code, so construct the class the header's CTYPE names; `from_astropy` (below) does that dispatch for you.
 
 ## Constructing a WCS
 
-The root `Tan` and `Sin` exports are the precision-explicit JAX PyTree classes in `mapprojax.wcs`. Choose a precision mode at construction:
+The root `Tan`, `Sin`, `Zea`, `Stg` and `Arc` exports are the precision-explicit JAX PyTree classes in `mapprojax.wcs`. They share one constructor, the precision modes, SIP support and the JSON format; only the projection differs. Choose a precision mode at construction:
 
 ```python
 import jax
@@ -42,6 +42,20 @@ assert jnp.allclose(jnp.degrees(lat), jnp.array([30.1, 30.2]), atol=1e-5)
 The f32 mode does not provide `proj`/`unproj`: absolute celestial rotation requires float64. For a host-side absolute coordinate result from an offset-mode WCS, use the helpers below. Mixed-mode accuracy is workload-dependent; consult the measured per-case limits in `docs/benchmarks/accuracy_results.md` and `docs/benchmarks/precision_results.md` rather than treating it as an fp64-equivalent bound.
 
 TAN is valid on the forward hemisphere and has no finite inverse-plane radius limit; the exact horizon is invalid. SIN is valid on the front hemisphere and its inverse is valid only inside the unit disc, including its boundary. Invalid samples are returned as NaN, independently per sample.
+
+### Zenithal projections beyond the horizon
+
+`Zea` (zenithal equal-area), `Stg` (stereographic) and `Arc` (zenithal equidistant) follow Calabretta & Greisen (2002) with no PV parameters. Each is defined over the whole sphere except the antipode of the reference point:
+
+| class | radius `R(ρ)` (radians) | inverse valid for | forward valid |
+| --- | --- | --- | --- |
+| `Zea` | `2 sin(ρ/2)` | `R ≤ 2` (the boundary included) | everywhere except the exact antipode |
+| `Stg` | `2 tan(ρ/2)` | every finite plane point | everywhere except the exact antipode |
+| `Arc` | `ρ` | `R ≤ π` (the boundary included) | everywhere except the exact antipode |
+
+- **The exact antipode is invalid, by design.** At native `(-1, 0, 0)` the native longitude, and so the direction on the plane, is undefined. WCSLIB returns an arbitrary point on the ZEA or ARC boundary there, and NaN for STG; mapprojax returns NaN for all three. Points near the antipode stay valid and accurate.
+- **Accuracy envelope: 120° from the reference.** The published accuracy evidence (`docs/benchmarks/accuracy_results.md`) covers fields whose samples lie within 120° of CRVAL, including references on both poles. f64 meets the same 1e-4 mas / 1e-6 px budgets as TAN and SIN there. Mixed and f32 errors grow with the field and pixel coordinate size: up to tens of mas on a 4096² field reaching 120°. Beyond 120° results are analytically valid but only characterised, with no accuracy claim. ZEA's sky error grows as 1/cos(ρ/2) by construction, and STG's pixel coordinates grow as tan(ρ/2).
+- **Gradients** are finite at the reference pixel and on masked samples in every mode. At ZEA's `R = 2` boundary the inverse has an infinite derivative, as SIN's does at its limb; keep optimisation samples inside it.
 
 ## SIP distortion
 
@@ -73,7 +87,7 @@ SIP inverse refinement is controlled by the `Sip.inverse_steps` value. Use match
 
 ## Loading from astropy
 
-`mapprojax.from_astropy` builds a `Tan` or `Sin` directly from an `astropy.wcs.WCS`. Prefer it over `load_wcs_params_from_header`: astropy normalises CROTA, units and alternate-version cards that the raw header loader refuses.
+`mapprojax.from_astropy` builds a `Tan`, `Sin`, `Zea`, `Stg` or `Arc` (whichever the CTYPE names) directly from an `astropy.wcs.WCS`. Prefer it over `load_wcs_params_from_header`: astropy normalises CROTA, units and alternate-version cards that the raw header loader refuses.
 
 ```python
 import jax
@@ -121,7 +135,7 @@ Every refusal is a `ValueError` whose message reads `from_astropy: <property> is
 | `PS` | WCSLIB string-valued projection parameters are present (`PS` cards are not SIP) |
 | `TPV`, `TPD`, `-TAB` | the CTYPE names a convention this kernel does not reproduce, including one hidden behind an apparent `TAN` |
 | `-SIP without SIP` | the CTYPE names SIP but the WCS carries no coefficients |
-| `projection` | the projection is not TAN or SIN |
+| `projection` | the projection is not TAN, SIN, ZEA, STG or ARC (the parametrised zenithals AZP, SZP, ZPN and AIR are refused) |
 | `PV` | a `PV` parameter other than SIN's no-op `PV2_1`/`PV2_2` is present |
 | `LONPOLE` | `LONPOLE` is not the default 180-degree orientation (`+90` with no card resolves to `0.0`) |
 | `cunit1`, `cunit2` | the axis unit is not a recognised angular unit; spellings astropy would normalise only during `wcsset` (e.g. `DEG`) are refused here rather than silently accepted |
@@ -196,7 +210,7 @@ offsets = offset_from_absolute(
 np.testing.assert_allclose(offsets, (lon_offset, lat_offset), atol=1e-10)
 ```
 
-`crval` and `offset_scale` are keyword-only, so a coordinate pair cannot be passed in their place by position. The helpers are host-only and not JIT- or autodiff-compatible. Their inputs must retain the dtypes returned by the offset-producing WCS: a float32 producer's offsets must come with its float32 `offset_scale()`, and a Python float scale means float64. Longitude is wrapped to `[0, 2π)`. `offset_from_absolute((lon, lat), crval=..., offset_scale=...)` performs the inverse conversion and returns offsets in the scale's dtype; absolute float64 coordinates are accepted with a float32 scale. If the scale passed is exactly zero, the longitude is undefined and returned as NaN. A reference at a pole does not by itself give zero: the producer's cosine of 90° rounds to about 6e-17 in float64 and -4e-8 in float32, and the helpers divide by that same rounded value.
+`crval` and `offset_scale` are keyword-only, so a coordinate pair cannot be passed in their place by position. The helpers are host-only and not JIT- or autodiff-compatible. Their inputs must retain the dtypes returned by the offset-producing WCS: a float32 producer's offsets must come with its float32 `offset_scale()`, and a Python float scale means float64. Longitude is wrapped to `[0, 2π)`. `offset_from_absolute((lon, lat), crval=..., offset_scale=...)` performs the inverse conversion and returns offsets in the scale's dtype; absolute float64 coordinates are accepted with a float32 scale. On a field wider than a hemisphere, as a zenithal projection can be, the longitude offset is wrapped to `(-π, π]` before scaling, so two points on opposite sides of the reference's antimeridian get offsets near `+π·cos(latitude₀)` and `-π·cos(latitude₀)`; the absolute helpers compose them correctly. If the scale passed is exactly zero, the longitude is undefined and returned as NaN. A reference at a pole does not by itself give zero: the producer's cosine of 90° rounds to about 6e-17 in float64 and -4e-8 in float32, and the helpers divide by that same rounded value.
 
 ## Reprojection
 

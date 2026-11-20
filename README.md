@@ -1,6 +1,6 @@
 # mapprojax
 
-`mapprojax` is a differentiable JAX coordinate kernel for FITS TAN and SIN WCS projections, including SIP distortion. It provides a precision-explicit PyTree API, projection-domain validity, offset coordinate methods, and source-to-target pixel maps. `from_astropy` converts an existing `astropy.wcs.WCS` into this kernel, refusing anything it cannot reproduce exactly rather than approximating it. It does not parse arbitrary FITS files itself or interpolate image data: use Astropy for general WCS support and `reprojax` for image resampling.
+`mapprojax` is a differentiable JAX coordinate kernel for the FITS zenithal WCS projections TAN, SIN, ZEA, STG and ARC, including SIP distortion. It provides a precision-explicit PyTree API, projection-domain validity, offset coordinate methods, and source-to-target pixel maps. `from_astropy` converts an existing `astropy.wcs.WCS` into this kernel, refusing anything it cannot reproduce exactly rather than approximating it. It does not parse arbitrary FITS files itself or interpolate image data: use Astropy for general WCS support and `reprojax` for image resampling.
 
 ## Install
 
@@ -32,7 +32,7 @@ jax.block_until_ready((x, y))
 assert jnp.all(jnp.isfinite(x)) & jnp.all(jnp.isfinite(y))
 ```
 
-Pixels and `crpix` are 0-based. `crval` is in degrees; `proj` and `unproj` use radians in `(longitude, latitude)` order. TAN is invalid at and behind the horizon; SIN is valid on the front hemisphere and inside its inverse unit disc. Invalid samples produce NaNs.
+Pixels and `crpix` are 0-based. `crval` is in degrees; `proj` and `unproj` use radians in `(longitude, latitude)` order. TAN is invalid at and behind the horizon; SIN is valid on the front hemisphere and inside its inverse unit disc. ZEA, STG and ARC (classes `Zea`, `Stg`, `Arc`) reach beyond the horizon and exclude only the exact antipode of the reference point. Invalid samples produce NaNs.
 
 If you already have an `astropy.wcs.WCS`, convert it with `from_astropy` (needs the `[astropy]` extra). It refuses any WCS it cannot reproduce exactly, so a successful conversion matches Astropy's own pixel-to-sky mapping:
 
