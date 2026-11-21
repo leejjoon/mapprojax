@@ -423,4 +423,4 @@ The all-NumPy high-accuracy route that worked with x64 off is retired on purpose
 
 ### Compatibility
 
-mapprojax 0.4.x is tested with reprojax 0.3.0, which declares `mapprojax[astropy]>=0.4.0,<0.5`. The historical pairing is retained: mapprojax 0.3.x is tested with reprojax 0.2.0, which declares `mapprojax>=0.3.0,<0.4`. reprojax 0.1.0 imports the retired classes and does not work with mapprojax 0.3.0; the verified Stage 4 revision pair and closure evidence are recorded in `benchmarks/results/stage4-closure.md`.
+mapprojax 0.5.x is tested with reprojax 0.3.1, which declares `mapprojax[astropy]>=0.5.0,<0.6`. The historical pairings are retained: mapprojax 0.4.x is tested with reprojax 0.3.0, which declares `mapprojax[astropy]>=0.4.0,<0.5`, and mapprojax 0.3.x is tested with reprojax 0.2.0, which declares `mapprojax>=0.3.0,<0.4`. reprojax 0.1.0 imports the retired classes and does not work with mapprojax 0.3.0; the verified Stage 4 revision pair and closure evidence are recorded in `benchmarks/results/stage4-closure.md`.

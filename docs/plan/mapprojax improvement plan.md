@@ -4,7 +4,7 @@ Nov 1, 2026 · @이재준 · revised after a two-reviewer committee review (Clau
 
 ## Where it stands
 
-*Nov 1 snapshot. v0.3.0 shipped on Nov 9 2026; see "Stage 5 closure — Nov 9 2026" at the end. v0.4.0 (`from_astropy`) shipped on Nov 13 2026; see "v0.4.0 closure — Nov 14 2026" at the end. reprojax 0.3.0 shipped on Nov 16 2026. v0.5.0 (ZEA, STG, ARC) shipped on Nov 20 2026; see "v0.5.0 closure — 2026-11-20" in that milestone. Next: reprojax 0.3.1, which widens its cap to `mapprojax[astropy]>=0.5.0,<0.6`.*
+*Nov 1 snapshot. v0.3.0 shipped on Nov 9 2026; see "Stage 5 closure — Nov 9 2026" at the end. v0.4.0 (`from_astropy`) shipped on Nov 13 2026; see "v0.4.0 closure — Nov 14 2026" at the end. reprojax 0.3.0 shipped on Nov 16 2026. v0.5.0 (ZEA, STG, ARC) shipped on Nov 20 2026; see "v0.5.0 closure — 2026-11-20" in that milestone. reprojax 0.3.1, which widens its cap to `mapprojax[astropy]>=0.5.0,<0.6`, shipped on Nov 21 2026, closing that milestone.*
 
 mapprojax v0.2.0 is a ~1,200-line WCS core: two projections (TAN, SIN), SIP distortion, NumPy and JAX classes built from shared mixins, PyTree registration, the fp64-free `Reprojector`, and the offset-form `unproj_offset`/`proj_offset` APIs. 89 tests pass. It has no README, no CI, no release, and 0 stars.
 
@@ -924,6 +924,7 @@ Size: about 100–150 lines of library code and 400–700 lines of tests, plus d
 **Released.** mapprojax 0.5.0 is on PyPI. Tag `v0.5.0` is on `5f008d3`, the closure-record commit, and `main` is at the same commit. Publish run 44659313816 uploaded the original wheel (`a42d8398…`) and sdist (`6206931c…`) from CI artifact 14592579256 (producer `9944571`, run 44654678602, input digest `305b5ac3…`) after operator approval of the `pypi` environment. A fresh public-index install, from wheel and from sdist, ran the doc fences and matched astropy for ZEA, STG and ARC; evidence is in `benchmarks/results/stage5-closure.md`.
 
 **Remaining:** item 8, reprojax 0.3.1 with the widened cap, through reprojax's own gates.
+  - *Closed 2026-11-21.* reprojax 0.3.1 is on PyPI (wheel `6eea9921…`, sdist `d69c5d28…`, tag `v0.3.1` on `733914d`, publish run 44673086718 after owner approval of its `pypi` environment). G4 ran on the artifact bytes: CPU minimum and latest 142 passed, 2 skipped each; ROCm 144 passed. G7: fresh public-index installs of the wheel and the sdist resolved `mapprojax==0.5.0`, and ZEA, STG and ARC reprojected through them; attestations verify. Evidence: `docs/release/0.3.1.md` in reprojax (`f9b3e9b`). The compatibility table in README and the user manual now pairs 0.5.x with reprojax 0.3.1.
 
 ## Cut or deferred
 

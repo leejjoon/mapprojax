@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Development version `0.5.1.dev0`; records the verified PyPI 0.5.0 publication.
+- Compatibility: mapprojax 0.5.x is tested with reprojax 0.3.1 (`mapprojax[astropy]>=0.5.0,<0.6`).
 
 ## 0.5.0 — 2026-11-20
 
